@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buying Analysis Portal — Preview (Sidebar)</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <!-- Chart.js for the Yearly line chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- SheetJS for reading .xlsx files -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+window.NEXT_PUBLIC_SUPABASE_URL = "https://zhquyedaxszsnswaimza.supabase.co";
+window.NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4";
+</script>
+
+<script>
+console.log('[sb] url =', window.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 40) + '...');
+</script>
+
+   <style>
+      :root {
+        color-scheme: light; 
+      }
+      /* Make all native form controls light & readable */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+input[type="file"],
+input[type="email"],
+input[type="date"],
+select,
+textarea {
+  background-color: #ffffff !important;   /* white */
+  color: #111827 !important;              /* gray-900 text */
+  border-color: rgba(0,0,0,0.15);         /* subtle border */
+  outline: none;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280 !important;              /* gray-500 */
+}
+
+/* Base UI polish (untouched structure) */
+html {
+  scroll-behavior: smooth;
+}
+th, td {
+  white-space: nowrap;
+}
+.sticky-header {
+  position: sticky; top: 0; z-index: 30;
+}
+.sidebar { width: 260px; }
+.scroll-shadow-x { position: relative; }
+.scroll-shadow-x::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  pointer-events: none;
+  background: linear-gradient(
+    to left,
+    rgba(0, 0, 0, 0.08),
+    rgba(0, 0, 0, 0)
+  );
+}
+[contenteditable="true"] { outline: none; border-bottom: 2px dotted rgba(0,0,0,0.2); }
+.sortable { cursor: pointer; }
+.sortable .dir { opacity: 0.5; }
+
+/* Cards / sections visual lift (no structural change) */
+.section-card {
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* small chips for state/FI */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border: 1px solid rgba(0,0,0,0.1);
+  background:#f8fafc;
+}
+.badge-blue { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.badge-amber{ background:#fffbeb; color:#b45309; border-color:#fde68a; }
+
+/* number columns, no layout change */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* tiny progress bar (used in a few spots) */
+.pbar {
+  position: relative; height: 6px; border-radius: 9999px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+.pbar > i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--w, 0%); background:#3b82f6;
+}
+
+/* simple tabs (State Performance) */
+.tab-btn {
+  padding: 0.4rem 0.75rem;
+  border:1px solid rgba(0,0,0,0.08);
+  border-right: 0;
+  background:#fff;
+  font-size: 0.875rem;
+}
+.tab-btn:last-child { border-right:1px solid rgba(0,0,0,0.08); }
+.tab-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-900 antialiased">
+    <div class="min-h-screen flex">
+      <!-- Sidebar -->
+      <aside class="sidebar flex-shrink-0 bg-white border-r border-gray-200 hidden md:flex md:flex-col">
+        <div class="p-4 border-b">
+          <div class="font-bold text-lg">Buying Analysis</div>
+          <div class="text-xs text-gray-500">Client-side preview</div>
+        </div>
+
+        <!-- PRE-FILLED NAV (fallback so sidebar always shows) -->
+        <nav class="flex-1 p-2 space-y-1" id="sidebar-nav">
+          <button data-tab="tab-Upload"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Upload</button>
+          <button data-tab="tab-Monthly" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Monthly</button>
+          <button data-tab="tab-Yearly"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Yearly</button>
+          <button data-tab="tab-ILReps"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">IL Reps</button>
+        </nav>
+
+        <div class="p-3 text-xs text-gray-500 border-t">v1.4 · LocalStorage</div>
+      </aside>
+
+      <!-- Main -->
+      <div class="flex-1 flex flex-col">
+        <!-- Top header -->
+        <header class="sticky-header bg-white/80 backdrop-blur border-b border-gray-200">
+          <div class="px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <button id="mobileMenuBtn" class="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm">☰</button>
+              <h1 class="text-xl font-semibold">Buying Analysis Portal</h1>
+              <span class="ml-2 text-xs text-gray-500">Preview — Sidebar</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="seedDummyBtn" class="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50">Load Dummy Snapshot</button>
+              <button id="clearStorageBtn" class="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Reset Demo Data</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Content -->
+        <main class="p-4">
+          <!-- Upload Data -->
+          <div id="tab-Upload" class="tab-panel">
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <!-- Ingest Card -->
+              <section class="xl:col-span-1 bg-white rounded-2xl shadow-sm border p-4">
+                <h2 class="text-lg font-semibold mb-3">Upload & Map</h2>
+
+                <div class="mb-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-sm font-medium">Year</label>
+                    <input id="inpYear" type="number" min="2000" max="2100" class="mt-1 w-full rounded-lg border px-3 py-2" placeholder="e.g., 2025">
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium">Month (1-12)</label>
+                    <input id="inpMonth" type="number" min="1" max="12" class="mt-1 w-full rounded-lg border px-3 py-2" placeholder="e.g., 8">
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="text-sm font-medium">CSV File</label>
+                  <div id="dropArea" class="mt-1 border-2 border-dashed rounded-xl p-6 text-center text-sm text-gray-500 cursor-pointer">
+                    Drop CSV here or click to choose
+                  </div>
+                  <input id="fileInput" type="file" accept=".csv,text/csv" class="hidden" />
+                </div>
+
+                <div id="mappingArea" class="hidden">
+                  <h3 class="text-sm font-semibold mt-4 mb-2">Column Mapping</h3>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div><label class="text-xs text-gray-600">Dealer</label><select id="mapDealer" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">State</label><select id="mapState" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">Status</label><select id="mapStatus" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">Loan Amount</label><select id="mapLoan" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">APR</label><select id="mapApr" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">Lender Fee</label><select id="mapFee" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">LTV</label><select id="mapLtv" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                    <div><label class="text-xs text-gray-600">Franchise/Independent</label><select id="mapFI" class="w-full rounded-lg border px-2 py-1.5 text-sm"></select></div>
+                  </div>
+<!-- Funded file (optional) -->
+<div class="mt-6">
+  <div class="text-sm font-semibold mb-1">Upload Funded Sheet (Optional)</div>
+  <div id="fundedDropArea" class="border-2 border-dashed rounded-xl p-6 text-center text-sm text-gray-500 cursor-pointer hover:bg-blue-50/40">
+    Drop funded CSV/XLSX here or click to choose
+  </div>
+  <input id="fundedFileInput" type="file" accept=".csv,.xlsx,.xls" class="hidden" />
+</div>
+
+<!-- Funded mapping (smaller set) -->
+<div id="fundedMappingArea" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+  <div>
+    <label class="text-xs text-gray-500">Dealer</label>
+    <select id="fMapDealer" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
+  <div>
+    <label class="text-xs text-gray-500">State</label>
+    <select id="fMapState" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
+  <div>
+    <label class="text-xs text-gray-500">Loan Amount</label>
+    <select id="fMapLoan" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
+  <div>
+    <label class="text-xs text-gray-500">APR (optional)</label>
+    <select id="fMapApr" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
+  <div>
+    <label class="text-xs text-gray-500">Lender Fee / Discount % (optional)</label>
+    <select id="fMapFee" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
+</div>
+<div id="fundedMapTip" class="mt-2 text-xs text-gray-600"></div>
+<!-- Merge Review Modal -->
+<div id="mergeModal" class="fixed inset-0 z-[100] hidden">
+  <!-- backdrop -->
+  <div class="absolute inset-0 bg-black/40"></div>
+
+  <!-- panel -->
+  <div class="absolute inset-x-0 top-16 mx-auto w-[min(1000px,92%)] rounded-2xl border bg-white shadow-2xl">
+    <div class="flex items-center gap-3 border-b px-4 py-3">
+      <div class="h-5 w-5 rounded-full bg-yellow-400"></div>
+      <h3 class="font-semibold text-red-700">Review dealer name mismatches before merge</h3>
+      <label class="ml-auto text-sm flex items-center gap-2">
+        <input id="mergeIncludeReviewed" type="checkbox" class="rounded border-gray-300">
+        Include reviewed rows I’ve fixed
+      </label>      
+    </div>
+
+    <div class="max-h-[60vh] overflow-y-auto p-4">
+      <p class="mb-2 text-sm text-gray-600">
+        We found dealer names in the funded sheet that may not exactly match your analyzed dealers.
+        Edit the mapping below or continue to proceed with the suggested matches.
+      </p>
+
+      <table class="min-w-full text-sm">
+        <thead class="bg-red-50 text-left">
+          <tr>
+            <th class="px-3 py-2">Funded Dealer (from sheet)</th>
+            <th class="px-3 py-2">Suggested Match</th>
+            <th class="px-3 py-2">Similarity</th>
+            <th class="px-3 py-2">Override (type a dealer name)</th>
+          </tr>
+        </thead>
+        <tbody id="mergeModalBody"></tbody>
+      </table>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 border-t bg-yellow-50 px-4 py-3">
+      <div class="flex items-center gap-2">
+        <span class="inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+        <span class="text-xs text-gray-700">Items in red are likely branch/numbered variants (e.g., “#2”, “- 801 NORTH”).</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="mergeCancelBtn" class="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50">
+          Cancel
+        </button>
+        <button id="mergeProceedBtn" class="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700">
+          Proceed &amp; Merge
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+                  <div id="statusMapperWrap" class="mt-4 hidden">
+                    <h3 class="text-sm font-semibold mb-2">Status Value Mapper → Canonical Buckets</h3>
+                    <div id="statusMapper" class="space-y-2"></div>
+                  </div>
+
+                  <div class="mt-4 flex gap-2">
+                    <button id="btnAnalyze" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Analyze</button>
+                    <button id="btnSaveMonth" class="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50" disabled>Save Month</button>
+                  </div>
+
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <button id="btnExportRawAll" class="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50" disabled>Export Raw (All Rows)</button>
+                    <button id="btnExportFunded" class="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50" disabled>Export Raw (Funded Only)</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Results Card -->
+              <section class="xl:col-span-2 bg-white rounded-2xl shadow-sm border p-4">
+                <h2 class="text-lg font-semibold mb-3">Results</h2>
+                <div id="resultsArea" class="text-sm text-gray-500">Upload a CSV and map columns to see analysis here.</div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Monthly Report -->
+          <div id="tab-Monthly" class="tab-panel hidden">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-lg font-semibold">Monthly Report</h2>
+            </div>
+            <div id="monthlyGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+            <div id="monthlyDetail" class="hidden mt-6">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-lg font-semibold" id="detailTitle"></h3>
+                  <span class="text-xs text-gray-500" id="detailId"></span>
+                </div>
+                <div class="flex gap-2">
+                  <button id="detailExportAll" class="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50">Export All (CSV)</button>
+                  <button id="detailExportFunded" class="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50">Export Funded Only (CSV)</button>
+                  <button id="backToGrid" class="px-3 py-2 rounded-lg border">Back</button>
+                </div>
+              </div>
+              <div id="detailResults" class="bg-white rounded-2xl border p-3"></div>
+            </div>
+          </div>
+
+          <!-- Yearly Report -->
+          <div id="tab-Yearly" class="tab-panel hidden">
+            <div class="flex items-center gap-3 mb-3">
+              <h2 class="text-lg font-semibold">Yearly Report</h2>
+              <select id="yrYear" class="rounded-lg border px-3 py-2 text-sm"></select>
+            </div>
+
+            <!-- YTD tiles -->
+            <div id="yrSummary" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4"></div>
+
+            <!-- MoM table -->
+            <div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
+              <h3 class="font-semibold mb-2">Month-over-Month</h3>
+              <div class="overflow-x-auto scroll-shadow-x">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50 text-left">
+                    <tr>
+                      <th class="px-3 py-2">Month</th>
+                      <th class="px-3 py-2">Total Apps</th>
+                      <th class="px-3 py-2">Total Approved</th>
+                      <th class="px-3 py-2">Funded</th>
+                      <th class="px-3 py-2">LTA</th>
+                      <th class="px-3 py-2">LTB</th>
+                      <th class="px-3 py-2">Total Funded</th>
+                    </tr>
+                  </thead>
+                  <tbody id="yrMoM"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Line chart -->
+            <div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold">Funded by Month</h3>
+                <div class="inline-flex rounded-lg border overflow-hidden">
+                  <button id="yrChartDeals"  class="px-3 py-1.5 text-sm bg-blue-600 text-white">Deals</button>
+                  <button id="yrChartAmount" class="px-3 py-1.5 text-sm hover:bg-gray-50">Amount</button>
+                </div>
+              </div>              
+              <div class="w-full"><canvas id="yrFundedChart" height="80"></canvas></div>
+            </div>
+
+<!-- Franchise vs Independent (YTD) — Detailed -->
+<div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
+<h3 class="font-semibold mb-2">Franchise vs Independent (YTD)</h3>
+<div class="overflow-x-auto scroll-shadow-x">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-left">
+      <tr>
+        <th class="px-3 py-2">Type</th>
+        <th class="px-3 py-2">Total Apps</th>
+        <th class="px-3 py-2">Approved</th>
+        <th class="px-3 py-2">Counter</th>
+        <th class="px-3 py-2">Pending</th>
+        <th class="px-3 py-2">Denial</th>
+        <th class="px-3 py-2">Funded</th>
+        <th class="px-3 py-2">LTA</th>
+        <th class="px-3 py-2">LTB</th>
+        <th class="px-3 py-2">Total Funded</th>
+      </tr>
+    </thead>
+    <tbody id="yrFiDetailBody"></tbody>
+  </table>
+</div>
+</div>
+
+            <!-- State Performance (Matrix / Ranking / Sparklines) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5 mb-4">
+              <div class="flex flex-wrap items-center gap-2 mb-2">
+              <h3 class="font-semibold text-slate-800 flex-1">State Performance</h3>
+
+                <!-- view tabs -->
+                <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                <button id="spViewMatrix" class="px-3 py-1.5 text-sm bg-indigo-600 text-white">Matrix</button>
+                <button id="spViewTrends" class="px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Trends</button>
+                <button id="spViewSpark"  class="px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Sparklines</button>
+              </div>
+
+                <!-- metric selector (amount / ltb) -->
+                <div>
+                <label class="text-xs text-slate-500">Metric</label>
+                <select id="spMetric" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200">                
+                    <option value="funded">Funded (count)</option>
+                    <option value="amount">Funded amount</option>
+                    <option value="ltb">LTB %</option>
+                  </select>
+                </div>
+
+                <!-- top N selector -->
+                <div>
+                <label class="text-xs text-slate-500">Top</label>
+                <select id="spTopN" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200">                
+                    <option>10</option>
+                    <option>15</option>
+                    <option>20</option>
+                    <option>50</option>
+                  </select>
+                </div>
+              </div>
+
+<!-- Matrix -->
+<div id="spMatrixCard">
+<div class="overflow-x-auto scroll-shadow-x rounded-xl border border-slate-200">
+<table class="min-w-full text-sm">
+  <thead class="bg-slate-50 text-left" id="spMatrixHead"></thead>
+  <tbody id="spMatrixBody"></tbody>
+</table>
+</div>
+<div class="text-xs text-gray-500 mt-2">
+  MoM Δ compares to the previous month (same state). YTD is cumulative for the selected metric (LTB% is weighted by apps).
+</div>
+</div>
+
+<!-- Trends (hidden by default) -->
+<div id="spTrendsCard" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
+<div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+  <div class="md:col-span-3 bg-white rounded-xl border p-3">
+    <canvas id="spTrendsCanvas" height="160"></canvas>
+  </div>
+  <div class="md:col-span-2 bg-white rounded-xl border p-3 overflow-x-auto scroll-shadow-x">
+    <table class="min-w-full text-sm">
+    <thead class="bg-slate-50 text-left">
+        <tr>
+          <th class="px-3 py-2">State</th>
+          <th class="px-3 py-2 text-right tabular-nums">First</th>
+          <th class="px-3 py-2 text-right tabular-nums">Last</th>
+          <th class="px-3 py-2 text-right tabular-nums">Growth</th>
+          <th class="px-3 py-2 text-right tabular-nums">YTD</th>          
+        </tr>
+      </thead>
+      <tbody id="spTrendSummary"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- Sparklines (hidden by default) -->
+<div id="spSparkCard" class="hidden">
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="spSparkGrid"></div>
+</div>
+
+            <!-- Per-Dealer YTD Totals -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
+              <h3 class="font-semibold mb-2">Per-Dealer YTD Totals</h3>
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <!-- left: search -->
+                <div class="w-full max-w-md">
+                  <label for="yrSearchDealer" class="sr-only">Search dealer</label>
+                  <input
+                    id="yrSearchDealer"
+                    type="text"
+                    placeholder="Type to filter dealer name…"
+                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                </div>
+              
+                <!-- right: export -->
+                <div class="shrink-0">
+                <button id="btnExportYrDealers"
+                class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200">
+          Export Dealers (CSV)
+        </button>        
+                </div>
+              </div>              
+              <div class="overflow-x-auto scroll-shadow-x rounded-xl border border-slate-200">
+                <table class="min-w-full text-sm">
+                <thead class="bg-slate-50" id="yrDealerHead">
+                    <tr>
+                      <th class="px-3 py-2 sortable"                      data-key="dealer">Dealer <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 sortable"                      data-key="state">State <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 sortable"                      data-key="fi">Franchise/Independent <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="total">Total Apps <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="approved">Approved <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="counter">Counter <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="pending">Pending <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="denial">Denial <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 text-right sortable"           data-key="funded">Funded <span class="dir inline-block w-3 text-gray-400"></span>
+                     <th class="px-3 py-2 text-right sortable"           data-key="fundedAmt">Funded $ <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-3 py-2 sortable" data-key="lta">
+                        <div class="flex items-center justify-center gap-1">
+                          <span>LTA</span>
+                          <span class="dir inline-block w-3 text-gray-400"></span>
+                        </div>
+                      </th>
+                      <th class="px-3 py-2 sortable" data-key="ltb">
+                        <div class="flex items-center justify-center gap-1">
+                          <span>LTB</span>
+                          <span class="dir inline-block w-3 text-gray-400"></span>
+                        </div>
+                      </th>
+                      
+                  
+                    </tr>
+                  </thead>
+                  <tbody id="yrDealerYTD"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- IL Reps (placeholder) -->
+          <div id="tab-ILReps" class="tab-panel hidden">
+            <div class="bg-white rounded-2xl shadow-sm border p-6 text-sm text-gray-600">
+              IL Reps view coming soon.
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </div>
+
+    <!-- Our app code lives in /src/app.js -->
+    <script type="module" src="/src/app.js"></script>
+
+    <!-- Safety: ensure spStates exists so tabs don't crash if referenced early -->
+    <script>
+      try { if (window.spStates === undefined) { window.spStates = []; } } catch(e) { window.spStates = []; }
+    </script>
+
+    <!-- Minimal, guarded sidebar wiring (only runs if your app.js didn't already wire it) -->
+    <script>
+      (function () {
+        const $$ = (s) => Array.from(document.querySelectorAll(s));
+        const $  = (s) => document.querySelector(s);
+
+        function showPanel(id) {
+          $$('.tab-panel').forEach(el => el.classList.add('hidden'));
+          const el = document.getElementById(id);
+          if (el) el.classList.remove('hidden');
+          $$('#sidebar-nav button[data-tab]').forEach(b => {
+            const active = b.dataset.tab === id;
+            b.classList.toggle('bg-blue-50', active);
+            b.classList.toggle('text-blue-700', active);
+            b.classList.toggle('font-semibold', active);
+          });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+          const nav = document.getElementById('sidebar-nav');
+          // If nav is empty or app didn't attach clicks, wire a simple router
+          const needsWiring = !nav || nav.innerText.trim() === '' ||
+            !nav.querySelector('button[data-tab]');
+
+          if (needsWiring) {
+            if (nav) {
+              nav.innerHTML = `
+                <button data-tab="tab-Upload"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Upload</button>
+                <button data-tab="tab-Monthly" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Monthly</button>
+                <button data-tab="tab-Yearly"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Yearly</button>
+                <button data-tab="tab-ILReps"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">IL Reps</button>
+              `;
+            }
+          }
+
+          $$('#sidebar-nav button[data-tab]').forEach(btn => {
+            btn.addEventListener('click', () => showPanel(btn.dataset.tab));
+          });
+          // Default view
+          showPanel('tab-Upload');
+        });
+      })();
+    </script>
+   <!-- Safety: Dummy Snapshot wiring (robust, multi-month, auto-detects LS key) -->
+<script>
+(function () {
+  const $  = (s) => document.querySelector(s);
+
+  // --- Helpers ---------------------------------------------------------------
+  function detectSnapsKey() {
+    // Prefer your app's own key if it exposes one
+    if (typeof window.LS_KEY === 'string' && window.LS_KEY) return window.LS_KEY;
+
+    // Try to guess: look for existing keys your app might have used
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || '';
+        if (/snap/i.test(k) || /buying/i.test(k) || /analysis/i.test(k)) {
+          const v = localStorage.getItem(k);
+          if (v && v.trim().startsWith('[')) return k;
+        }
+      }
+    } catch (e) {}
+    // Fallback key
+    return 'BuyingAnalysisSnaps';
+  }
+
+  function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+  function money(n) { return String(Math.max(1000, n)); }
+
+  // Make a single month snapshot that your app can read
+  function makeMonth(year, month) {
+    // Simple varying values so charts/tables have differences
+    const monthBump = (month-1);
+    const baseIL = 30 + monthBump, baseWI = 20 + Math.max(0, monthBump-2), baseIN = 10 + Math.max(0, monthBump-4);
+
+    // State totals
+    const stateRows = [
+      { state: 'IL', total: baseIL, approved: Math.round(baseIL*0.55), funded: Math.round(baseIL*0.35), ltb: Math.round(baseIL*0.35)/baseIL },
+      { state: 'WI', total: baseWI, approved: Math.round(baseWI*0.58), funded: Math.round(baseWI*0.38), ltb: Math.round(baseWI*0.38)/baseWI },
+      { state: 'IN', total: baseIN, approved: Math.round(baseIN*0.5),  funded: Math.round(baseIN*0.32), ltb: Math.round(baseIN*0.32)/baseIN },
+    ];
+
+    // FI counts (keep it simple: two buckets)
+    const indTotal = Math.round((baseIL+baseWI+baseIN) * 0.6);
+    const fraTotal = (baseIL+baseWI+baseIN) - indTotal;
+    const fiRows = [
+      { type: 'Independent', total: indTotal, approved: Math.round(indTotal*0.55), counter: 3, pending: 4, denial: 6, funded: Math.round(indTotal*0.35) },
+      { type: 'Franchise',   total: fraTotal, approved: Math.round(fraTotal*0.6),  counter: 2, pending: 3, denial: 3, funded: Math.round(fraTotal*0.4)  },
+    ];
+
+    // Funded raw rows (used for amount + FI mapping)
+    const fundedCount = fiRows[0].funded + fiRows[1].funded;
+    const fundedRawRows = Array.from({length: fundedCount}).map((_, i) => {
+      const fi = i % 2 === 0 ? 'Independent' : 'Franchise';
+      const st = i % 3 === 0 ? 'IL' : (i % 3 === 1 ? 'WI' : 'IN');
+      return {
+        Dealer: `Dealer ${String(i+1).padStart(2,'0')}`,
+        State: st,
+        Status: 'funded',
+        'Loan Amount': money(9000 + randInt(0, 12000)),
+        APR: String(6 + randInt(0, 5)),
+        'Lender Fee': String(150 + randInt(0, 200)),
+        LTV: String(60 + randInt(0, 25)),
+        FI: fi,
+      };
+    });
+
+    // A few dealer totals so Per-Dealer table isn't empty
+    const dealerRows = [
+      { dealer: 'Alpha Motors',  state: 'IL', fi: 'Independent', total: 20+monthBump, approved: 11, counter: 2, pending: 3, denial: 4, funded: 7, lta: 11/(20+monthBump), ltb: 7/(20+monthBump) },
+      { dealer: 'Bravo Autos',   state: 'IL', fi: 'Franchise',   total: 12,          approved:  7, counter: 1, pending: 2, denial: 2, funded: 4, lta: 7/12,               ltb: 4/12 },
+      { dealer: 'Cedar Cars',    state: 'WI', fi: 'Independent', total: 10,          approved:  6, counter: 1, pending: 1, denial: 2, funded: 4, lta: 6/10,               ltb: 4/10 },
+      { dealer: 'Delta Dealers', state: 'WI', fi: 'Franchise',   total:  8,          approved:  5, counter: 1, pending: 1, denial: 1, funded: 3, lta: 5/8,                ltb: 3/8  },
+    ];
+
+    const mapping = {
+      dealer: 'Dealer',
+      state: 'State',
+      status: 'Status',
+      loan: 'Loan Amount',
+      apr: 'APR',
+      fee: 'Lender Fee',
+      ltv: 'LTV',
+      fi: 'FI',
+    };
+
+    return {
+      id: `${year}-${String(month).padStart(2,'0')}`,
+      meta: { year, month },
+      year, month,
+      mapping,
+      stateRows,
+      fiRows,
+      fundedRawRows,
+      dealerRows,
+    };
+  }
+
+  // Build a whole year (Jan..current month)
+  function makeYearSnaps(year) {
+    const now = new Date();
+    const endM = (now.getFullYear() === year) ? now.getMonth()+1 : 12;
+    const snaps = [];
+    for (let m = 1; m <= endM; m++) snaps.push(makeMonth(year, m));
+    return snaps;
+  }
+
+  // Persist snapshots to the key your app expects
+  function saveSnaps(snaps) {
+    const key = detectSnapsKey();
+    localStorage.setItem(key, JSON.stringify(snaps));
+    return key;
+  }
+
+  // Tell your app to refresh if the functions exist
+  function refreshViews() {
+    try { if (typeof renderMonthly === 'function') renderMonthly(); } catch (e) {}
+    try { if (typeof refreshYearly === 'function') refreshYearly(); } catch (e) {}
+    try { if (typeof switchTab === 'function') switchTab('Monthly'); } catch (e) {}
+  }
+
+  // --- Button handlers -------------------------------------------------------
+  function seedDummy() {
+    try {
+      const y = new Date().getFullYear();
+      const snaps = makeYearSnaps(y);
+      // If your app exposes getSnaps/setSnaps, prefer using those
+      if (typeof getSnaps === 'function' && typeof setSnaps === 'function') {
+        const cur = getSnaps() || [];
+        // replace any entries with same id
+        const ids = new Set(snaps.map(s => s.id));
+        const merged = cur.filter(s => !ids.has(s.id)).concat(snaps);
+        merged.sort((a,b) => (a.id||'').localeCompare(b.id||''));
+        setSnaps(merged);
+      } else {
+        saveSnaps(snaps);
+      }
+      refreshViews();
+    } catch (e) {
+      console.error('Seeding failed:', e);
+      alert('Failed to seed dummy snapshots. See console for details.');
+    }
+  }
+
+  function resetDemo() {
+    try {
+      const key = detectSnapsKey();
+      localStorage.removeItem(key);
+    } catch (e) {}
+    try { if (typeof setSnaps === 'function') setSnaps([]); } catch (e) {}
+    try { if (typeof switchTab === 'function') switchTab('Upload'); } catch (e) {}
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const seedBtn  = $('#seedDummyBtn');
+    const clearBtn = $('#clearStorageBtn');
+    if (seedBtn && !seedBtn.__wired) { seedBtn.addEventListener('click', seedDummy); seedBtn.__wired = true; }
+    if (clearBtn && !clearBtn.__wired) { clearBtn.addEventListener('click', resetDemo); clearBtn.__wired = true; }
+  });
+})();
+</script>
