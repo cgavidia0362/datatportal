@@ -671,11 +671,14 @@ let _pendingMerge = null;
 const dropArea = $('#dropArea');
 const fileInput = $('#fileInput');
 
+window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+window.addEventListener('drop',     (e) => { e.preventDefault(); e.stopPropagation(); });
+
 dropArea?.addEventListener('click', () => fileInput?.click());
 dropArea?.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('bg-blue-50'); });
 dropArea?.addEventListener('dragleave', () => dropArea.classList.remove('bg-blue-50'));
 dropArea?.addEventListener('drop', (e) => {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation();
   dropArea.classList.remove('bg-blue-50');
   if (e.dataTransfer?.files?.[0]) handleFile(e.dataTransfer.files[0]);
 });
@@ -691,7 +694,7 @@ fundedDropArea?.addEventListener('click', () => fundedFileInput?.click());
 fundedDropArea?.addEventListener('dragover', (e) => { e.preventDefault(); fundedDropArea.classList.add('bg-blue-50'); });
 fundedDropArea?.addEventListener('dragleave', () => fundedDropArea.classList.remove('bg-blue-50'));
 fundedDropArea?.addEventListener('drop', (e) => {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation();
   fundedDropArea.classList.remove('bg-blue-50');
   if (e.dataTransfer?.files?.[0]) handleFundedFile(e.dataTransfer.files[0]);
 });
