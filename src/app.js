@@ -1583,12 +1583,18 @@ async function refreshMonthlyGrid() {
     grid.innerHTML = '<div class="text-sm text-slate-500">Loading from Supabase…</div>';
     var snaps = await fetchMonthlySummariesSB();
     if (!snaps || !snaps.length) {
-      grid.innerHTML = '<div class="text-sm text-gray-500">No months yet.</div>';
+      // ⤵️ Fallback to localStorage if SB is empty/locked (dev/RLS)
+      const snapsLocal = getSnaps().slice(-12);
+      if (snapsLocal.length) {
+        renderCards(snapsLocal);
+      } else {
+        grid.innerHTML = '<div class="text-sm text-gray-500">No months yet.</div>';
+      }
       return;
     }
     renderCards(snaps.map(function (s) { return Object.assign({}, s, { __fromSB: true }); }));
   } else {
-    var snapsLocal = getSnaps().slice(-12);
+    const snapsLocal = getSnaps().slice(-12);
     renderCards(snapsLocal);
   }
 
