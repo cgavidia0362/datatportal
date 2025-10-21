@@ -1603,12 +1603,18 @@ setSnaps(snaps);
 /* 4.5) Save to Supabase (cloud) if available */
 try {
   if (window.sb && window.lastBuiltSnapshot && Array.isArray(window.lastBuiltSnapshot.dealerRows)) {
-    const ok = await saveMonthlySnapshotSB(window.lastBuiltSnapshot);
-    if (!ok) console.warn('[save] Supabase insert failed — using local only');
+    saveMonthlySnapshotSB(window.lastBuiltSnapshot)
+      .then(function (ok) {
+        if (!ok) console.warn('[save] Supabase insert failed — using local only');
+      })
+      .catch(function (e) {
+        console.error('[save] Supabase save error:', e);
+      });
   }
 } catch (e) {
   console.error('[save] Supabase save error:', e);
 }
+
 
 // 5) Immediately refresh UI and go to Monthly
 try { buildSidebar(); } catch {}
