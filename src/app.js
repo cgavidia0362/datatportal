@@ -341,6 +341,69 @@ async function fetchYearlyBundleSB(year) {
     fiYTD:      results[3] || { Franchise: null, Independent: null }
   };
 }
+// === Save a month's dealer rows to Supabase ===============================
+// Writes one row per dealer into `monthly_snapshots` for (year, month).
+// Idempotent: deletes any existing rows for that (year,month) first.
+async function saveMonthlySnapshotSB(snap) {
+  try {
+    if (!window.sb || !snap || !Array.isArray(snap.dealerRows)) return false;
+
+    const y = Number(snap.year) || 0;
+    const m = Number(snap.month) || 0;
+    if (!y || !m) return false;
+
+    // 1) remove any existing rows for this (year, month)
+    let { error: delErr } = await window.sb
+      .from('monthly_snapshots')
+      .delete()
+      .eq('year', y)
+      .eq('month', m);
+    if (delErr) { console.error('[sb] delete existing month failed:', delErr); return false; }
+
+    // 2) prepare fresh rows (one per dealer)
+    const rows = (snap.dealerRows || []).map((r) => {
+      const total   = Number(r.total)    || 0;
+      const approved= Number(r.approved) || 0;
+      const counter = Number(r.counter)  || 0;
+      const pending = Number(r.pending)  || 0;
+      const denial  = Number(r.denial)   || 0;
+      const funded  = Number(r.funded)   || 0;
+
+      // funded_amount: try common property names we already compute in UI
+      const fundedAmount =
+        Number(r.funded_amount) || Number(r.fundedAmt) || Number(r.amount) || 0;
+
+      return {
+        year: y,
+        month: m,
+        dealer: (r.dealer || '').trim(),
+        state:  (r.state  || '').trim(),
+        fi:     (r.fi     || '').trim(),
+        total_apps: total,
+        approved,
+        counter,
+        pending,
+        denial,
+        funded,
+        funded_amount: fundedAmount
+      };
+    });
+
+    if (!rows.length) return false;
+
+    // 3) insert rows
+    const { error: insErr } = await window.sb
+      .from('monthly_snapshots')
+      .insert(rows);
+    if (insErr) { console.error('[sb] insert month failed:', insErr); return false; }
+
+    console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);
+    return true;
+  } catch (e) {
+    console.error('[sb] saveMonthlySnapshotSB error:', e);
+    return false;
+  }
+}
 
 /* ---------- Formatting helpers ---------- */
 function monthName(m) {
@@ -1531,17 +1594,27 @@ $('#btnSaveMonth')?.addEventListener('click', () => {
       snaps.push(lastBuiltSnapshot);
     }
 
-    // 3) Keep them sorted by id (YYYY-MM)
-    snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+   // 3) Keep them sorted by id (YYYY-MM)
+snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-    // 4) Persist
-    setSnaps(snaps);
+// 4) persist
+setSnaps(snaps);
 
-    // 5) Immediately refresh UI and go to Monthly
-    //    (Guard each call so nothing crashes if a section is hidden)
-    try { buildSidebar(); } catch {}
-    try { refreshMonthlyGrid(); } catch {}
-    try { switchTab('Monthly'); } catch {}
+/* 4.5) Save to Supabase (cloud) if available */
+try {
+  if (window.sb && window.lastBuiltSnapshot && Array.isArray(window.lastBuiltSnapshot.dealerRows)) {
+    const ok = await saveMonthlySnapshotSB(window.lastBuiltSnapshot);
+    if (!ok) console.warn('[save] Supabase insert failed — using local only');
+  }
+} catch (e) {
+  console.error('[save] Supabase save error:', e);
+}
+
+// 5) Immediately refresh UI and go to Monthly
+try { buildSidebar(); } catch {}
+try { refreshMonthlyGrid(); } catch {}
+try { switchTab('Monthly'); } catch {}
+
 
     // 6) Friendly confirmation
     const m = lastBuiltSnapshot.month, y = lastBuiltSnapshot.year;
