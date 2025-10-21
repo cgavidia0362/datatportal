@@ -2578,79 +2578,142 @@ if (dBody) {
   paint();
 }
 
- // --- Franchise vs Independent (YTD) — build + paint rows
-// Uses your existing helpers: normFI(), parseNumber(), formatMoney(), formatPct()
+// --- Franchise vs Independent (YTD) — build + paint rows
+// Uses your existing helpers: formatMoney(), formatPct()
+// Read from Supabase if available; otherwise keep existing local aggregation.
 
-const fiAgg = new Map(); // keys: 'Independent' | 'Franchise' | 'Unknown'
-function ensureFI(k) {
-  if (!fiAgg.has(k)) {
-    fiAgg.set(k, {
-      type: k,
-      total: 0,
-      approved: 0,
-      counter: 0,
-      pending: 0,
-      denial: 0,
-      funded: 0,
-      amount: 0, // total funded dollars
-    });
+let fiRows = [];
+
+if (window.sb) {
+  // ✔ SB path: read YTD from fi_yearly
+  const fi = await fetchFIYTD_SB(year); // returns { Franchise: {...}, Independent: {...} } or null
+  if (fi) {
+    const parts = [];
+    if (fi.Independent) {
+      parts.push({
+        type: 'Independent',
+        total:        Number(fi.Independent.total)        || 0,
+        approved:     Number(fi.Independent.approved)     || 0,
+        counter:      Number(fi.Independent.counter)      || 0,
+        pending:      Number(fi.Independent.pending)      || 0,
+        denial:       Number(fi.Independent.denial)       || 0,
+        funded:       Number(fi.Independent.funded)       || 0,
+        amount:       Number(fi.Independent.fundedAmount) || 0
+      });
+    }
+    if (fi.Franchise) {
+      parts.push({
+        type: 'Franchise',
+        total:        Number(fi.Franchise.total)        || 0,
+        approved:     Number(fi.Franchise.approved)     || 0,
+        counter:      Number(fi.Franchise.counter)      || 0,
+        pending:      Number(fi.Franchise.pending)      || 0,
+        denial:       Number(fi.Franchise.denial)       || 0,
+        funded:       Number(fi.Franchise.funded)       || 0,
+        amount:       Number(fi.Franchise.fundedAmount) || 0
+      });
+    }
+
+    fiRows = parts.map((x) => ({
+      ...x,
+      lta: x.total ? x.approved / x.total : 0,
+      ltb: x.total ? x.funded   / x.total : 0,
+    }));
+
+    // Add "All Types" summary at the top
+    const all = fiRows.reduce(
+      (a, r) => ({
+        type: 'All Types',
+        total:    a.total    + r.total,
+        approved: a.approved + r.approved,
+        counter:  a.counter  + r.counter,
+        pending:  a.pending  + r.pending,
+        denial:   a.denial   + r.denial,
+        funded:   a.funded   + r.funded,
+        amount:   a.amount   + r.amount,
+      }),
+      { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
+    );
+    all.lta = all.total ? all.approved / all.total : 0;
+    all.ltb = all.total ? all.funded  / all.total : 0;
+
+    const desiredOrder = ['All Types', 'Independent', 'Franchise'];
+    fiRows = [all].concat(
+      desiredOrder.slice(1).map((t) => fiRows.find((r) => r.type === t)).filter(Boolean)
+    );
   }
-  return fiAgg.get(k);
+} else {
+  // 🔁 Fallback: keep your original local aggregation
+  const fiAgg = new Map(); // keys: 'Independent' | 'Franchise' | 'Unknown'
+  function ensureFI(k) {
+    if (!fiAgg.has(k)) {
+      fiAgg.set(k, {
+        type: k,
+        total: 0,
+        approved: 0,
+        counter: 0,
+        pending: 0,
+        denial: 0,
+        funded: 0,
+        amount: 0, // total funded dollars
+      });
+    }
+    return fiAgg.get(k);
+  }
+
+  // 1) Sum monthly FI tallies from snapshot summaries
+  list.forEach((snap) => {
+    (snap.fiRows || []).forEach((r) => {
+      const k = r.type || 'Unknown';
+      const x = ensureFI(k);
+      x.total    += r.total   || 0;
+      x.approved += r.approved|| 0;
+      x.counter  += r.counter || 0;
+      x.pending  += r.pending || 0;
+      x.denial   += r.denial  || 0;
+      x.funded   += r.funded  || 0;
+    });
+  });
+
+  // 2) Sum funded dollars by FI from fundedRawRows
+  list.forEach((snap) => {
+    (snap.fundedRawRows || []).forEach((r) => {
+      const k = r.FI || 'Unknown';
+      const x = ensureFI(k);
+      x.amount += parseNumber(r['Loan Amount']);
+    });
+  });
+
+  // 3) Compute LTA/LTB
+  fiRows = Array.from(fiAgg.values()).map((x) => ({
+    ...x,
+    lta: x.total ? x.approved / x.total : 0,
+    ltb: x.total ? x.funded   / x.total : 0,
+  }));
+
+  // 4) Prepend "All Types"
+  const all = fiRows.reduce(
+    (a, r) => ({
+      type: 'All Types',
+      total:    a.total    + r.total,
+      approved: a.approved + r.approved,
+      counter:  a.counter  + r.counter,
+      pending:  a.pending  + r.pending,
+      denial:   a.denial   + r.denial,
+      funded:   a.funded   + r.funded,
+      amount:   a.amount   + r.amount,
+    }),
+    { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
+  );
+  all.lta = all.total ? all.approved / all.total : 0;
+  all.ltb = all.total ? all.funded  / all.total : 0;
+
+  const desiredOrder = ['All Types', 'Independent', 'Franchise'];
+  fiRows = [all].concat(
+    desiredOrder.slice(1).map((t) => fiRows.find((r) => r.type === t)).filter(Boolean)
+  );
 }
 
-// 1) Sum the monthly FI tallies (counts) from snapshot-level summaries
-list.forEach((snap) => {
-  (snap.fiRows || []).forEach((r) => {
-    const k = r.type || 'Unknown';
-    const x = ensureFI(k);
-    x.total    += r.total   || 0;
-    x.approved += r.approved|| 0;
-    x.counter  += r.counter || 0;
-    x.pending  += r.pending || 0;
-    x.denial   += r.denial  || 0;
-    x.funded   += r.funded  || 0;
-  });
-
-  // 2) Add funded dollars from raw funded rows for this month
-  (snap.fundedRawRows || []).forEach((raw) => {
-    const k   = normFI(raw.FI);                    // your existing helper
-    const amt = parseNumber(raw['Loan Amount']);   // your existing helper
-    if (isFinite(amt)) ensureFI(k).amount += amt;
-  });
-});
-
-// 3) Shape rows with LTA/LTB
-let fiRows = Array.from(fiAgg.values()).map((x) => ({
-  ...x,
-  lta: x.total ? x.approved / x.total : 0,
-  ltb: x.total ? x.funded   / x.total : 0,
-}));
-
-// 4) Build "All Types" summary at the top
-const all = fiRows.reduce(
-  (a, r) => ({
-    type: 'All Types',
-    total:    a.total    + r.total,
-    approved: a.approved + r.approved,
-    counter:  a.counter  + r.counter,
-    pending:  a.pending  + r.pending,
-    denial:   a.denial   + r.denial,
-    funded:   a.funded   + r.funded,
-    amount:   a.amount   + r.amount,
-  }),
-  { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
-);
-all.lta = all.total ? all.approved / all.total : 0;
-all.ltb = all.total ? all.funded  / all.total : 0;
-
-// 5) Order rows: All Types, Independent, Franchise
-const desiredOrder = ['All Types', 'Independent', 'Franchise'];
-fiRows = [all].concat(
-  desiredOrder
-    .slice(1)
-    .map((t) => fiRows.find((r) => r.type === t))
-    .filter(Boolean)
-);
 
 // 6) Paint table
 const fiEl = document.getElementById('yrFiDetailBody');
