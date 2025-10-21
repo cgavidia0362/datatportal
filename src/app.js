@@ -677,15 +677,23 @@ window.addEventListener('drop',     (e) => { e.preventDefault(); e.stopPropagati
 dropArea?.addEventListener('click', () => fileInput?.click());
 dropArea?.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('bg-blue-50'); });
 dropArea?.addEventListener('dragleave', () => dropArea.classList.remove('bg-blue-50'));
-dropArea?.addEventListener('drop', (e) => {
+dropArea && dropArea.addEventListener('drop', (e) => {
   e.preventDefault(); e.stopPropagation();
   dropArea.classList.remove('bg-blue-50');
-  if (e.dataTransfer?.files?.[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput?.addEventListener('change', (e) => {
-  const f = e.target?.files?.[0];
+
+  var dt = e && e.dataTransfer;
+  var files = dt && dt.files;
+  var f = files && files.length ? files[0] : null;
   if (f) handleFile(f);
 });
+
+fileInput && fileInput.addEventListener('change', (e) => {
+  var tgt = e && e.target;
+  var files = tgt && tgt.files;
+  var f = files && files.length ? files[0] : null;
+  if (f) handleFile(f);
+});
+
 // Funded: elements + events
 const fundedDropArea  = $('#fundedDropArea');
 const fundedFileInput = $('#fundedFileInput');
@@ -693,15 +701,23 @@ const fundedFileInput = $('#fundedFileInput');
 fundedDropArea?.addEventListener('click', () => fundedFileInput?.click());
 fundedDropArea?.addEventListener('dragover', (e) => { e.preventDefault(); fundedDropArea.classList.add('bg-blue-50'); });
 fundedDropArea?.addEventListener('dragleave', () => fundedDropArea.classList.remove('bg-blue-50'));
-fundedDropArea?.addEventListener('drop', (e) => {
+fundedDropArea && fundedDropArea.addEventListener('drop', (e) => {
   e.preventDefault(); e.stopPropagation();
   fundedDropArea.classList.remove('bg-blue-50');
-  if (e.dataTransfer?.files?.[0]) handleFundedFile(e.dataTransfer.files[0]);
-});
-fundedFileInput?.addEventListener('change', (e) => {
-  const f = e.target?.files?.[0];
+
+  var dt = e && e.dataTransfer;
+  var files = dt && dt.files;
+  var f = files && files.length ? files[0] : null;
   if (f) handleFundedFile(f);
 });
+
+fundedFileInput && fundedFileInput.addEventListener('change', (e) => {
+  var tgt = e && e.target;
+  var files = tgt && tgt.files;
+  var f = files && files.length ? files[0] : null;
+  if (f) handleFundedFile(f);
+});
+
 // Collect rows the user has reviewed/edited in the merge modal
 // - Always include manual overrides (typed into .rv-input)
 // - If includeReviewed is true, also include rows with .rv-approve checked
@@ -2684,10 +2700,10 @@ if (window.sb) {
   window.spStates = states;
 
   // series map: state → [{ total, approved, funded, amount, ltb } per monthKey]
-  const byKey = (y:number,m:number,s:string) =>
+  const byKey = (y, m, s) =>
     `${y}-${String(m).padStart(2,'0')}|${s}`;
 
-  const lookup = new Map<string, any>();
+    const lookup = new Map();
   stateRows.forEach(r => lookup.set(byKey(r.year, r.month, r.state),
     {
       total: Number(r.totalApps)||0,
@@ -2697,7 +2713,7 @@ if (window.sb) {
     }
   ));
 
-  const seriesMap = new Map<string, any[]>();
+  const seriesMap = new Map();
   states.forEach(st => {
     const series = monthKeys.map(k => {
       const y = Number(k.slice(0,4));
@@ -2710,7 +2726,7 @@ if (window.sb) {
   });
 
   // expose for renderers
-  (window as any).spData = seriesMap;
+  window.spData = seriesMap;
 
 } else {
   // Fallback: use dealer rows from the in-memory monthly list
