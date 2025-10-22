@@ -1712,7 +1712,7 @@ _pendingMerge = {
   $('#btnExportFunded') && ($('#btnExportFunded').disabled = false);
 });
 
-$('#btnSaveMonth')?.addEventListener('click', () => {
+$('#btnSaveMonth')?.addEventListener('click', async () => {
   try {
     if (!lastBuiltSnapshot) {
       alert('Click Analyze first.');
@@ -1762,6 +1762,8 @@ try { switchTab('Monthly'); } catch {}
     // 6) Friendly confirmation
     const m = lastBuiltSnapshot.month, y = lastBuiltSnapshot.year;
     console.log('Saved month:', lastBuiltSnapshot.id);
+// ⬇️ NEW: rebuild Yearly tables so the Yearly tab populates
+await rebuildYearlyAggregatesSB(y);
   } catch (err) {
     console.error('Save month failed:', err);
     alert('Oops — could not save this month. Open the Console for details.');
