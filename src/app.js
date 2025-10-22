@@ -341,6 +341,69 @@ async function fetchYearlyBundleSB(year) {
     fiYTD:      results[3] || { Franchise: null, Independent: null }
   };
 }
+// === Save a month's dealer rows to Supabase ===============================
+// Writes one row per dealer into `monthly_snapshots` for (year, month).
+// Idempotent: deletes any existing rows for that (year,month) first.
+async function saveMonthlySnapshotSB(snap) {
+  try {
+    if (!window.sb || !snap || !Array.isArray(snap.dealerRows)) return false;
+
+    const y = Number(snap.year) || 0;
+    const m = Number(snap.month) || 0;
+    if (!y || !m) return false;
+
+    // 1) remove any existing rows for this (year, month)
+    let { error: delErr } = await window.sb
+      .from('monthly_snapshots')
+      .delete()
+      .eq('year', y)
+      .eq('month', m);
+    if (delErr) { console.error('[sb] delete existing month failed:', delErr); return false; }
+
+    // 2) prepare fresh rows (one per dealer)
+    const rows = (snap.dealerRows || []).map((r) => {
+      const total   = Number(r.total)    || 0;
+      const approved= Number(r.approved) || 0;
+      const counter = Number(r.counter)  || 0;
+      const pending = Number(r.pending)  || 0;
+      const denial  = Number(r.denial)   || 0;
+      const funded  = Number(r.funded)   || 0;
+
+      // funded_amount: try common property names we already compute in UI
+      const fundedAmount =
+        Number(r.funded_amount) || Number(r.fundedAmt) || Number(r.amount) || 0;
+
+      return {
+        year: y,
+        month: m,
+        dealer: (r.dealer || '').trim(),
+        state:  (r.state  || '').trim(),
+        fi:     (r.fi     || '').trim(),
+        total_apps: total,
+        approved,
+        counter,
+        pending,
+        denial,
+        funded,
+        funded_amount: fundedAmount
+      };
+    });
+
+    if (!rows.length) return false;
+
+    // 3) insert rows
+    const { error: insErr } = await window.sb
+      .from('monthly_snapshots')
+      .insert(rows);
+    if (insErr) { console.error('[sb] insert month failed:', insErr); return false; }
+
+    console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);
+    return true;
+  } catch (e) {
+    console.error('[sb] saveMonthlySnapshotSB error:', e);
+    return false;
+  }
+}
 
 /* ---------- Formatting helpers ---------- */
 function monthName(m) {
@@ -671,18 +734,29 @@ let _pendingMerge = null;
 const dropArea = $('#dropArea');
 const fileInput = $('#fileInput');
 
+window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+window.addEventListener('drop',     (e) => { e.preventDefault(); e.stopPropagation(); });
+
 dropArea?.addEventListener('click', () => fileInput?.click());
 dropArea?.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('bg-blue-50'); });
 dropArea?.addEventListener('dragleave', () => dropArea.classList.remove('bg-blue-50'));
-dropArea?.addEventListener('drop', (e) => {
-  e.preventDefault();
+dropArea && dropArea.addEventListener('drop', (e) => {
+  e.preventDefault(); e.stopPropagation();
   dropArea.classList.remove('bg-blue-50');
-  if (e.dataTransfer?.files?.[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput?.addEventListener('change', (e) => {
-  const f = e.target?.files?.[0];
+
+  var dt = e && e.dataTransfer;
+  var files = dt && dt.files;
+  var f = files && files.length ? files[0] : null;
   if (f) handleFile(f);
 });
+
+fileInput && fileInput.addEventListener('change', (e) => {
+  var tgt = e && e.target;
+  var files = tgt && tgt.files;
+  var f = files && files.length ? files[0] : null;
+  if (f) handleFile(f);
+});
+
 // Funded: elements + events
 const fundedDropArea  = $('#fundedDropArea');
 const fundedFileInput = $('#fundedFileInput');
@@ -690,15 +764,23 @@ const fundedFileInput = $('#fundedFileInput');
 fundedDropArea?.addEventListener('click', () => fundedFileInput?.click());
 fundedDropArea?.addEventListener('dragover', (e) => { e.preventDefault(); fundedDropArea.classList.add('bg-blue-50'); });
 fundedDropArea?.addEventListener('dragleave', () => fundedDropArea.classList.remove('bg-blue-50'));
-fundedDropArea?.addEventListener('drop', (e) => {
-  e.preventDefault();
+fundedDropArea && fundedDropArea.addEventListener('drop', (e) => {
+  e.preventDefault(); e.stopPropagation();
   fundedDropArea.classList.remove('bg-blue-50');
-  if (e.dataTransfer?.files?.[0]) handleFundedFile(e.dataTransfer.files[0]);
-});
-fundedFileInput?.addEventListener('change', (e) => {
-  const f = e.target?.files?.[0];
+
+  var dt = e && e.dataTransfer;
+  var files = dt && dt.files;
+  var f = files && files.length ? files[0] : null;
   if (f) handleFundedFile(f);
 });
+
+fundedFileInput && fundedFileInput.addEventListener('change', (e) => {
+  var tgt = e && e.target;
+  var files = tgt && tgt.files;
+  var f = files && files.length ? files[0] : null;
+  if (f) handleFundedFile(f);
+});
+
 // Collect rows the user has reviewed/edited in the merge modal
 // - Always include manual overrides (typed into .rv-input)
 // - If includeReviewed is true, also include rows with .rv-approve checked
@@ -1512,17 +1594,33 @@ $('#btnSaveMonth')?.addEventListener('click', () => {
       snaps.push(lastBuiltSnapshot);
     }
 
-    // 3) Keep them sorted by id (YYYY-MM)
-    snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+   // 3) Keep them sorted by id (YYYY-MM)
+snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-    // 4) Persist
-    setSnaps(snaps);
+// 4) persist
+setSnaps(snaps);
 
-    // 5) Immediately refresh UI and go to Monthly
-    //    (Guard each call so nothing crashes if a section is hidden)
-    try { buildSidebar(); } catch {}
-    try { refreshMonthlyGrid(); } catch {}
-    try { switchTab('Monthly'); } catch {}
+/* 4.5) Save to Supabase (cloud) if available */
+try {
+  if (window.sb && window.lastBuiltSnapshot && Array.isArray(window.lastBuiltSnapshot.dealerRows)) {
+    saveMonthlySnapshotSB(window.lastBuiltSnapshot)
+      .then(function (ok) {
+        if (!ok) console.warn('[save] Supabase insert failed — using local only');
+      })
+      .catch(function (e) {
+        console.error('[save] Supabase save error:', e);
+      });
+  }
+} catch (e) {
+  console.error('[save] Supabase save error:', e);
+}
+
+
+// 5) Immediately refresh UI and go to Monthly
+try { buildSidebar(); } catch {}
+try { refreshMonthlyGrid(); } catch {}
+try { switchTab('Monthly'); } catch {}
+
 
     // 6) Friendly confirmation
     const m = lastBuiltSnapshot.month, y = lastBuiltSnapshot.year;
@@ -1564,12 +1662,18 @@ async function refreshMonthlyGrid() {
     grid.innerHTML = '<div class="text-sm text-slate-500">Loading from Supabase…</div>';
     var snaps = await fetchMonthlySummariesSB();
     if (!snaps || !snaps.length) {
-      grid.innerHTML = '<div class="text-sm text-gray-500">No months yet.</div>';
+      // ⤵️ Fallback to localStorage if SB is empty/locked (dev/RLS)
+      const snapsLocal = getSnaps().slice(-12);
+      if (snapsLocal.length) {
+        renderCards(snapsLocal);
+      } else {
+        grid.innerHTML = '<div class="text-sm text-gray-500">No months yet.</div>';
+      }
       return;
     }
     renderCards(snaps.map(function (s) { return Object.assign({}, s, { __fromSB: true }); }));
   } else {
-    var snapsLocal = getSnaps().slice(-12);
+    const snapsLocal = getSnaps().slice(-12);
     renderCards(snapsLocal);
   }
 
@@ -2559,79 +2663,142 @@ if (dBody) {
   paint();
 }
 
- // --- Franchise vs Independent (YTD) — build + paint rows
-// Uses your existing helpers: normFI(), parseNumber(), formatMoney(), formatPct()
+// --- Franchise vs Independent (YTD) — build + paint rows
+// Uses your existing helpers: formatMoney(), formatPct()
+// Read from Supabase if available; otherwise keep existing local aggregation.
 
-const fiAgg = new Map(); // keys: 'Independent' | 'Franchise' | 'Unknown'
-function ensureFI(k) {
-  if (!fiAgg.has(k)) {
-    fiAgg.set(k, {
-      type: k,
-      total: 0,
-      approved: 0,
-      counter: 0,
-      pending: 0,
-      denial: 0,
-      funded: 0,
-      amount: 0, // total funded dollars
-    });
+let fiRows = [];
+
+if (window.sb) {
+  // ✔ SB path: read YTD from fi_yearly
+  const fi = await fetchFIYTD_SB(year); // returns { Franchise: {...}, Independent: {...} } or null
+  if (fi) {
+    const parts = [];
+    if (fi.Independent) {
+      parts.push({
+        type: 'Independent',
+        total:        Number(fi.Independent.total)        || 0,
+        approved:     Number(fi.Independent.approved)     || 0,
+        counter:      Number(fi.Independent.counter)      || 0,
+        pending:      Number(fi.Independent.pending)      || 0,
+        denial:       Number(fi.Independent.denial)       || 0,
+        funded:       Number(fi.Independent.funded)       || 0,
+        amount:       Number(fi.Independent.fundedAmount) || 0
+      });
+    }
+    if (fi.Franchise) {
+      parts.push({
+        type: 'Franchise',
+        total:        Number(fi.Franchise.total)        || 0,
+        approved:     Number(fi.Franchise.approved)     || 0,
+        counter:      Number(fi.Franchise.counter)      || 0,
+        pending:      Number(fi.Franchise.pending)      || 0,
+        denial:       Number(fi.Franchise.denial)       || 0,
+        funded:       Number(fi.Franchise.funded)       || 0,
+        amount:       Number(fi.Franchise.fundedAmount) || 0
+      });
+    }
+
+    fiRows = parts.map((x) => ({
+      ...x,
+      lta: x.total ? x.approved / x.total : 0,
+      ltb: x.total ? x.funded   / x.total : 0,
+    }));
+
+    // Add "All Types" summary at the top
+    const all = fiRows.reduce(
+      (a, r) => ({
+        type: 'All Types',
+        total:    a.total    + r.total,
+        approved: a.approved + r.approved,
+        counter:  a.counter  + r.counter,
+        pending:  a.pending  + r.pending,
+        denial:   a.denial   + r.denial,
+        funded:   a.funded   + r.funded,
+        amount:   a.amount   + r.amount,
+      }),
+      { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
+    );
+    all.lta = all.total ? all.approved / all.total : 0;
+    all.ltb = all.total ? all.funded  / all.total : 0;
+
+    const desiredOrder = ['All Types', 'Independent', 'Franchise'];
+    fiRows = [all].concat(
+      desiredOrder.slice(1).map((t) => fiRows.find((r) => r.type === t)).filter(Boolean)
+    );
   }
-  return fiAgg.get(k);
+} else {
+  // 🔁 Fallback: keep your original local aggregation
+  const fiAgg = new Map(); // keys: 'Independent' | 'Franchise' | 'Unknown'
+  function ensureFI(k) {
+    if (!fiAgg.has(k)) {
+      fiAgg.set(k, {
+        type: k,
+        total: 0,
+        approved: 0,
+        counter: 0,
+        pending: 0,
+        denial: 0,
+        funded: 0,
+        amount: 0, // total funded dollars
+      });
+    }
+    return fiAgg.get(k);
+  }
+
+  // 1) Sum monthly FI tallies from snapshot summaries
+  list.forEach((snap) => {
+    (snap.fiRows || []).forEach((r) => {
+      const k = r.type || 'Unknown';
+      const x = ensureFI(k);
+      x.total    += r.total   || 0;
+      x.approved += r.approved|| 0;
+      x.counter  += r.counter || 0;
+      x.pending  += r.pending || 0;
+      x.denial   += r.denial  || 0;
+      x.funded   += r.funded  || 0;
+    });
+  });
+
+  // 2) Sum funded dollars by FI from fundedRawRows
+  list.forEach((snap) => {
+    (snap.fundedRawRows || []).forEach((r) => {
+      const k = r.FI || 'Unknown';
+      const x = ensureFI(k);
+      x.amount += parseNumber(r['Loan Amount']);
+    });
+  });
+
+  // 3) Compute LTA/LTB
+  fiRows = Array.from(fiAgg.values()).map((x) => ({
+    ...x,
+    lta: x.total ? x.approved / x.total : 0,
+    ltb: x.total ? x.funded   / x.total : 0,
+  }));
+
+  // 4) Prepend "All Types"
+  const all = fiRows.reduce(
+    (a, r) => ({
+      type: 'All Types',
+      total:    a.total    + r.total,
+      approved: a.approved + r.approved,
+      counter:  a.counter  + r.counter,
+      pending:  a.pending  + r.pending,
+      denial:   a.denial   + r.denial,
+      funded:   a.funded   + r.funded,
+      amount:   a.amount   + r.amount,
+    }),
+    { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
+  );
+  all.lta = all.total ? all.approved / all.total : 0;
+  all.ltb = all.total ? all.funded  / all.total : 0;
+
+  const desiredOrder = ['All Types', 'Independent', 'Franchise'];
+  fiRows = [all].concat(
+    desiredOrder.slice(1).map((t) => fiRows.find((r) => r.type === t)).filter(Boolean)
+  );
 }
 
-// 1) Sum the monthly FI tallies (counts) from snapshot-level summaries
-list.forEach((snap) => {
-  (snap.fiRows || []).forEach((r) => {
-    const k = r.type || 'Unknown';
-    const x = ensureFI(k);
-    x.total    += r.total   || 0;
-    x.approved += r.approved|| 0;
-    x.counter  += r.counter || 0;
-    x.pending  += r.pending || 0;
-    x.denial   += r.denial  || 0;
-    x.funded   += r.funded  || 0;
-  });
-
-  // 2) Add funded dollars from raw funded rows for this month
-  (snap.fundedRawRows || []).forEach((raw) => {
-    const k   = normFI(raw.FI);                    // your existing helper
-    const amt = parseNumber(raw['Loan Amount']);   // your existing helper
-    if (isFinite(amt)) ensureFI(k).amount += amt;
-  });
-});
-
-// 3) Shape rows with LTA/LTB
-let fiRows = Array.from(fiAgg.values()).map((x) => ({
-  ...x,
-  lta: x.total ? x.approved / x.total : 0,
-  ltb: x.total ? x.funded   / x.total : 0,
-}));
-
-// 4) Build "All Types" summary at the top
-const all = fiRows.reduce(
-  (a, r) => ({
-    type: 'All Types',
-    total:    a.total    + r.total,
-    approved: a.approved + r.approved,
-    counter:  a.counter  + r.counter,
-    pending:  a.pending  + r.pending,
-    denial:   a.denial   + r.denial,
-    funded:   a.funded   + r.funded,
-    amount:   a.amount   + r.amount,
-  }),
-  { type:'All Types', total:0, approved:0, counter:0, pending:0, denial:0, funded:0, amount:0 }
-);
-all.lta = all.total ? all.approved / all.total : 0;
-all.ltb = all.total ? all.funded  / all.total : 0;
-
-// 5) Order rows: All Types, Independent, Franchise
-const desiredOrder = ['All Types', 'Independent', 'Franchise'];
-fiRows = [all].concat(
-  desiredOrder
-    .slice(1)
-    .map((t) => fiRows.find((r) => r.type === t))
-    .filter(Boolean)
-);
 
 // 6) Paint table
 const fiEl = document.getElementById('yrFiDetailBody');
@@ -2681,10 +2848,10 @@ if (window.sb) {
   window.spStates = states;
 
   // series map: state → [{ total, approved, funded, amount, ltb } per monthKey]
-  const byKey = (y:number,m:number,s:string) =>
+  const byKey = (y, m, s) =>
     `${y}-${String(m).padStart(2,'0')}|${s}`;
 
-  const lookup = new Map<string, any>();
+    const lookup = new Map();
   stateRows.forEach(r => lookup.set(byKey(r.year, r.month, r.state),
     {
       total: Number(r.totalApps)||0,
@@ -2694,7 +2861,7 @@ if (window.sb) {
     }
   ));
 
-  const seriesMap = new Map<string, any[]>();
+  const seriesMap = new Map();
   states.forEach(st => {
     const series = monthKeys.map(k => {
       const y = Number(k.slice(0,4));
@@ -2707,7 +2874,7 @@ if (window.sb) {
   });
 
   // expose for renderers
-  (window as any).spData = seriesMap;
+  window.spData = seriesMap;
 
 } else {
   // Fallback: use dealer rows from the in-memory monthly list
