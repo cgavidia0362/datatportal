@@ -341,6 +341,44 @@ async function fetchYearlyBundleSB(year) {
     fiYTD:      results[3] || { Franchise: null, Independent: null }
   };
 }
+// === Year Select (populate from Supabase; fallback to current year) =======
+async function ensureYearOptionsSB() {
+  const sel =
+    document.getElementById('yearSelect') ||
+    document.getElementById('yrSelect') ||
+    document.querySelector('[data-role="year-select"]');
+  if (!sel) return;
+
+  let years = [];
+
+  if (window.sb) {
+    // Prefer years that already have yearly rollups
+    let { data: y1, error: e1 } = await window.sb
+      .from('yearly_dealer_totals')
+      .select('year')
+      .order('year', { ascending: false })
+      .limit(5000);
+    if (!e1 && Array.isArray(y1)) years = [...new Set(y1.map(r => Number(r.year) || 0))];
+
+    // Fallback to monthly_snapshots if yearly table is empty (first run)
+    if (!years.length) {
+      let { data: y2, error: e2 } = await window.sb
+        .from('monthly_snapshots')
+        .select('year')
+        .order('year', { ascending: false })
+        .limit(5000);
+      if (!e2 && Array.isArray(y2)) years = [...new Set(y2.map(r => Number(r.year) || 0))];
+    }
+  }
+
+  if (!years.length) years = [new Date().getFullYear()];
+
+  // Rebuild options
+  sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  // Keep existing value if possible, else pick newest
+  if (!sel.value || !years.includes(Number(sel.value))) sel.value = String(years[0]);
+}
+
 // === Save a month's dealer rows to Supabase ===============================
 // Writes one row per dealer into `monthly_snapshots` for (year, month).
 // Idempotent: deletes any existing rows for that (year,month) first.
@@ -858,7 +896,14 @@ function switchTab(id) {
     else                      b.classList.remove('bg-blue-50','text-blue-700','font-semibold');
   });
   if (id === 'Monthly') refreshMonthlyGrid();
-  if (id === 'Yearly')  refreshYearly();
+  if (id === 'Yearly') {
+    // Fill the year dropdown from Supabase, then render the Yearly tab
+    ensureYearOptionsSB().then(async () => {
+      if (typeof refreshYearly === 'function') {
+        await refreshYearly();
+      }
+    });
+  }  
 }
 
 /* ---------- Upload & Map ---------- */
@@ -3403,3 +3448,42 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Boot error:', e);
   }
 });
+// --- Minimal Yearly refresh wrapper (safe, no breaking) ---
+async function refreshYearly() {
+  try {
+    // Make sure the dropdown has options (from Supabase)
+    await ensureYearOptionsSB();
+
+    // Read selected year (fallback to current year)
+    const sel =
+      document.getElementById('yearSelect') ||
+      document.getElementById('yrSelect') ||
+      document.querySelector('[data-role="year-select"]');
+    const year = Number(sel?.value) || new Date().getFullYear();
+
+    // Pull all Yearly data in one go
+    const bundle = await fetchYearlyBundleSB(year);
+    if (!bundle) return;
+
+    // Call renderers if they exist (no-ops if missing)
+    if (typeof renderYearlyCards === 'function')        { try { renderYearlyCards(bundle, year); } catch {} }
+    if (typeof renderYearlyMoM === 'function')          { try { renderYearlyMoM(bundle, year); } catch {} }
+    if (typeof renderFundedByMonthChart === 'function') { try { renderFundedByMonthChart(bundle, year); } catch {} }
+    if (typeof renderFIYTD === 'function')              { try { renderFIYTD(bundle, year); } catch {} }
+    if (typeof renderStatePerformance === 'function')   { try { renderStatePerformance(bundle, year); } catch {} }
+    if (typeof renderDealerYTDTable === 'function')     { try { renderDealerYTDTable(bundle, year); } catch {} }
+  } catch (e) {
+    console.error('refreshYearly failed:', e);
+  }
+}
+// Re-render Yearly when the user changes the year
+(function wireYearSelectChange(){
+  const sel =
+    document.getElementById('yearSelect') ||
+    document.getElementById('yrSelect') ||
+    document.querySelector('[data-role="year-select"]');
+  if (!sel) return;
+  sel.addEventListener('change', async () => {
+    if (typeof refreshYearly === 'function') await refreshYearly();
+  });
+})();
