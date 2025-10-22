@@ -398,9 +398,146 @@ async function saveMonthlySnapshotSB(snap) {
     if (insErr) { console.error('[sb] insert month failed:', insErr); return false; }
 
     console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);
-    return true;
+
+    // NEW: rebuild Yearly aggregates for this year
+    await rebuildYearlyAggregatesSB(y);
+    
+    return true;    
   } catch (e) {
     console.error('[sb] saveMonthlySnapshotSB error:', e);
+    return false;
+  }
+}
+// === Rebuild Yearly Aggregates from `monthly_snapshots` ===================
+async function rebuildYearlyAggregatesSB(year) {
+  try {
+    if (!window.sb) return false;
+    const y = Number(year) || 0;
+    if (!y) return false;
+
+    // 1) Pull ALL rows for the year from monthly_snapshots
+    const { data, error } = await window.sb
+      .from('monthly_snapshots')
+      .select('dealer,state,fi,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
+      .eq('year', y)
+      .limit(50000);
+
+    if (error) {
+      console.error('[sb] rebuildYearlyAggregatesSB: fetch monthly_snapshots failed:', error);
+      return false;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+
+    // 2) Build aggregations
+    // 2a) by dealer|state|fi  (for yearly_dealer_totals)
+    const byDealer = new Map();
+    // 2b) by state + month    (for state_monthly)
+    const byStateMonth = new Map(); // key: `${state}|${month}`
+    // 2c) by FI               (for fi_yearly)
+    const byFI = new Map(); // 'Franchise' or 'Independent'
+
+    for (const r of rows) {
+      const dealer = String(r.dealer || '').trim();
+      const state  = String(r.state  || '').trim().toUpperCase();
+      const fi     = String(r.fi     || '').trim() || 'Independent';
+      const m      = Math.max(1, Math.min(12, Number(r.month) || 0));
+
+      const total_apps    = Number(r.total_apps)    || 0;
+      const approved      = Number(r.approved)      || 0;
+      const counter       = Number(r.counter)       || 0;
+      const pending       = Number(r.pending)       || 0;
+      const denial        = Number(r.denial)        || 0;
+      const funded        = Number(r.funded)        || 0;
+      const funded_amount = Number(r.funded_amount) || 0;
+
+      // --- dealer rollup
+      const dKey = `${dealer}|${state}|${fi}`;
+      const dCur = byDealer.get(dKey) || {
+        year: y, dealer, state, fi,
+        total_apps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, funded_amount: 0
+      };
+      dCur.total_apps    += total_apps;
+      dCur.approved      += approved;
+      dCur.counter       += counter;
+      dCur.pending       += pending;
+      dCur.denial        += denial;
+      dCur.funded        += funded;
+      dCur.funded_amount += funded_amount;
+      byDealer.set(dKey, dCur);
+
+      // --- state/month rollup
+      const smKey = `${state}|${m}`;
+      const smCur = byStateMonth.get(smKey) || {
+        year: y, state, month: m,
+        total_apps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, funded_amount: 0
+      };
+      smCur.total_apps    += total_apps;
+      smCur.approved      += approved;
+      smCur.counter       += counter;
+      smCur.pending       += pending;
+      smCur.denial        += denial;
+      smCur.funded        += funded;
+      smCur.funded_amount += funded_amount;
+      byStateMonth.set(smKey, smCur);
+
+      // --- FI rollup
+      const fiKey = fi === 'Franchise' ? 'Franchise' : 'Independent';
+      const fiCur = byFI.get(fiKey) || {
+        year: y, fi: fiKey,
+        total_apps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, funded_amount: 0
+      };
+      fiCur.total_apps    += total_apps;
+      fiCur.approved      += approved;
+      fiCur.counter       += counter;
+      fiCur.pending       += pending;
+      fiCur.denial        += denial;
+      fiCur.funded        += funded;
+      fiCur.funded_amount += funded_amount;
+      byFI.set(fiKey, fiCur);
+    }
+
+    const dealerRows = Array.from(byDealer.values());
+    const stateRows  = Array.from(byStateMonth.values());
+    const fiRows     = Array.from(byFI.values());
+
+    // 3) Replace rows for this year in yearly tables
+    // NOTE: RLS must allow delete/insert for anon if you’re using anon key.
+    const del1 = await window.sb.from('yearly_dealer_totals').delete().eq('year', y);
+    if (del1.error) { console.error('[sb] yearly_dealer_totals delete failed:', del1.error); return false; }
+
+    const del2 = await window.sb.from('state_monthly').delete().eq('year', y);
+    if (del2.error) { console.error('[sb] state_monthly delete failed:', del2.error); return false; }
+
+    const del3 = await window.sb.from('fi_yearly').delete().eq('year', y);
+    if (del3.error) { console.error('[sb] fi_yearly delete failed:', del3.error); return false; }
+
+    // Insert in batches to be safe
+    if (dealerRows.length) {
+      const ins1 = await window.sb.from('yearly_dealer_totals').insert(dealerRows);
+      if (ins1.error) { console.error('[sb] yearly_dealer_totals insert failed:', ins1.error); return false; }
+    }
+    if (stateRows.length) {
+      const ins2 = await window.sb.from('state_monthly').insert(stateRows);
+      if (ins2.error) { console.error('[sb] state_monthly insert failed:', ins2.error); return false; }
+    }
+    if (fiRows.length) {
+      const ins3 = await window.sb.from('fi_yearly').insert(fiRows);
+      if (ins3.error) { console.error('[sb] fi_yearly insert failed:', ins3.error); return false; }
+    }
+
+    console.log('[sb] Rebuilt yearly aggregates for', y, {
+      dealers: dealerRows.length, stateMonths: stateRows.length, fi: fiRows.length
+    });
+
+    // 4) If user is on Yearly tab, refresh it
+    if (document.querySelector('#tab-Yearly') && !document.querySelector('#tab-Yearly').classList.contains('hidden')) {
+      try { if (typeof refreshYearly === 'function') await refreshYearly(); } catch {}
+    }
+
+    return true;
+  } catch (e) {
+    console.error('[sb] rebuildYearlyAggregatesSB error:', e);
     return false;
   }
 }
