@@ -344,9 +344,10 @@ async function fetchYearlyBundleSB(year) {
 // === Year Select (populate from Supabase; fallback to current year) =======
 async function ensureYearOptionsSB() {
   const sel =
-    document.getElementById('yearSelect') ||
-    document.getElementById('yrSelect') ||
-    document.querySelector('[data-role="year-select"]');
+  document.getElementById('yrYear') ||           // ← your real Yearly dropdown id
+  document.getElementById('yearSelect') ||
+  document.getElementById('yrSelect') ||
+  document.querySelector('[data-role="year-select"]');
   if (!sel) return;
 
   let years = [];
@@ -3477,8 +3478,11 @@ async function refreshYearly() {
   }
 }
 // Re-render Yearly when the user changes the year
+async function refreshYearly() { /* ... uses yrYear in the selector ... */ }
+
 (function wireYearSelectChange(){
   const sel =
+    document.getElementById('yrYear') ||
     document.getElementById('yearSelect') ||
     document.getElementById('yrSelect') ||
     document.querySelector('[data-role="year-select"]');
@@ -3487,3 +3491,4 @@ async function refreshYearly() {
     if (typeof refreshYearly === 'function') await refreshYearly();
   });
 })();
+
