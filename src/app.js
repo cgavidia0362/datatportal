@@ -341,44 +341,76 @@ async function fetchYearlyBundleSB(year) {
     fiYTD:      results[3] || { Franchise: null, Independent: null }
   };
 }
-// === Year Select (populate from Supabase; fallback to current year) =======
-async function ensureYearOptionsSB() {
-  // Your Yearly <select> id is "yrYear"
-  const sel =
+// Find the Yearly <select> no matter what its id or placement is
+function findYearSelect() {
+  // Try common ids first
+  let el =
     document.getElementById('yrYear') ||
     document.getElementById('yearSelect') ||
-    document.getElementById('yrSelect') ||
-    document.querySelector('[data-role="year-select"]');
-  if (!sel) return;
+    document.getElementById('yrSelect');
+
+  // If still not found, look inside the Yearly tab container for any <select>
+  if (!el) {
+    const yrTab = document.querySelector('#tab-Yearly') || document.querySelector('[data-tab-panel="Yearly"]');
+    if (yrTab) el = yrTab.querySelector('select');
+  }
+
+  // Absolute last resort: the first <select> on the page (so we never return null)
+  if (!el) el = document.querySelector('select');
+
+  return el || null;
+}
+
+// === Year Select (populate from Supabase; fallback to current year) =======
+async function ensureYearOptionsSB() {
+  const sel = findYearSelect();
+  if (!sel) { console.warn('[yearly] year <select> not found'); return; }
 
   let years = [];
+  let used = 'none';
 
   if (window.sb) {
-    // Prefer years that already have yearly rollups
-    let { data: y1, error: e1 } = await window.sb
+    // 1) Prefer years already present in yearly rollup tables
+    let y1 = await window.sb
       .from('yearly_dealer_totals')
       .select('year')
       .order('year', { ascending: false })
       .limit(5000);
-    if (!e1 && Array.isArray(y1)) years = [...new Set(y1.map(r => Number(r.year) || 0))];
 
-    // Fallback to monthly_snapshots if yearly tables are empty (first run)
+    if (!y1.error && Array.isArray(y1.data) && y1.data.length) {
+      years = [...new Set(y1.data.map(r => Number(r.year) || 0))];
+      used = 'yearly_dealer_totals';
+    }
+
+    // 2) If rollups are empty (first run), look at monthly_snapshots
     if (!years.length) {
-      let { data: y2, error: e2 } = await window.sb
+      let y2 = await window.sb
         .from('monthly_snapshots')
         .select('year')
         .order('year', { ascending: false })
         .limit(5000);
-      if (!e2 && Array.isArray(y2)) years = [...new Set(y2.map(r => Number(r.year) || 0))];
+
+      if (!y2.error && Array.isArray(y2.data) && y2.data.length) {
+        years = [...new Set(y2.data.map(r => Number(r.year) || 0))];
+        used = 'monthly_snapshots';
+      }
     }
   }
 
-  // Absolute fallback: current year so the UI doesn’t look blank
-  if (!years.length) years = [new Date().getFullYear()];
+  // 3) Absolute fallback so the UI doesn’t look dead
+  if (!years.length) {
+    years = [new Date().getFullYear()];
+    used = 'fallback(currentYear)';
+  }
 
-  // Rebuild options and default to newest year
+  // Build options
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-  if (!sel.value || !years.includes(Number(sel.value))) sel.value = String(years[0]);
+
+  // Keep selected if valid; otherwise choose the newest
+  const current = Number(sel.value);
+  if (!current || !years.includes(current)) sel.value = String(years[0]);
+
+  console.log('[yearly] year select populated via:', used, '→', years);
 }
 
 // === Save a month's dealer rows to Supabase ===============================
@@ -2476,7 +2508,8 @@ async function fetchMonthlyYearListSB(year) {
 }
 
 async function renderYearly() {
-  const yearSel = $('#yrYear'); if (!yearSel) return;
+  const yearSel = findYearSelect();
+if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
   const year = Number(yearSel.value) || new Date().getFullYear();
 
   // Build the month list: use Supabase if configured; else use your local snaps
@@ -3454,34 +3487,31 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 // --- Minimal Yearly refresh wrapper (safe, no breaking) ---
 async function refreshYearly() {
-  try {
-    // Make sure the dropdown has options (from Supabase)
-    await ensureYearOptionsSB();
+  // Always find the real <select> used in the Yearly header
+  const yearSel = findYearSelect();
+  if (!yearSel) { console.warn('[yearly] cannot refresh: no year <select>'); return; }
 
-    // Read selected year (fallback to current year)
-    const sel =
-      document.getElementById('yearSelect') ||
-      document.getElementById('yrSelect') ||
-      document.querySelector('[data-role="year-select"]');
-    const year = Number(sel?.value) || new Date().getFullYear();
+  // Fill the dropdown from Supabase (with safe fallbacks)
+  await ensureYearOptionsSB();
 
-    // Pull all Yearly data in one go
-    const bundle = await fetchYearlyBundleSB(year);
-    if (!bundle) return;
-
-    // Call renderers if they exist (no-ops if missing)
-    if (typeof renderYearlyCards === 'function')        { try { renderYearlyCards(bundle, year); } catch {} }
-    if (typeof renderYearlyMoM === 'function')          { try { renderYearlyMoM(bundle, year); } catch {} }
-    if (typeof renderFundedByMonthChart === 'function') { try { renderFundedByMonthChart(bundle, year); } catch {} }
-    if (typeof renderFIYTD === 'function')              { try { renderFIYTD(bundle, year); } catch {} }
-    if (typeof renderStatePerformance === 'function')   { try { renderStatePerformance(bundle, year); } catch {} }
-    if (typeof renderDealerYTDTable === 'function')     { try { renderDealerYTDTable(bundle, year); } catch {} }
-  } catch (e) {
-    console.error('refreshYearly failed:', e);
+  // Decide which year to render (newest if empty)
+  let year = Number(yearSel.value);
+  if (!year) {
+    const opts = Array.from(yearSel.options)
+      .map(o => Number(o.value))
+      .filter(Boolean)
+      .sort((a, b) => b - a);
+    year = opts[0] || new Date().getFullYear();
+    yearSel.value = String(year);
   }
+
+  // Re-render whenever the user changes the dropdown
+  yearSel.onchange = () => { renderYearly(); };
+
+  // Draw the Yearly view for the selected year
+  await renderYearly();
 }
 // Re-render Yearly when the user changes the year
-async function refreshYearly() { /* ... uses yrYear in the selector ... */ }
 
 (function wireYearSelectChange(){
   const sel =
