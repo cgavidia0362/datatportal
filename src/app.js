@@ -460,6 +460,7 @@ async function saveMonthlySnapshotSB(snap) {
         funded_amount: fundedAmount
       };
     });
+    console.log('[sb] prepared rows for insert:', rows.length);
 
     if (!rows.length) return false;
 
