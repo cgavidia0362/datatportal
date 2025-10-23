@@ -439,6 +439,8 @@ async function saveMonthlySnapshotSB(snap) {
     const y = Number(snap.year) || 0;
     const m = Number(snap.month) || 0;
     if (!y || !m) return false;
+// Show what we're about to save (UI message)
+setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
 
     // 1) remove any existing rows for this (year, month)
     let { error: delErr } = await window.sb
@@ -478,6 +480,7 @@ async function saveMonthlySnapshotSB(snap) {
       };
     });
     console.log('[sb] prepared rows for insert:', rows.length);
+    
     setSaveStatus(`Step 2: prepared ${rows.length} rows`);
 
     if (!rows.length) return false;
