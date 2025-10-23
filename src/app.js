@@ -11,6 +11,22 @@
 /* ---------- Tiny DOM helpers ---------- */
 const $  = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+/* ---------- Debug status helpers (UI only; no logic changes) ---------- */
+// Clear the Save Status box
+function clearSaveStatus() {
+  const el = $('#saveStatus');
+  if (!el) return;
+  el.textContent = '';
+  el.classList.add('whitespace-pre-wrap'); // keep nice wrapping
+}
+
+// Append a line with a timestamp to the Save Status box
+function setSaveStatus(msg) {
+  const el = $('#saveStatus');
+  if (!el) return;
+  const t = new Date().toLocaleTimeString();
+  el.textContent += (el.textContent ? '\n' : '') + `[${t}] ${msg}`;
+}
 
 /* ---------- Storage helpers ---------- */
 window.LS_KEY = 'ma_snaps_sidebar_v1';
@@ -431,6 +447,7 @@ async function saveMonthlySnapshotSB(snap) {
       .eq('year', y)
       .eq('month', m);
     if (delErr) { console.error('[sb] delete existing month failed:', delErr); return false; }
+    setSaveStatus(`Step 1: deleted any existing rows for ${y}-${String(m).padStart(2,'0')}`);
 
     // 2) prepare fresh rows (one per dealer)
     const rows = (snap.dealerRows || []).map((r) => {
@@ -461,20 +478,26 @@ async function saveMonthlySnapshotSB(snap) {
       };
     });
     console.log('[sb] prepared rows for insert:', rows.length);
+    setSaveStatus(`Step 2: prepared ${rows.length} rows`);
 
     if (!rows.length) return false;
 
-    // 3) insert rows
-    const { error: insErr } = await window.sb
-      .from('monthly_snapshots')
-      .insert(rows);
-    if (insErr) { console.error('[sb] insert month failed:', insErr); return false; }
-
-    console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);
-
+        // 3) insert rows
+        const { error: insErr } = await window.sb
+        .from('monthly_snapshots')
+        .insert(rows);
+      if (insErr) {
+        setSaveStatus(`Step 3: INSERT failed — ${insErr?.message || insErr?.code || 'unknown error'}`);
+        console.error('[sb] insert month failed:', insErr);
+        return false;
+      }
+  
+      setSaveStatus(`Step 3: inserted ${rows.length} rows`);
+      console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);  
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
-    
+    setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
+ 
     return true;    
   } catch (e) {
     console.error('[sb] saveMonthlySnapshotSB error:', e);
@@ -1798,6 +1821,9 @@ $('#btnSaveMonth')?.addEventListener('click', async () => {
       alert('Click Analyze first.');
       return;
     }
+    // --- show on-screen status (no DevTools needed)
+    clearSaveStatus();
+    setSaveStatus(`Saving ${lastBuiltSnapshot.year}-${String(lastBuiltSnapshot.month).padStart(2,'0')} with ${lastBuiltSnapshot.dealerRows?.length || 0} dealer rows...`);
 
     // 1) Read current list (same key used everywhere else)
     const snaps = getSnaps();
@@ -1821,12 +1847,17 @@ setSnaps(snaps);
 try {
   if (window.sb && window.lastBuiltSnapshot && Array.isArray(window.lastBuiltSnapshot.dealerRows)) {
     saveMonthlySnapshotSB(window.lastBuiltSnapshot)
-      .then(function (ok) {
-        if (!ok) console.warn('[save] Supabase insert failed — using local only');
-      })
-      .catch(function (e) {
-        console.error('[save] Supabase save error:', e);
-      });
+    .then(function (ok) {
+      if (ok) {
+        setSaveStatus('Save to Supabase: OK');
+      } else {
+        setSaveStatus('Save to Supabase: FAILED (see earlier steps)');
+      }
+    })
+    .catch(function (e) {
+      setSaveStatus(`Save to Supabase: ERROR — ${e?.message || e}`);
+      console.error('[save] Supabase save error:', e);
+    });  
   }
 } catch (e) {
   console.error('[save] Supabase save error:', e);
