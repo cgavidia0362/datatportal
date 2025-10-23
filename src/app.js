@@ -3494,4 +3494,32 @@ async function refreshYearly() { /* ... uses yrYear in the selector ... */ }
     if (typeof refreshYearly === 'function') await refreshYearly();
   });
 })();
+/* ---- Fallback wiring for the pre-filled sidebar in the HTML ---- */
+(function wireYearlyFallback() {
+  // 1) If the Yearly panel is (or becomes) visible, render it
+  try { refreshYearly(); } catch {}
+
+  // 2) If the HTML’s own nav is present, also hook its Yearly button
+  const yearlyBtn =
+    document.querySelector('#sidebar-nav button[data-tab="tab-Yearly"]') ||
+    document.querySelector('#sidebar-nav button[data-tab="Yearly"]');
+
+  if (yearlyBtn && !yearlyBtn.__yr_wired) {
+    yearlyBtn.addEventListener('click', () => {
+      try { refreshYearly(); } catch {}
+    });
+    yearlyBtn.__yr_wired = true;
+  }
+
+  // 3) If the Monthly button is clicked, keep Monthly fresh too
+  const monthlyBtn =
+    document.querySelector('#sidebar-nav button[data-tab="tab-Monthly"]') ||
+    document.querySelector('#sidebar-nav button[data-tab="Monthly"]');
+  if (monthlyBtn && !monthlyBtn.__mo_wired) {
+    monthlyBtn.addEventListener('click', () => {
+      try { refreshMonthlyGrid(); } catch {}
+    });
+    monthlyBtn.__mo_wired = true;
+  }
+})();
 
