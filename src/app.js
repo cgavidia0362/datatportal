@@ -343,11 +343,12 @@ async function fetchYearlyBundleSB(year) {
 }
 // === Year Select (populate from Supabase; fallback to current year) =======
 async function ensureYearOptionsSB() {
+  // Your Yearly <select> id is "yrYear"
   const sel =
-  document.getElementById('yrYear') ||           // ← your real Yearly dropdown id
-  document.getElementById('yearSelect') ||
-  document.getElementById('yrSelect') ||
-  document.querySelector('[data-role="year-select"]');
+    document.getElementById('yrYear') ||
+    document.getElementById('yearSelect') ||
+    document.getElementById('yrSelect') ||
+    document.querySelector('[data-role="year-select"]');
   if (!sel) return;
 
   let years = [];
@@ -361,7 +362,7 @@ async function ensureYearOptionsSB() {
       .limit(5000);
     if (!e1 && Array.isArray(y1)) years = [...new Set(y1.map(r => Number(r.year) || 0))];
 
-    // Fallback to monthly_snapshots if yearly table is empty (first run)
+    // Fallback to monthly_snapshots if yearly tables are empty (first run)
     if (!years.length) {
       let { data: y2, error: e2 } = await window.sb
         .from('monthly_snapshots')
@@ -372,11 +373,11 @@ async function ensureYearOptionsSB() {
     }
   }
 
+  // Absolute fallback: current year so the UI doesn’t look blank
   if (!years.length) years = [new Date().getFullYear()];
 
-  // Rebuild options
+  // Rebuild options and default to newest year
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-  // Keep existing value if possible, else pick newest
   if (!sel.value || !years.includes(Number(sel.value))) sel.value = String(years[0]);
 }
 
@@ -2413,18 +2414,20 @@ let spStates = [];               // ['IL','WI',...]
 let spData = new Map();          // state -> [{total, approved, funded, amount, ltb}]
 let spSparkCharts = [];          // list of tiny Chart.js instances
 
-function refreshYearly() {
-  const snaps = getSnaps();
-  const yearSel = $('#yrYear'); if (!yearSel) return;
+async function refreshYearly() {
 
-  const years = Array.from(new Set(snaps.map(s => s.year))).sort((a,b)=>a-b);
-  yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
-  if (years.length) {
-    const last = snaps[snaps.length-1];
-    yearSel.value = String(last.year);
-  }
+  const yearSel = document.getElementById('yrYear');
+  if (!yearSel) return;
+  
+  // Fill the dropdown from Supabase (fallbacks if empty)
+  await ensureYearOptionsSB();
+  
+  // Re-render when the user changes the year
   yearSel.onchange = () => renderYearly();
-  renderYearly();
+  
+  // Draw once for the currently selected year
+  await renderYearly();
+  
 }
 /* Build Yearly month list from Supabase (same shape your UI uses) */
 async function fetchMonthlyYearListSB(year) {
