@@ -490,6 +490,7 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
         const { error: insErr } = await window.sb
         .from('monthly_snapshots')
         .insert(rows);
+        console.log('[sb] insert response:', insErr);
       if (insErr) {
         setSaveStatus(`Step 3: INSERT failed — ${insErr?.message || insErr?.code || 'unknown error'}`);
         console.error('[sb] insert month failed:', insErr);
