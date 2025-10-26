@@ -433,9 +433,8 @@ async function ensureYearOptionsSB() {
 // Writes one row per dealer into `monthly_snapshots` for (year, month).
 // Idempotent: deletes any existing rows for that (year,month) first.
 async function saveMonthlySnapshotSB(snap) {
-  window.lastSnap = snap;
-
   try {
+    window.lastSnap = snap;                // <-- add THIS line here
     if (!window.sb || !snap || !Array.isArray(snap.dealerRows)) return false;
 
     const y = Number(snap.year) || 0;
