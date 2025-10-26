@@ -480,7 +480,8 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
       };
     });
     console.log('[sb] prepared rows for insert:', rows.length);
-    
+    console.log('[sb] first row preview:', rows[0]);
+
     setSaveStatus(`Step 2: prepared ${rows.length} rows`);
 
     if (!rows.length) return false;
