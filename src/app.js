@@ -578,27 +578,28 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
-    // === Save Monthly KPIs to Supabase ===
+  // === Save Monthly KPIs to Supabase (real values from snap.kpis) ===
 try {
-  const kpiData = {
-    year: y,
-    month: m,
-    avg_ltv_approved: 0, // replace later with actual LTV avg
-    avg_apr_funded: 0,   // replace later with actual APR avg
-    avg_discount_pct_funded: 0 // replace later with actual discount avg
-  };
-
-  const { error: kpiErr } = await window.sb
-    .from('monthly_kpis')
-    .upsert(kpiData, { onConflict: ['year', 'month'] });
-
-  if (kpiErr) console.error('[sb] monthly_kpis upsert error:', kpiErr);
-  else console.log('[sb] monthly_kpis upserted:', y, m);
+  const y = snap?.year, m = snap?.month;
+  const k = snap?.kpis || {};
+  if (window.sb && y && m) {
+    await window.sb
+      .from('monthly_kpis')
+      .upsert({
+        year: y,
+        month: m,
+        avg_ltv_approved:        k.avgLTVApproved ?? null,
+        avg_apr_funded:          k.avgAPRFunded ?? null,
+        avg_discount_pct_funded: k.avgDiscountPctFunded ?? null
+      }, { onConflict: ['year','month'] })
+      .select()
+      .single();
+    console.log('[sb] monthly_kpis upserted (real averages):', y, m, k);
+  }
 } catch (e) {
-  console.error('[sb] monthly_kpis save error:', e);
+  console.error('[save] monthly_kpis upsert error:', e);
 }
 
-// Persist month-level KPIs so tiles survive refresh
 try {
   const y = snap?.year, m = snap?.month;
   const k = snap?.kpis || {};
