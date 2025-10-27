@@ -585,43 +585,63 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
-  // === Save Monthly KPIs to Supabase (real values from snap.kpis) ===
+ // === Save Monthly KPIs to Supabase (real values from snap.kpis, with fallbacks) ===
 try {
   const y = snap?.year, m = snap?.month;
-  const k = snap?.kpis || {};
   if (window.sb && y && m) {
-    await window.sb
+    // Helpers to average from rows even if snap.kpis is missing fields
+    const pickNum = (r, keys) => {
+      for (const k of keys) {
+        const n = Number(r?.[k]);
+        if (Number.isFinite(n)) return n;
+      }
+      return null;
+    };
+    const _avgLocal = (rows, keys) => {
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      let sum = 0, cnt = 0;
+      for (const r of rows) {
+        const n = pickNum(r, keys);
+        if (Number.isFinite(n)) { sum += n; cnt++; }
+      }
+      return cnt ? (sum / cnt) : null;
+    };
+    // Prefer your global helper if it exists
+    const _avg = (rows, keys) =>
+      (typeof _avgFrom === 'function')
+        ? _avgFrom(rows, keys)
+        : _avgLocal(rows, keys);
+
+    const approvedRawRows = snap?.approvedRawRows || [];
+    const fundedRawRows   = snap?.fundedRawRows   || [];
+
+    // Fallbacks from raw data
+    const avgLTV_fallback  = _avg(approvedRawRows, ['LTV','LTV Buying','ltv']);
+    const avgAPR_fallback  = _avg(fundedRawRows,   ['APR','apr']);
+    const avgDisc_fallback = _avg(fundedRawRows,   [
+      'Lender Fee %','Discount %','discount_pct','lender_discount_pct','dealer_discount_pct','Lender Fee/Discount %'
+    ]);
+
+    const k = snap?.kpis || {};
+
+    // Prefer snap.kpis; else use fallbacks; else null
+    const avgLTVApprovedVal        = (k.avgLTVApproved        ?? avgLTV_fallback   ?? null);
+    const avgAPRFundedVal          = (k.avgAPRFunded          ?? avgAPR_fallback   ?? null);
+    const avgDiscountPctFundedVal  = (k.avgDiscountPctFunded  ?? avgDisc_fallback  ?? null);
+
+    const { data, error } = await window.sb
       .from('monthly_kpis')
       .upsert({
         year: y,
         month: m,
-        avg_ltv_approved:        k.avgLTVApproved ?? null,
-        avg_apr_funded:          k.avgAPRFunded ?? null,
-        avg_discount_pct_funded: k.avgDiscountPctFunded ?? null
+        avg_ltv_approved:        avgLTVApprovedVal,
+        avg_apr_funded:          avgAPRFundedVal,
+        avg_discount_pct_funded: avgDiscountPctFundedVal
       }, { onConflict: ['year','month'] })
       .select()
       .single();
-    console.log('[sb] monthly_kpis upserted (real averages):', y, m, k);
-  }
-} catch (e) {
-  console.error('[save] monthly_kpis upsert error:', e);
-}
 
-try {
-  const y = snap?.year, m = snap?.month;
-  const k = snap?.kpis || {};
-  if (window.sb && y && m) {
-    await window.sb
-      .from('monthly_kpis')
-      .upsert({
-        year: y,
-        month: m,
-        avg_ltv_approved: k.avgLTVApproved ?? null,
-        avg_apr_funded: k.avgAPRFunded ?? null,
-        avg_discount_pct_funded: k.avgDiscountPctFunded ?? null
-      })
-      .select()
-      .single();
+    console.log('[sb] monthly_kpis upserted (coalesced):', y, m, { avgLTVApprovedVal, avgAPRFundedVal, avgDiscountPctFundedVal }, { data, error });
   }
 } catch (e) {
   console.error('[save] monthly_kpis upsert error:', e);
