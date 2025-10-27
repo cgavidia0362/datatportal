@@ -163,6 +163,23 @@ async function buildMonthlySnapSB(year, month) {
   var fundedRawRows = data.map(function (r) {
     return { Dealer: r.dealer, State: r.state, FI: r.fi, 'Loan Amount': Number(r.funded_amount) || 0 };
   });
+// Build stateRows with robust total + LTA/LTB so Monthly renders after refresh
+var stateRows = Array.from(stateMap.values()).map(function (s) {
+  // some historical builds used totalApps/total_apps/apps; normalize to total
+  var total = (s.total != null ? s.total : 0)
+           || (s.totalApps != null ? s.totalApps : 0)
+           || (s.total_apps != null ? s.total_apps : 0)
+           || (s.apps != null ? s.apps : 0);
+
+  var approvedPlusCounter = (s.approved || 0) + (s.counter || 0);
+  var fundedCt            = (s.funded  || 0);
+
+  return Object.assign({}, s, {
+    total: total,
+    lta: total ? (approvedPlusCounter / total) : 0,
+    ltb: total ? (fundedCt / total) : 0
+  });
+});
 
   return {
     id: String(year) + '-' + String(month).padStart(2, '0'),
@@ -171,7 +188,7 @@ async function buildMonthlySnapSB(year, month) {
     totals: totals,
     kpis: { totalFunded: totalFunded },
     dealerRows: dealers,
-    stateRows: Array.from(stateMap.values()),
+    stateRows: stateRows,
     approvedRawRows: [],
     fundedRawRows: fundedRawRows
   };
