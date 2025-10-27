@@ -919,12 +919,38 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
     { type:'Franchise',   ...fiTallies.Franchise   },
   ];
 
-  // State rows array (include all buckets + LTA/LTB)
-  const stateRows = Array.from(stateMap.values()).map(s => ({
+  // State rows array (include all buckets + robust LTA/LTB)
+// NOTE: some builds used s.totalApps instead of s.total, so compute a safe total.
+const stateRows = Array.from(stateMap.values()).map(s => {
+  const total = (s.total ?? s.totalApps ?? s.total_apps ?? s.apps ?? 0);    // pick whichever key exists
+  const approvedPlusCounter = (s.approved ?? 0) + (s.counter ?? 0);
+  const funded = (s.funded ?? 0);
+
+  return {
     ...s,
-    lta: s.total ? (s.approved + s.counter) / s.total : 0,
-    ltb: s.total ? s.funded / s.total : 0
-  }));
+    total,                                         // normalized total so UI can rely on it
+    lta: total ? approvedPlusCounter / total : 0,  // (approved + counter) / total
+    ltb: total ? funded / total : 0                 // funded / total
+  };
+});
+
+// --- DEBUG: check the first state row once
+if (Array.isArray(stateRows) && stateRows.length) {
+  console.log('[DEBUG monthly] first state row:', stateRows[0]);
+}
+// --- Helpers to parse numbers like "10%" or "15,390" into plain floats ---
+function _num(v) {
+  const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+function _avgFrom(rows, keyCandidates) {
+  const vals = (rows || []).map(r => {
+    // try multiple possible column names, first one that exists wins
+    const k = keyCandidates.find(k => r && r[k] != null);
+    return _num(k ? r[k] : null);
+  }).filter(v => v != null);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
 
   // Totals & KPIs
   const totalApps = dealerRows.reduce((a,r)=>a+r.total,0);
@@ -934,13 +960,27 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
   const denial    = dealerRows.reduce((a,r)=>a+r.denial,0);
   const funded    = dealerRows.reduce((a,r)=>a+r.funded,0);
   const totalFunded = fundedRawRows.reduce((a,r)=>a + num(r['Loan Amount']), 0);
+// Averages for tiles
+// LTV from APPROVED rows (use whichever header your sheet has)
+const avgLTVApproved = _avgFrom(approvedRawRows, ['LTV', 'LTV Buying', 'ltv']);
+
+// APR from FUNDED rows
+const avgAPRFunded = _avgFrom(fundedRawRows, ['APR', 'apr']);
+
+// Lender Fee / Discount % from FUNDED rows
+const avgDiscountPctFunded = _avgFrom(fundedRawRows, ['Discount', 'Lender Fee', 'Lender Fee / Discount %', 'discount']);
 
   return {
     id, year, month,
     meta: { year, month },
     mapping,
     totals: { totalApps, approved, counter, pending, denial, funded },
-    kpis:   { totalFunded },
+    kpis: {
+      totalFunded,          // dollars
+      avgLTVApproved,       // %
+      avgAPRFunded,         // %
+      avgDiscountPctFunded  // %
+    },    
     dealerRows,
     fiRows,
     stateRows,
