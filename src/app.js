@@ -1855,6 +1855,20 @@ setSnaps(snaps);
 /* 4.5) Save to Supabase (cloud) if available */
 try {
   if (window.sb && window.lastBuiltSnapshot && Array.isArray(window.lastBuiltSnapshot.dealerRows)) {
+    // --- DEBUG: inspect the analyzed snapshot before saving to Supabase ---
+(function () {
+  const s = window.lastBuiltSnapshot;          // the object we're about to save
+  const len = Array.isArray(s?.dealerRows) ? s.dealerRows.length : null;
+  const sample = Array.isArray(s?.dealerRows) && s.dealerRows.length ? s.dealerRows[0] : null;
+
+  console.log('[DEBUG save] snapshot preview →', {
+    year: s?.year,          // should be a number like 2025
+    month: s?.month,        // should be 1..12
+    dealerRowsLen: len,     // how many dealer rows we built
+    firstDealerRow: sample  // peek at one row's shape/fields
+  });
+})();
+
     saveMonthlySnapshotSB(window.lastBuiltSnapshot)
     .then(function (ok) {
       if (ok) {
