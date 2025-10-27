@@ -578,6 +578,26 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
+    // === Save Monthly KPIs to Supabase ===
+try {
+  const kpiData = {
+    year: y,
+    month: m,
+    avg_ltv_approved: 0, // replace later with actual LTV avg
+    avg_apr_funded: 0,   // replace later with actual APR avg
+    avg_discount_pct_funded: 0 // replace later with actual discount avg
+  };
+
+  const { error: kpiErr } = await window.sb
+    .from('monthly_kpis')
+    .upsert(kpiData, { onConflict: ['year', 'month'] });
+
+  if (kpiErr) console.error('[sb] monthly_kpis upsert error:', kpiErr);
+  else console.log('[sb] monthly_kpis upserted:', y, m);
+} catch (e) {
+  console.error('[sb] monthly_kpis save error:', e);
+}
+
 // Persist month-level KPIs so tiles survive refresh
 try {
   const y = snap?.year, m = snap?.month;
