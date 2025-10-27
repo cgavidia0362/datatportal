@@ -434,6 +434,23 @@ async function ensureYearOptionsSB() {
 // Writes one row per dealer into `monthly_snapshots` for (year, month).
 // Idempotent: deletes any existing rows for that (year,month) first.
 async function saveMonthlySnapshotSB(snap) {
+    // --- DEBUG: entry to saveMonthlySnapshotsSB ---
+    console.log('[DEBUG save] entered saveMonthlySnapshotsSB');
+
+    // 1) Snapshot basics
+    console.log('[DEBUG save] input snapshot keys:', Object.keys(snap || {}));
+    console.log('[DEBUG save] year, month, dealerRows.len =',
+      snap?.year, snap?.month,
+      Array.isArray(snap?.dealerRows) ? snap.dealerRows.length : null
+    );
+  
+    // 2) Peek at first raw dealer row (pre-mapping)
+    if (Array.isArray(snap?.dealerRows) && snap.dealerRows.length) {
+      console.log('[DEBUG save] first dealer row (raw):', snap.dealerRows[0]);
+    } else {
+      console.warn('[DEBUG save] WARN: dealerRows missing or empty');
+    }
+  
   try {
     window.lastSnap = snap;                // <-- add THIS line here
     if (!window.sb || !snap || !Array.isArray(snap.dealerRows)) return false;
@@ -2013,6 +2030,16 @@ async function renderMonthlyDetail(snap) {
   });
   
   const rows = snap.dealerRows || [];
+// --- DEBUG: monthly detail rows peek (post-analysis) ---
+console.log('[DEBUG monthly card] dealerRows length:',
+  Array.isArray(rows) ? rows.length : null
+);
+if (Array.isArray(rows) && rows.length) {
+  console.log('[DEBUG monthly card] first dealer row keys:', Object.keys(rows[0]));
+  console.log('[DEBUG monthly card] first dealer row sample:', rows[0]);
+} else {
+  console.warn('[DEBUG monthly card] dealerRows missing or empty at monthly view');
+}
 
   // ===== KPIs (your definitions) =====
   const T = snap.totals || {};
