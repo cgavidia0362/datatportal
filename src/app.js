@@ -2316,9 +2316,9 @@ if (snap && snap.kpis) {
   <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">LTA</div><div class="text-2xl font-semibold tabular-nums">${formatPct(LTA)}</div></div>
   <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">LTB</div><div class="text-2xl font-semibold tabular-nums">${formatPct(LTB)}</div></div>
   <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg LTV (Approved)</div><div class="text-2xl font-semibold tabular-nums">${avgLTVApproved==null?'-':(avgLTVApproved.toFixed(2)+'%')}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg APR (Funded)</div><div class="text-2xl font-semibold tabular-nums">${avgAPRFunded==null?'-':(avgAPRFunded.toFixed(2)+'%')}</div></div>
-  <div class="rounded-xl border p-3 bg-white">
-  <div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div>
+  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg APR (Funded)</div><div class="text-2xl font-semibold tabular-nums">${((snap.kpis && snap.kpis.avgAPRFunded != null) ? Number(snap.kpis.avgAPRFunded) : avgAPRFunded) == null ? '-' : (((snap.kpis && snap.kpis.avgAPRFunded != null) ? Number(snap.kpis.avgAPRFunded) : avgAPRFunded).toFixed(2) + '%')}</div></div>
+  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div><div class="text-xl font-semibold tabular-nums">${(() => { const v = snap?.kpis?.avgDiscountPct ?? snap?.kpis?.avgDiscountPctFunded; return v == null ? '-' : (Number(v).toFixed(2) + '%'); })()}</div></div>
+
   <div class="text-xl font-semibold tabular-nums">
     ${snap.kpis && snap.kpis.avgDiscountPct == null
       ? '—'
