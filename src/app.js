@@ -3177,62 +3177,44 @@ if (fiEl) {
     `<tr><td class="px-3 py-2 text-gray-500" colspan="10">No data.</td></tr>`;
 }
 
-  // State Performance
-// State Performance
+ // State Performance (YTD from state_monthly; adapter for fetchStateMonthlyYTD_SB shape)
 if (window.sb) {
-  // Read state × month YTD from Supabase, then shape into the same
-  // structure spRender* expects (spMonths, spStates, spData).
-  const stateRows = (await fetchStateMonthlyYTD_SB(year)) || [];
+  (async () => {
+    // -> [{ state, months:[{ total, approved, counter, pending, denial, funded, fundedAmount }×12], ytd:{...} }]
+    const stateYTD = (await fetchStateMonthlyYTD_SB(year)) || [];
 
-  // months present (YYYY-MM) → label
-  const monthKeys = Array.from(
-    new Set(
-      stateRows
-        .map(r => `${r.year}-${String(r.month).padStart(2,'0')}`)
-    )
-  ).sort();
-  window.spMonths = monthKeys.map(k => {
-    const m = Number(k.slice(5,7));
-    return [k, monthName(m)];
-  });
-
-  // list of states (sorted)
-  const states = Array.from(new Set(stateRows.map(r => r.state || '??'))).sort();
-  window.spStates = states;
-
-  // series map: state → [{ total, approved, funded, amount, ltb } per monthKey]
-  const byKey = (y, m, s) =>
-    `${y}-${String(m).padStart(2,'0')}|${s}`;
-
-    const lookup = new Map();
-  stateRows.forEach(r => lookup.set(byKey(r.year, r.month, r.state),
-    {
-      total: Number(r.totalApps)||0,
-      approved: (Number(r.approved)||0) + (Number(r.counter)||0),
-      funded: Number(r.funded)||0,
-      amount: Number(r.fundedAmount)||0
-    }
-  ));
-
-  const seriesMap = new Map();
-  states.forEach(st => {
-    const series = monthKeys.map(k => {
-      const y = Number(k.slice(0,4));
-      const m = Number(k.slice(5,7));
-      const v = lookup.get(byKey(y,m,st)) || { total:0, approved:0, funded:0, amount:0 };
-      const ltb = v.total ? (v.funded / v.total) : 0;
-      return { ...v, ltb };
+    // 12 month labels for the selected year
+    window.spMonths = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      return [`${year}-${String(m).padStart(2, '0')}`, monthName(m)];
     });
-    seriesMap.set(st, series);
-  });
 
-  // expose for renderers
-  window.spData = seriesMap;
+    // Sorted list of state codes
+    const states = stateYTD.map(s => s.state || '??').sort();
+    window.spStates = states;
 
+    // Build the series map: state -> [{ total, approved, funded, amount, ltb } per month]
+    const seriesMap = new Map();
+    stateYTD.forEach(s => {
+      const series = (s.months || []).map(cell => {
+        const total    = Number(cell.total)        || 0;
+        const approved = (Number(cell.approved)    || 0) + (Number(cell.counter) || 0);
+        const funded   = Number(cell.funded)       || 0;
+        const amount   = Number(cell.fundedAmount) || 0;  // used by “Funded (amount)”
+        const ltb      = total ? funded / total    : 0;   // LTB%
+        return { total, approved, funded, amount, ltb };
+      });
+      seriesMap.set(s.state || '??', series);
+    });
+
+    // Expose to the existing renderers (matrix / trends / sparklines)
+    window.spData = seriesMap;
+  })().catch(console.error);
 } else {
-  // Fallback: use dealer rows from the in-memory monthly list
+  // Fallback: derive from in-memory list (unchanged)
   spBuildData(list);
 }
+
 
 const mSel = $('#spMetric'); const nSel = $('#spTopN');
 if (mSel && !mSel.value) mSel.value = 'funded';
