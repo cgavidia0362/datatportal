@@ -3182,7 +3182,9 @@ if (window.sb) {
   (async () => {
     // -> [{ state, months:[{ total, approved, counter, pending, denial, funded, fundedAmount }×12], ytd:{...} }]
     const stateYTD = (await fetchStateMonthlyYTD_SB(year)) || [];
-
+    console.log('[yearly/state] fetched stateYTD len =', Array.isArray(stateYTD) ? stateYTD.length : null);
+    console.log('[yearly/state] first state sample =', stateYTD?.[0]);
+    
     // 12 month labels for the selected year
     window.spMonths = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1;
