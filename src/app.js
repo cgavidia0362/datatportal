@@ -3182,9 +3182,7 @@ if (window.sb) {
   (async () => {
     // -> [{ state, months:[{ total, approved, counter, pending, denial, funded, fundedAmount }×12], ytd:{...} }]
     const stateYTD = (await fetchStateMonthlyYTD_SB(year)) || [];
-    console.log('[yearly/state] fetched stateYTD len =', Array.isArray(stateYTD) ? stateYTD.length : null);
-    console.log('[yearly/state] first state sample =', stateYTD?.[0]);
-    
+
     // 12 month labels for the selected year
     window.spMonths = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1;
@@ -3211,20 +3209,6 @@ if (window.sb) {
 
     // Expose to the existing renderers (matrix / trends / sparklines)
     window.spData = seriesMap;
-    // Re-render state performance now that data is ready
-try {
-  // Kick the UI builders (matrix, trends, sparklines)
-  if (typeof spRenderAll === 'function') {
-    spRenderAll();
-  } else {
-    if (typeof spBuildMatrix === 'function') spBuildMatrix();
-    if (typeof spBuildTrends === 'function') spBuildTrends();
-    if (typeof spBuildSparklines === 'function') spBuildSparklines();
-  }
-} catch (e) {
-  console.error('[yearly/state] render after data error:', e);
-}
-
     // Re-render state performance now that data is ready
 try {
   if (typeof spBuildMatrix === 'function') spBuildMatrix();        // matrix tab
