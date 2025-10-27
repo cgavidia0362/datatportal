@@ -3209,6 +3209,15 @@ if (window.sb) {
 
     // Expose to the existing renderers (matrix / trends / sparklines)
     window.spData = seriesMap;
+    // Re-render state performance now that data is ready
+try {
+  if (typeof spBuildMatrix === 'function') spBuildMatrix();        // matrix tab
+  if (typeof spBuildTrends === 'function') spBuildTrends();        // trends tab
+  if (typeof spBuildSparklines === 'function') spBuildSparklines();// sparklines tab
+} catch (e) {
+  console.error('[yearly/state] render after data error:', e);
+}
+
   })().catch(console.error);
 } else {
   // Fallback: derive from in-memory list (unchanged)
