@@ -164,21 +164,21 @@ async function buildMonthlySnapSB(year, month) {
     return { Dealer: r.dealer, State: r.state, FI: r.fi, 'Loan Amount': Number(r.funded_amount) || 0 };
   });
   // Build FI (Franchise / Independent) tallies for the Monthly card
-var fiMap = new Map();
-(dealers || []).forEach(function (r) {
-  var key = (r.fi || 'Unknown');
-  if (!fiMap.has(key)) {
-    fiMap.set(key, { fi: key, totalApps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 });
-  }
-  var x = fiMap.get(key);
-  x.totalApps += r.total   || 0;
-  x.approved  += r.approved|| 0;
-  x.counter   += r.counter || 0;
-  x.pending   += r.pending || 0;
-  x.denial    += r.denial  || 0;
-  x.funded    += r.funded  || 0;
-});
-var fiRows = Array.from(fiMap.values());
+  var fiMap = new Map();
+  (dealers || []).forEach(function (r) {
+    var key = (r.fi || 'Unknown');
+    if (!fiMap.has(key)) {
+      fiMap.set(key, { fi: key, total: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 });
+    }
+    var x = fiMap.get(key);
+    x.total    += r.total    || 0;
+    x.approved += r.approved || 0;
+    x.counter  += r.counter  || 0;
+    x.pending  += r.pending  || 0;
+    x.denial   += r.denial   || 0;
+    x.funded   += r.funded   || 0;
+  });
+  var fiRows = Array.from(fiMap.values());  
 
 // Build stateRows with robust total + LTA/LTB so Monthly renders after refresh
 var stateRows = Array.from(stateMap.values()).map(function (s) {
@@ -578,7 +578,7 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
- // Persist month-level KPI averages so tiles survive a refresh
+// Persist month-level KPIs so tiles survive refresh
 try {
   const y = snap?.year, m = snap?.month;
   const k = snap?.kpis || {};
