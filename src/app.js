@@ -2416,6 +2416,24 @@ if (snap && snap.kpis) {
      </table>
    </div>
  `;
+ // Ensure FI counts exist even if the SB-loaded snapshot didn't include them
+if ((!snap.fiRows || !snap.fiRows.length) && Array.isArray(snap.dealerRows)) {
+  const fiMap = new Map();
+  const normFI = (t) => String(t || '').trim().toLowerCase() === 'franchise' ? 'Franchise' : 'Independent';
+  snap.dealerRows.forEach(r => {
+    const t = normFI(r.fi);
+    const cur = fiMap.get(t) || { type: t, total: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 };
+    cur.total    += Number(r.total)    || 0;
+    cur.approved += Number(r.approved) || 0;
+    cur.counter  += Number(r.counter)  || 0;
+    cur.pending  += Number(r.pending)  || 0;
+    cur.denial   += Number(r.denial)   || 0;
+    cur.funded   += Number(r.funded)   || 0;
+    fiMap.set(t, cur);
+  });
+  snap.fiRows = Array.from(fiMap.values());
+}
+
 paintMonthlyFI(snap);
 paintMonthlyHighValues(snap);
 
