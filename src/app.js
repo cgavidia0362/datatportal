@@ -1058,10 +1058,10 @@ function _avgFrom(rows, keyCandidates) {
   const totalFunded = fundedRawRows.reduce((a,r)=>a + num(r['Loan Amount']), 0);
 // Averages for tiles
 // LTV from APPROVED rows (use whichever header your sheet has)
-const avgLTVApproved = _avgFrom(approvedRawRows, ['LTV', 'LTV Buying', 'ltv']);
+let avgLTVApproved = _avgFrom(approvedRawRows, ['LTV', 'LTV Buying', 'ltv']);
 
 // APR from FUNDED rows
-const avgAPRFunded = _avgFrom(fundedRawRows, ['APR', 'apr']);
+let avgAPRFunded = _avgFrom(fundedRawRows, ['APR', 'apr']);
 
 // Lender Fee / Discount % from FUNDED rows
 const avgDiscountPctFunded = _avgFrom(fundedRawRows, ['Discount', 'Lender Fee', 'Lender Fee / Discount %', 'discount']);
