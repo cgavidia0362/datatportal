@@ -1138,6 +1138,15 @@ document.getElementById('mergeProceedBtn')?.addEventListener('click', () => {
 
     // 6) Recompute totals & state tallies so tiles/tables update
     recomputeAggregatesFromDealers(snap);
+// --- DEBUG: set global snapshot after analysis + merge ---
+if (snap && typeof snap === 'object') {
+  window.lastBuiltSnapshot = snap;
+  console.log('[DEBUG] set window.lastBuiltSnapshot', {
+    year: snap.year,
+    month: snap.month,
+    dealerRowsLen: Array.isArray(snap.dealerRows) ? snap.dealerRows.length : null
+  });
+}
 
     // 7) Close modal
     document.getElementById('mergeModal')?.classList.add('hidden');
