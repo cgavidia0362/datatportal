@@ -163,6 +163,23 @@ async function buildMonthlySnapSB(year, month) {
   var fundedRawRows = data.map(function (r) {
     return { Dealer: r.dealer, State: r.state, FI: r.fi, 'Loan Amount': Number(r.funded_amount) || 0 };
   });
+  // Build FI (Franchise / Independent) tallies for the Monthly card
+var fiMap = new Map();
+(dealers || []).forEach(function (r) {
+  var key = (r.fi || 'Unknown');
+  if (!fiMap.has(key)) {
+    fiMap.set(key, { fi: key, totalApps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 });
+  }
+  var x = fiMap.get(key);
+  x.totalApps += r.total   || 0;
+  x.approved  += r.approved|| 0;
+  x.counter   += r.counter || 0;
+  x.pending   += r.pending || 0;
+  x.denial    += r.denial  || 0;
+  x.funded    += r.funded  || 0;
+});
+var fiRows = Array.from(fiMap.values());
+
 // Build stateRows with robust total + LTA/LTB so Monthly renders after refresh
 var stateRows = Array.from(stateMap.values()).map(function (s) {
   // some historical builds used totalApps/total_apps/apps; normalize to total
@@ -180,14 +197,35 @@ var stateRows = Array.from(stateMap.values()).map(function (s) {
     ltb: total ? (fundedCt / total) : 0
   });
 });
+// Load month-level KPI averages persisted at save time (averages for tiles)
+var kpis = { totalFunded: totalFunded };
+try {
+  if (window.sb) {
+    const { data: krow, error: kerr } = await window.sb
+      .from('monthly_kpis')
+      .select('avg_ltv_approved, avg_apr_funded, avg_discount_pct_funded')
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+
+    if (!kerr && krow) {
+      kpis.avgLTVApproved        = krow.avg_ltv_approved ?? null;
+      kpis.avgAPRFunded          = krow.avg_apr_funded ?? null;
+      kpis.avgDiscountPctFunded  = krow.avg_discount_pct_funded ?? null;
+    }
+  }
+} catch (e) {
+  console.error('[SB monthly] monthly_kpis fetch error:', e);
+}
 
   return {
     id: String(year) + '-' + String(month).padStart(2, '0'),
     year: year,
     month: month,
     totals: totals,
-    kpis: { totalFunded: totalFunded },
+    kpis: kpis,
     dealerRows: dealers,
+    fiRows: fiRows,
     stateRows: stateRows,
     approvedRawRows: [],
     fundedRawRows: fundedRawRows
@@ -540,7 +578,27 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
- 
+ // Persist month-level KPI averages so tiles survive a refresh
+try {
+  const y = snap?.year, m = snap?.month;
+  const k = snap?.kpis || {};
+  if (window.sb && y && m) {
+    await window.sb
+      .from('monthly_kpis')
+      .upsert({
+        year: y,
+        month: m,
+        avg_ltv_approved: k.avgLTVApproved ?? null,
+        avg_apr_funded: k.avgAPRFunded ?? null,
+        avg_discount_pct_funded: k.avgDiscountPctFunded ?? null
+      })
+      .select()
+      .single();
+  }
+} catch (e) {
+  console.error('[save] monthly_kpis upsert error:', e);
+}
+
     return true;    
   } catch (e) {
     console.error('[sb] saveMonthlySnapshotSB error:', e);
