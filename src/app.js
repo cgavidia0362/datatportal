@@ -1610,7 +1610,8 @@ function mergeFundedIntoSnapshot(snap, fundedParsed, fundedMapping, opts) {
       // collect amounts + apr + fee%
       const amt = parseMoney(get(r,'loan'));
       if (Number.isFinite(amt) && amt > 0) fundedAmounts.push(amt);
-
+      target.funded_amount = (target.funded_amount || 0) + amt;
+      
       const aprV = parseFloat(String(get(r,'apr')).replace(/[^\d.-]/g,''));
       if (Number.isFinite(aprV)) aprArr.push(aprV);
 
