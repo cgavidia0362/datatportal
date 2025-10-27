@@ -3213,6 +3213,20 @@ if (window.sb) {
     window.spData = seriesMap;
     // Re-render state performance now that data is ready
 try {
+  // Kick the UI builders (matrix, trends, sparklines)
+  if (typeof spRenderAll === 'function') {
+    spRenderAll();
+  } else {
+    if (typeof spBuildMatrix === 'function') spBuildMatrix();
+    if (typeof spBuildTrends === 'function') spBuildTrends();
+    if (typeof spBuildSparklines === 'function') spBuildSparklines();
+  }
+} catch (e) {
+  console.error('[yearly/state] render after data error:', e);
+}
+
+    // Re-render state performance now that data is ready
+try {
   if (typeof spBuildMatrix === 'function') spBuildMatrix();        // matrix tab
   if (typeof spBuildTrends === 'function') spBuildTrends();        // trends tab
   if (typeof spBuildSparklines === 'function') spBuildSparklines();// sparklines tab
