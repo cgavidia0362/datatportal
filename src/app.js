@@ -2203,7 +2203,7 @@ if (Array.isArray(rows) && rows.length) {
   const ltvApprovedArr = (snap.approvedRawRows || [])
     .map(r => Number(r.LTV))
     .filter(v => Number.isFinite(v));
-  const avgLTVApproved = ltvApprovedArr.length
+    let avgLTVApproved = ltvApprovedArr.length
     ? ltvApprovedArr.reduce((a,b)=>a+b,0) / ltvApprovedArr.length
     : null;
 
@@ -2211,28 +2211,20 @@ if (Array.isArray(rows) && rows.length) {
   const aprFundedArr = (snap.fundedRawRows || [])
     .map(r => Number(r.APR))
     .filter(v => Number.isFinite(v));
-  const avgAPRFunded = aprFundedArr.length
+    let avgAPRFunded = aprFundedArr.length
     ? aprFundedArr.reduce((a,b)=>a+b,0) / aprFundedArr.length
     : null;
 // --- Use persisted KPIs from Supabase if present (monthly_kpis) ---
 if (snap && snap.kpis) {
-  // Prefer saved KPI values that were written during Save → Supabase
   if (snap.kpis.avgLTVApproved != null) {
-    // override the computed value with the saved one
-    // (Number() guards against stringy values)
     avgLTVApproved = Number(snap.kpis.avgLTVApproved);
   }
   if (snap.kpis.avgAPRFunded != null) {
     avgAPRFunded = Number(snap.kpis.avgAPRFunded);
   }
-  // Your tile uses snap.kpis.avgDiscountPct in the HTML.
-  // Map the saved KPI field (avgDiscountPctFunded) into that
-  // so the tile shows the value after refresh:
+  // Map saved avg_discount_pct_funded into the field your tile reads (avgDiscountPct)
   if (snap.kpis.avgDiscountPctFunded != null) {
     const v = Number(snap.kpis.avgDiscountPctFunded);
-    // set a local convenience in case you later want to print it too
-    var avgDiscountPctFunded = v;
-    // keep backward-compat with the existing tile markup:
     if (snap.kpis.avgDiscountPct == null) {
       snap.kpis.avgDiscountPct = v;
     }
