@@ -1,3 +1,4 @@
+console.log('[BUILD] src/app.js loaded at', new Date().toISOString());
 /* ======================================================================
    Buying Analysis Portal — app.js (Full, self-contained)
    - Keeps your existing IDs and layout from the provided HTML
