@@ -1331,13 +1331,31 @@ if (!snap || typeof snap !== 'object') {
 (() => {
   const fundedRows = snap.fundedRawRows || [];
 
-  // Helper: turn "4.63", "4.63%", " 4.63 % ", "4,63" into a number 4.63
-  const toNum = (v) => {
-    if (v == null || v === '') return null;
-    const s = String(v).trim().replace(/,/g, '');
-    const n = Number(s.replace('%', '').trim());
-    return Number.isFinite(n) ? n : null;
-  };
+// Helper: turn "4.63", "4.63 %", "4,63", "1,040.97%" into a number (e.g., 4.63 or 10.4097)
+const toNum = (v) => {
+  if (v == null || v === '') return null;
+
+  let s = String(v).trim();
+
+  // Normalize locale and symbols:
+  // "4,63" -> "4.63" (only when there is no dot already),
+  // remove thousands commas, spaces, $ etc.
+  if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
+  s = s.replace(/[^0-9.+\-eE%]/g, '');        // keep digits, dot, sign, exponent, %
+
+  const hasPct = s.includes('%');
+  s = s.replace(/%/g, '');
+
+  let n = Number(s);
+  if (!Number.isFinite(n)) return null;
+
+  // If explicitly a percent, coerce oversized values into real percent
+  // e.g., "1040.97%" -> 10.4097
+  if (hasPct && n > 100) n = n / 100;
+
+  return n;
+};
+
   const avg = (arr) => {
     const vals = arr.filter(v => v != null);
     return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
@@ -1349,22 +1367,40 @@ if (!snap || typeof snap !== 'object') {
   (window._analyzeCtx && window._analyzeCtx.fundedMapping) ||
   {};
 
+// list of columns present
+const cols = fundedRows[0] ? Object.keys(fundedRows[0]) : [];
+const norm = s => String(s || '').toLowerCase().replace(/\s+/g,' ').trim();
+
+const aprCandidates = [
+  'APR','Apr','APR %','Annual Percentage Rate','Interest Rate','Rate'
+];
+
+const feePercentCandidates = [
+  'Discount Percentage (Lender Fee %)',
+  'Discount Percentage(Lender Fee %)',
+  'Lender Fee %',
+  'Lender Discount %',
+  'Discount %',
+  'Fee %'
+];
+
+// APR key (prefer mapped, then exact, then soft match)
 const aprKey =
   fm.apr ||
-  ['APR', 'Apr', 'APR %', 'Annual Percentage Rate', 'Interest Rate', 'Rate']
-    .find(k => fundedRows[0] && (k in fundedRows[0]));
+  aprCandidates.find(name => cols.includes(name)) ||
+  cols.find(k => /(^|[^a-z])(apr|rate)([^a-z]|$)/i.test(k));
 
-const feeKey =
+// Fee % key (prefer percent headers only)
+let feeKey =
   fm.fee ||
-  [
-    'Discount Percentage (Lender Fee %)',
-    'Discount Percentage(Lender Fee %)',
-    'Lender Fee',            // <— your sheet’s column
-    'Lender Fee %',
-    'Discount %',
-    'Lender Discount %',
-    'Fee %'
-  ].find(k => fundedRows[0] && (k in fundedRows[0]));
+  feePercentCandidates.find(name => cols.includes(name)) ||
+  cols.find(k => /(fee|discount)/i.test(k) && /(%|percent)/i.test(k));
+
+// If the only thing found is a dollar “Lender Fee” (not percent), leave it null
+if (feeKey && /lender fee$/i.test(feeKey) && !/%|percent/i.test(feeKey)) {
+  feeKey = null;
+}
+
 
   const aprVals = fundedRows.map(r => toNum(r?.[aprKey]));
   const feeVals = fundedRows.map(r => toNum(r?.[feeKey]));
