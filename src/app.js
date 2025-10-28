@@ -1941,8 +1941,14 @@ snap.fundedRawRows.push({
   const totalFunded = fundedAmounts.reduce((a,b)=>a+b,0);
   snap.kpis.totalFunded      = (snap.kpis.totalFunded || 0) + totalFunded;
   snap.kpis.avgFundedAmount  = fundedAmounts.length ? (totalFunded / fundedAmounts.length) : null;
-  snap.kpis.avgAPR           = aprArr.length ? (aprArr.reduce((a,b)=>a+b,0)/aprArr.length) : null;
-  snap.kpis.avgDiscountPct   = feePctArr.length ? (feePctArr.reduce((a,b)=>a+b,0)/feePctArr.length) : null;
+// canonical (what tiles and your console expect)
+snap.kpis.avgAPRFunded         = aprArr.length ? (aprArr.reduce((a,b)=>a+b,0)/aprArr.length) : null;
+snap.kpis.avgDiscountPctFunded = feePctArr.length ? (feePctArr.reduce((a,b)=>a+b,0)/feePctArr.length) : null;
+
+// legacy keys kept in sync (non-breaking)
+snap.kpis.avgAPR         = snap.kpis.avgAPRFunded;
+snap.kpis.avgDiscountPct = snap.kpis.avgDiscountPctFunded;
+
 
   return {
     merged: (opts?.accepted||[]).length
