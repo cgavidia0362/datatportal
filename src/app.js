@@ -585,19 +585,33 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
- // === Save Monthly KPIs to Supabase (real values from snap.kpis, with fallbacks) ===
+// === Save Monthly KPIs to Supabase (real values from snap.kpis, with fallbacks) ===
 try {
   const y = snap?.year, m = snap?.month;
   if (window.sb && y && m) {
-    // Helpers to average from rows even if snap.kpis is missing fields
-    const pickNum = (r, keys) => {
+    // Parse numbers that may include %, commas, or spaces.
+    const parseNum = (v) => {
+      if (v == null || v === '') return null;
+      const s = String(v).trim();
+      // detect % and handle either "4.63" or "4.63%"
+      const hasPct = s.includes('%');
+      const cleaned = s.replace(/[, ]|%/g, '');
+      const n = Number(cleaned);
+      if (!Number.isFinite(n)) return null;
+      return hasPct ? n : n; // leave as-is; your tiles expect "4.63" style
+    };
+
+    const pickNum = (row, keys) => {
       for (const k of keys) {
-        const n = Number(r?.[k]);
-        if (Number.isFinite(n)) return n;
+        if (k in row) {
+          const n = parseNum(row[k]);
+          if (Number.isFinite(n)) return n;
+        }
       }
       return null;
     };
-    const _avgLocal = (rows, keys) => {
+
+    const avgFrom = (rows, keys) => {
       if (!Array.isArray(rows) || rows.length === 0) return null;
       let sum = 0, cnt = 0;
       for (const r of rows) {
@@ -606,25 +620,31 @@ try {
       }
       return cnt ? (sum / cnt) : null;
     };
-    // Prefer your global helper if it exists
+
+    // Use your existing helper if present
     const _avg = (rows, keys) =>
-      (typeof _avgFrom === 'function')
-        ? _avgFrom(rows, keys)
-        : _avgLocal(rows, keys);
+      (typeof _avgFrom === 'function') ? _avgFrom(rows, keys) : avgFrom(rows, keys);
 
     const approvedRawRows = snap?.approvedRawRows || [];
     const fundedRawRows   = snap?.fundedRawRows   || [];
 
+    // Wider key coverage to match real CSV headers
+    const LTV_KEYS   = ['LTV','LTV Buying','ltv','LTV (Approved)','Approved LTV'];
+    const APR_KEYS   = ['APR','Apr','APR %','Apr %','APR(%)','Annual % Rate','Annual Percentage Rate','annual_rate','Funded APR','APR (Funded)'];
+    const DISC_KEYS  = [
+      'Lender Fee %','Discount %','Lender Fee/Discount %','Lender Fee / Discount %',
+      'lender_fee_pct','discount_pct','lender_discount_pct','dealer_discount_pct',
+      'Avg Lender Fee (Funded)','Lender Fee','Lender Discount %'
+    ];
+
     // Fallbacks from raw data
-    const avgLTV_fallback  = _avg(approvedRawRows, ['LTV','LTV Buying','ltv']);
-    const avgAPR_fallback  = _avg(fundedRawRows,   ['APR','apr']);
-    const avgDisc_fallback = _avg(fundedRawRows,   [
-      'Lender Fee %','Discount %','discount_pct','lender_discount_pct','dealer_discount_pct','Lender Fee/Discount %'
-    ]);
+    const avgLTV_fallback  = _avg(approvedRawRows, LTV_KEYS);
+    const avgAPR_fallback  = _avg(fundedRawRows,   APR_KEYS);
+    const avgDisc_fallback = _avg(fundedRawRows,   DISC_KEYS);
 
     const k = snap?.kpis || {};
 
-    // Prefer snap.kpis; else use fallbacks; else null
+    // Prefer existing values; else fallbacks; else null
     const avgLTVApprovedVal        = (k.avgLTVApproved        ?? avgLTV_fallback   ?? null);
     const avgAPRFundedVal          = (k.avgAPRFunded          ?? avgAPR_fallback   ?? null);
     const avgDiscountPctFundedVal  = (k.avgDiscountPctFunded  ?? avgDisc_fallback  ?? null);
@@ -641,7 +661,8 @@ try {
       .select()
       .single();
 
-    console.log('[sb] monthly_kpis upserted (coalesced):', y, m, { avgLTVApprovedVal, avgAPRFundedVal, avgDiscountPctFundedVal }, { data, error });
+    console.log('[sb] monthly_kpis upserted (coalesced):', y, m,
+      { avgLTVApprovedVal, avgAPRFundedVal, avgDiscountPctFundedVal }, { data, error });
   }
 } catch (e) {
   console.error('[save] monthly_kpis upsert error:', e);
