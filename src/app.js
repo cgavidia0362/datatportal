@@ -1334,7 +1334,7 @@ if (!snap || typeof snap !== 'object') {
 // Helper: turn "4.63", "4.63 %", "4,63", "1,040.97%" into a number (e.g., 4.63 or 10.4097)
 const toNum = (v) => {
   if (v == null || v === '') return null;
-
+  
   let s = String(v).trim();
 
   // Normalize locale and symbols:
