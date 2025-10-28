@@ -2235,12 +2235,24 @@ if (Array.isArray(rows) && rows.length) {
     : null;
 
   // Avg APR (Funded)
-  const aprFundedArr = (snap.fundedRawRows || [])
-    .map(r => Number(r.APR))
-    .filter(v => Number.isFinite(v));
-    let avgAPRFunded = aprFundedArr.length
-    ? aprFundedArr.reduce((a,b)=>a+b,0) / aprFundedArr.length
-    : null;
+const aprFundedArr = (snap.fundedRawRows || [])
+.map(r => Number(r.APR))
+.filter(v => Number.isFinite(v));
+let avgAPRFunded =
+aprFundedArr.length
+  ? aprFundedArr.reduce((a,b)=>a+b,0) / aprFundedArr.length
+  : null;
+
+// --- Use persisted KPIs from Supabase if present (monthly_kpis) ---
+if (snap && snap.kpis) {
+if (snap.kpis.avgAPRFunded != null) {
+  avgAPRFunded = Number(snap.kpis.avgAPRFunded);
+}
+// Map avgDiscountPctFunded -> avgDiscountPct so the tile can see it
+if (snap.kpis.avgDiscountPctFunded != null && snap.kpis.avgDiscountPct == null) {
+  snap.kpis.avgDiscountPct = Number(snap.kpis.avgDiscountPctFunded);
+}
+}
 // --- Use persisted KPIs from Supabase if present (monthly_kpis) ---
 if (snap && snap.kpis) {
   if (snap.kpis.avgLTVApproved != null) {
