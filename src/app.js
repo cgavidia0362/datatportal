@@ -1344,25 +1344,35 @@ if (!snap || typeof snap !== 'object') {
   };
 
   // Use the mapped header names if present; otherwise fall back to common variants.
-  const fm = (snap.meta && snap.meta.fundedMap) || {};
-  const aprKey =
-    fm.apr ||
-    ['APR','Apr','APR %','Annual Percentage Rate','Interest Rate','Rate'].find(k => fundedRows[0] && k in fundedRows[0]);
-  const feeKey =
-    fm.fee ||
-    ['Discount Percentage(Lender Fee %)','Lender Fee %','Discount %','Lender Discount %','Fee %'].find(k => fundedRows[0] && k in fundedRows[0]);
+  const fm =
+  (snap.meta && snap.meta.fundedMap) ||
+  (window._analyzeCtx && window._analyzeCtx.fundedMapping) ||
+  {};
+
+const aprKey =
+  fm.apr ||
+  ['APR', 'Apr', 'APR %', 'Annual Percentage Rate', 'Interest Rate', 'Rate']
+    .find(k => fundedRows[0] && (k in fundedRows[0]));
+
+const feeKey =
+  fm.fee ||
+  [
+    'Discount Percentage (Lender Fee %)',
+    'Discount Percentage(Lender Fee %)',
+    'Lender Fee',            // <— your sheet’s column
+    'Lender Fee %',
+    'Discount %',
+    'Lender Discount %',
+    'Fee %'
+  ].find(k => fundedRows[0] && (k in fundedRows[0]));
 
   const aprVals = fundedRows.map(r => toNum(r?.[aprKey]));
   const feeVals = fundedRows.map(r => toNum(r?.[feeKey]));
 
   snap.kpis = snap.kpis || {};
-  if (snap.kpis.avgAPRFunded == null) {
-    snap.kpis.avgAPRFunded = avg(aprVals);
-  }
-  if (snap.kpis.avgDiscountPctFunded == null) {
-    snap.kpis.avgDiscountPctFunded = avg(feeVals);
-  }
-
+  snap.kpis.avgAPRFunded = avg(aprVals);
+  snap.kpis.avgDiscountPctFunded = avg(feeVals);
+  
   // Keep the computed values available for later save
   window._debugAprVals = aprVals;
   window._debugFeeVals = feeVals;
