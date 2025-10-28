@@ -1322,6 +1322,52 @@ document.getElementById('mergeProceedBtn')?.addEventListener('click', () => {
 
     // 6) Recompute totals & state tallies so tiles/tables update
     recomputeAggregatesFromDealers(snap);
+    // ----- Compute funded APR & Lender Fee (Discount %) for KPI tiles -----
+(() => {
+  const snap = draftSnap || currentSnap || window.lastBuiltSnapshot || {};
+  const fundedRows = snap.fundedRawRows || [];
+
+  // Helper: turn "4.63", "4.63%", " 4.63 % ", "4,63" into a number 4.63
+  const toNum = (v) => {
+    if (v == null || v === '') return null;
+    const s = String(v).trim().replace(/,/g, '');
+    const n = Number(s.replace('%', '').trim());
+    return Number.isFinite(n) ? n : null;
+  };
+  const avg = (arr) => {
+    const vals = arr.filter(v => v != null);
+    return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
+  };
+
+  // Use the mapped header names if present; otherwise fall back to common variants.
+  const fm = (snap.meta && snap.meta.fundedMap) || {};
+  const aprKey =
+    fm.apr ||
+    ['APR','Apr','APR %','Annual Percentage Rate','Interest Rate','Rate'].find(k => fundedRows[0] && k in fundedRows[0]);
+  const feeKey =
+    fm.fee ||
+    ['Discount Percentage(Lender Fee %)','Lender Fee %','Discount %','Lender Discount %','Fee %'].find(k => fundedRows[0] && k in fundedRows[0]);
+
+  const aprVals = fundedRows.map(r => toNum(r?.[aprKey]));
+  const feeVals = fundedRows.map(r => toNum(r?.[feeKey]));
+
+  snap.kpis = snap.kpis || {};
+  if (snap.kpis.avgAPRFunded == null) {
+    snap.kpis.avgAPRFunded = avg(aprVals);
+  }
+  if (snap.kpis.avgDiscountPctFunded == null) {
+    snap.kpis.avgDiscountPctFunded = avg(feeVals);
+  }
+
+  // Keep the computed values available for later save
+  window._debugAprVals = aprVals;
+  window._debugFeeVals = feeVals;
+
+  // If you see nulls, uncomment these:
+  // console.log('[analyze] aprKey, feeKey', aprKey, feeKey);
+  // console.log('[analyze] APR avg, Fee avg', snap.kpis.avgAPRFunded, snap.kpis.avgDiscountPctFunded);
+})();
+
 // --- DEBUG: set global snapshot after analysis + merge ---
 if (snap && typeof snap === 'object') {
   window.lastBuiltSnapshot = snap;
