@@ -1317,14 +1317,18 @@ document.getElementById('mergeProceedBtn')?.addEventListener('click', () => {
     }
 
     // 5) Merge using the accepted-list merger
-    const snap = ctx.snapshot;
+    const snap = (ctx && ctx.snapshot) || window.lastBuiltSnapshot;
+if (!snap || typeof snap !== 'object') {
+  alert('No working snapshot found. Click Analyze first, then try Proceed & Merge again.');
+  return;
+}
+
     mergeFundedIntoSnapshot(snap, fundedParsed, fundedMapping, { accepted: acceptedCombined });
 
     // 6) Recompute totals & state tallies so tiles/tables update
     recomputeAggregatesFromDealers(snap);
     // ----- Compute funded APR & Lender Fee (Discount %) for KPI tiles -----
 (() => {
-  const snap = draftSnap || currentSnap || window.lastBuiltSnapshot || {};
   const fundedRows = snap.fundedRawRows || [];
 
   // Helper: turn "4.63", "4.63%", " 4.63 % ", "4,63" into a number 4.63
