@@ -1276,6 +1276,53 @@ function collectReviewedAccepted(includeReviewed = false) {
 
   return accepted;
 }
+// ====== Compute funded APR & Lender Fee (Discount %) for KPI tiles ======
+function recomputeKpisFromFunded(snap) {
+  if (!snap || !Array.isArray(snap.fundedRawRows)) return;
+
+  const rows = snap.fundedRawRows || [];
+  if (!rows.length) return;
+
+  const toNum = (v) => {
+    if (v == null || v === '') return null;
+    const s = String(v).trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
+    if (!s) return null;
+    const n = Number(s);
+    if (!Number.isFinite(n)) return null;
+    return n > 100 ? n / 100 : n;
+  };
+
+  const aprKey = Object.keys(rows[0]).find(k => /apr/i.test(k));
+  const feeKey = Object.keys(rows[0]).find(k => /(discount|lender\s*fee)/i.test(k));
+
+  const aprVals = [];
+  const feeVals = [];
+
+  for (const r of rows) {
+    const apr = toNum(r[aprKey]);
+    const fee = toNum(r[feeKey]);
+    if (apr != null) aprVals.push(apr);
+    if (fee != null) feeVals.push(fee);
+  }
+
+  const avg = (arr) => {
+    const vals = arr.filter(v => v != null);
+    return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
+  };
+
+  snap.kpis = snap.kpis || {};
+  snap.kpis.avgAPRFunded = avg(aprVals);
+  snap.kpis.avgDiscountPctFunded = avg(feeVals);
+
+  // Back-compat for other parts of the UI
+  snap.kpis.avgAPR = snap.kpis.avgAPRFunded;
+  snap.kpis.avgDiscountPct = snap.kpis.avgDiscountPctFunded;
+
+  // Debugging (optional)
+  console.log('[KPI recompute] Avg APR:', snap.kpis.avgAPRFunded, 'Avg Fee:', snap.kpis.avgDiscountPctFunded);
+}
+// ====== /Compute funded APR & Lender Fee (Discount %) ======
+
 
 // ===== Merge modal buttons =====
 document.getElementById('mergeCancelBtn')?.addEventListener('click', () => {
@@ -1327,6 +1374,14 @@ if (!snap || typeof snap !== 'object') {
 
     // 6) Recompute totals & state tallies so tiles/tables update
     recomputeAggregatesFromDealers(snap);
+    recomputeKpisFromFunded(snap);
+// Keep legacy and "Funded" KPI keys in sync (avoid nulls either way)
+snap.kpis = snap.kpis || {};
+if (snap.kpis.avgAPR == null && snap.kpis.avgAPRFunded != null) snap.kpis.avgAPR = snap.kpis.avgAPRFunded;
+if (snap.kpis.avgDiscountPct == null && snap.kpis.avgDiscountPctFunded != null) snap.kpis.avgDiscountPct = snap.kpis.avgDiscountPctFunded;
+if (snap.kpis.avgAPRFunded == null && snap.kpis.avgAPR != null) snap.kpis.avgAPRFunded = snap.kpis.avgAPR;
+if (snap.kpis.avgDiscountPctFunded == null && snap.kpis.avgDiscountPct != null) snap.kpis.avgDiscountPctFunded = snap.kpis.avgDiscountPct;
+
     // ----- Compute funded APR & Lender Fee (Discount %) for KPI tiles -----
 (() => {
   const fundedRows = snap.fundedRawRows || [];
@@ -1334,27 +1389,15 @@ if (!snap || typeof snap !== 'object') {
 // Helper: turn "4.63", "4.63 %", "4,63", "1,040.97%" into a number (e.g., 4.63 or 10.4097)
 const toNum = (v) => {
   if (v == null || v === '') return null;
-  
-  let s = String(v).trim();
-
-  // Normalize locale and symbols:
-  // "4,63" -> "4.63" (only when there is no dot already),
-  // remove thousands commas, spaces, $ etc.
-  if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
-  s = s.replace(/[^0-9.+\-eE%]/g, '');        // keep digits, dot, sign, exponent, %
-
-  const hasPct = s.includes('%');
-  s = s.replace(/%/g, '');
-
-  let n = Number(s);
+  const s = String(v).trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
+  if (s === '') return null;
+  const n = Number(s);
   if (!Number.isFinite(n)) return null;
 
-  // If explicitly a percent, coerce oversized values into real percent
-  // e.g., "1040.97%" -> 10.4097
-  if (hasPct && n > 100) n = n / 100;
-
-  return n;
+  // Handle values like 1040.97 that are too large to be a percent
+  return n > 100 ? n / 100 : n;
 };
+
 
   const avg = (arr) => {
     const vals = arr.filter(v => v != null);
@@ -1367,40 +1410,97 @@ const toNum = (v) => {
   (window._analyzeCtx && window._analyzeCtx.fundedMapping) ||
   {};
 
-// list of columns present
+// === List columns + strong normalizers (handles () , %, punctuation, multiple spaces) ===
 const cols = fundedRows[0] ? Object.keys(fundedRows[0]) : [];
-const norm = s => String(s || '').toLowerCase().replace(/\s+/g,' ').trim();
+const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const strip = s => norm(s).replace(/[^a-z%]/g, ''); // keep only letters and %
 
+// Build lookups
+const byNorm  = new Map(cols.map(k => [norm(k),  k]));
+const byStrip = new Map(cols.map(k => [strip(k), k]));
+
+// Getter helpers
+const getExact = key => byNorm.get(norm(key)) ?? byStrip.get(strip(key)) ?? null;
+const pick = (candidates) => {
+  // 1) exact (normalized or stripped)
+  for (const c of candidates) {
+    const hit = getExact(c);
+    if (hit) return hit;
+  }
+  // 2) fuzzy: candidate substring inside stripped header
+  for (const c of candidates) {
+    const needle = strip(c);
+    for (const [sk, orig] of byStrip.entries()) {
+      if (sk.includes(needle)) return orig;
+    }
+  }
+  return null;
+};
+
+// Candidate names (include spaced + unspaced versions)
 const aprCandidates = [
-  'APR','Apr','APR %','Annual Percentage Rate','Interest Rate','Rate'
+  'apr', 'apr%', 'annual percentage rate', 'annualpercentagerate', 'interest rate', 'rate'
 ];
 
-const feePercentCandidates = [
-  'Discount Percentage (Lender Fee %)',
-  'Discount Percentage(Lender Fee %)',
-  'Lender Fee %',
-  'Lender Discount %',
-  'Discount %',
-  'Fee %'
+const feeCandidates = [
+  'discount percentage (lender fee %)',
+  'discount percentage lender fee %',
+  'lender fee %',
+  'lender fee%',
+  'discount %',
+  'lender discount %',
+  'lender discount%',
+  'fee %',
+  'fee'
 ];
 
-// APR key (prefer mapped, then exact, then soft match)
+// Prefer mapped names from the UI; otherwise fall back to robust picker
 const aprKey =
-  fm.apr ||
-  aprCandidates.find(name => cols.includes(name)) ||
-  cols.find(k => /(^|[^a-z])(apr|rate)([^a-z]|$)/i.test(k));
+  fm.apr && getExact(fm.apr) ||
+  pick(aprCandidates);
 
-// Fee % key (prefer percent headers only)
 let feeKey =
-  fm.fee ||
-  feePercentCandidates.find(name => cols.includes(name)) ||
-  cols.find(k => /(fee|discount)/i.test(k) && /(%|percent)/i.test(k));
+  fm.fee && getExact(fm.fee) ||
+  pick(feeCandidates);
 
-// If the only thing found is a dollar “Lender Fee” (not percent), leave it null
-if (feeKey && /lender fee$/i.test(feeKey) && !/%|percent/i.test(feeKey)) {
-  feeKey = null;
+// If the chosen fee header looks like a dollar "Lender Fee" (no %), null it
+if (feeKey) {
+  const feeHeader   = feeKey;
+  const isPercent   = /%/.test(feeHeader) || /percent/i.test(feeHeader);
+  const looksLikeFee = /fee|discount/i.test(feeHeader);
+  if (looksLikeFee && !isPercent) feeKey = null;
 }
 
+// --- Fallback: compute fee% from fee-dollar / funded amount when no percent column ---
+if (!feeKey && Array.isArray(fundedRows) && fundedRows.length) {
+  // Try to find the funded amount and fee-$ columns
+  const amountKey =
+    (fm && (fm.fundedAmount || fm.amount || fm.loanAmount)) ||
+    cols.find(k => /fund(ed)?\s*(amount|\$)/i.test(k));
+
+    const feeDollarKey =
+    (fm && (fm.lenderFeeDollar || fm.feeDollar || fm.lenderFee)) ||
+    // accept plain "Lender Fee" (no $) OR any header with $ that looks like fee/discount
+    cols.find(k =>
+      /^(lender\s*fee|lenderfee|fee)$/i.test(norm(k)) ||
+      ( /(lender\s*fee|discount)/i.test(k) && /\$/i.test(k) )
+    );  
+
+  if (amountKey && feeDollarKey) {
+    const feePctVals = fundedRows.map(r => {
+      const amt = toNum(r?.[amountKey]);     // your improved toNum
+      const fees = toNum(r?.[feeDollarKey]);
+      if (!amt || !fees) return null;
+      return (fees / amt) * 100;             // percent
+    });
+
+    // Only set if we didn’t already compute it from a % column
+    snap.kpis = snap.kpis || {};
+    if (snap.kpis.avgDiscountPctFunded == null) {
+      snap.kpis.avgDiscountPctFunded = avg(feePctVals);
+    }
+  }
+}
 
   const aprVals = fundedRows.map(r => toNum(r?.[aprKey]));
   const feeVals = fundedRows.map(r => toNum(r?.[feeKey]));
@@ -1417,9 +1517,33 @@ if (feeKey && /lender fee$/i.test(feeKey) && !/%|percent/i.test(feeKey)) {
   // console.log('[analyze] aprKey, feeKey', aprKey, feeKey);
   // console.log('[analyze] APR avg, Fee avg', snap.kpis.avgAPRFunded, snap.kpis.avgDiscountPctFunded);
 })();
+// Keep legacy and "Funded" KPI keys in sync (avoid nulls either way)
+snap.kpis = snap.kpis || {};
+if (snap.kpis.avgAPR == null && snap.kpis.avgAPRFunded != null) snap.kpis.avgAPR = snap.kpis.avgAPRFunded;
+if (snap.kpis.avgDiscountPct == null && snap.kpis.avgDiscountPctFunded != null) snap.kpis.avgDiscountPct = snap.kpis.avgDiscountPctFunded;
+if (snap.kpis.avgAPRFunded == null && snap.kpis.avgAPR != null) snap.kpis.avgAPRFunded = snap.kpis.avgAPR;
+if (snap.kpis.avgDiscountPctFunded == null && snap.kpis.avgDiscountPct != null) snap.kpis.avgDiscountPctFunded = snap.kpis.avgDiscountPct;
 
 // --- DEBUG: set global snapshot after analysis + merge ---
 if (snap && typeof snap === 'object') {
+// Ensure KPI metrics are persisted into the global snapshot
+if (snap.kpis) {
+  if (snap.kpis.avgAPRFunded != null) {
+    window._lastAvgAPR = snap.kpis.avgAPRFunded;
+  }
+  if (snap.kpis.avgDiscountPctFunded != null) {
+    window._lastAvgFee = snap.kpis.avgDiscountPctFunded;
+  }
+  // Fallback: if this run didn't compute APR/Fee yet, reuse the last values we cached
+if (snap.kpis) {
+  if (snap.kpis.avgAPRFunded == null && typeof window._lastAvgAPR === 'number') {
+    snap.kpis.avgAPRFunded = window._lastAvgAPR;
+  }
+  if (snap.kpis.avgDiscountPctFunded == null && typeof window._lastAvgFee === 'number') {
+    snap.kpis.avgDiscountPctFunded = window._lastAvgFee;
+  }
+}
+}
   window.lastBuiltSnapshot = snap;
   console.log('[DEBUG] set window.lastBuiltSnapshot', {
     year: snap.year,
@@ -1444,7 +1568,16 @@ if (snap && typeof snap === 'object') {
             <li>Funded: <b>${s.totals.funded}</b></li>
             <li>Total Funded: <b>${formatMoney(s.kpis.totalFunded)}</b></li>
             ${s.kpis.avgFundedAmount ? `<li>Avg Loan (Funded): <b>${formatMoney(s.kpis.avgFundedAmount)}</b></li>`:''}
-            ${Number.isFinite(s.kpis.avgDiscountPct) ? `<li>Avg Lender Fee % (Funded): <b>${(s.kpis.avgDiscountPct*100).toFixed(2)}%</b></li>`:''}
+            <li>Avg APR (Funded): <b>${
+              Number.isFinite(s.kpis?.avgAPRFunded ?? s.kpis?.avgAPR)
+                ? `${(s.kpis.avgAPRFunded ?? s.kpis.avgAPR).toFixed(2)}%`
+                : '-'
+            }</b></li>
+            <li>Avg Lender Fee % (Funded): <b>${
+              Number.isFinite(s.kpis?.avgDiscountPctFunded ?? s.kpis?.avgDiscountPct)
+                ? `${(s.kpis.avgDiscountPctFunded ?? s.kpis.avgDiscountPct).toFixed(2)}%`
+                : '-'
+            }</b></li>            
             <li>Dealers: <b>${s.dealerRows.length}</b>, States: <b>${s.stateRows.length}</b></li>
           </ul>
         </div>
@@ -2108,6 +2241,14 @@ _pendingMerge = {
       // No flags → safe to merge directly
       // NOTE: mergeFundedData already exists from the prior step you added
       mergeFundedData(lastBuiltSnapshot, /*overrides*/ null);
+      recomputeAggregatesFromDealers(lastBuiltSnapshot); // already in your code nearby
+recomputeKpisFromFunded(lastBuiltSnapshot);        // <— add this
+lastBuiltSnapshot.kpis = lastBuiltSnapshot.kpis || {};
+if (lastBuiltSnapshot.kpis.avgAPR == null && lastBuiltSnapshot.kpis.avgAPRFunded != null) lastBuiltSnapshot.kpis.avgAPR = lastBuiltSnapshot.kpis.avgAPRFunded;
+if (lastBuiltSnapshot.kpis.avgDiscountPct == null && lastBuiltSnapshot.kpis.avgDiscountPctFunded != null) lastBuiltSnapshot.kpis.avgDiscountPct = lastBuiltSnapshot.kpis.avgDiscountPctFunded;
+if (lastBuiltSnapshot.kpis.avgAPRFunded == null && lastBuiltSnapshot.kpis.avgAPR != null) lastBuiltSnapshot.kpis.avgAPRFunded = lastBuiltSnapshot.kpis.avgAPR;
+if (lastBuiltSnapshot.kpis.avgDiscountPctFunded == null && lastBuiltSnapshot.kpis.avgDiscountPct != null) lastBuiltSnapshot.kpis.avgDiscountPctFunded = lastBuiltSnapshot.kpis.avgDiscountPct;
+
     }
   }
 } catch (e) {
@@ -2424,45 +2565,105 @@ if (snap && snap.kpis) {
  `).join('') || `<tr><td class="px-3 py-6 text-gray-500" colspan="9">No state data.</td></tr>`;
 
  // ONE clean template for the entire section
+ const s = window.lastBuiltSnapshot || {};
  detailResults.innerHTML = `
    <!-- KPI tiles -->
    <!-- KPI tiles (organized) -->
-<div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mb-4">
 
-  <!-- 1) Primary highlight first: Total Funded -->
-  <div class="rounded-2xl border p-4 bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200 shadow-sm md:col-span-2 xl:col-span-2">
-    <div class="text-xs font-medium text-emerald-700">Total Funded (This Month)</div>
-    <div class="text-3xl font-extrabold tabular-nums text-emerald-900">
-      ${formatMoney((snap.kpis && snap.kpis.totalFunded) ? snap.kpis.totalFunded : 0)}
+  <!-- KPI Tiles (Fixed Layout) -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
+  
+    <!-- 1) Primary highlight: Total Funded -->
+    <div class="rounded-xl border p-4 bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200 shadow-sm col-span-2">
+      <div class="text-xs font-medium text-emerald-700">Total Funded (This Month)</div>
+      <div class="text-3xl font-extrabold tabular-nums text-emerald-900">
+      ${formatMoney(Number.isFinite(s.kpis?.totalFunded) ? s.kpis.totalFunded : 0)}
+      </div>
+    </div>
+  
+    <!-- 2) Volume tiles -->
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Total Apps</div>
+    <div class="text-2xl font-semibold tabular-nums">${total}</div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Funded</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${funded} <span class="text-sm text-gray-500">(${formatPct(total ? funded / total : 0)})</span>
     </div>
   </div>
 
-  <!-- 2) Volume tiles -->
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Total Apps</div><div class="text-2xl font-semibold tabular-nums">${total}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Funded</div><div class="text-2xl font-semibold tabular-nums">${funded} <span class="text-sm text-gray-500">(${formatPct(total?funded/total:0)})</span></div></div>
-
   <!-- 3) Decision mix -->
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Approved</div><div class="text-2xl font-semibold tabular-nums">${approved} <span class="text-sm text-gray-500">(${formatPct(total?approved/total:0)})</span></div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Counter</div><div class="text-2xl font-semibold tabular-nums">${counter} <span class="text-sm text-gray-500">(${formatPct(total?counter/total:0)})</span></div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Pending</div><div class="text-2xl font-semibold tabular-nums">${pending} <span class="text-sm text-gray-500">(${formatPct(total?pending/total:0)})</span></div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Denial</div><div class="text-2xl font-semibold tabular-nums">${denial} <span class="text-sm text-gray-500">(${formatPct(total?denial/total:0)})</span></div></div>
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Approved</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${approved} <span class="text-sm text-gray-500">(${formatPct(total ? approved / total : 0)})</span>
+    </div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Counter</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${counter} <span class="text-sm text-gray-500">(${formatPct(total ? counter / total : 0)})</span>
+    </div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Pending</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${pending} <span class="text-sm text-gray-500">(${formatPct(total ? pending / total : 0)})</span>
+    </div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Denial</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${denial} <span class="text-sm text-gray-500">(${formatPct(total ? denial / total : 0)})</span>
+    </div>
+  </div>
 
   <!-- 4) Ratios & quality -->
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">LTA</div><div class="text-2xl font-semibold tabular-nums">${formatPct(LTA)}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">LTB</div><div class="text-2xl font-semibold tabular-nums">${formatPct(LTB)}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg LTV (Approved)</div><div class="text-2xl font-semibold tabular-nums">${avgLTVApproved==null?'-':(avgLTVApproved.toFixed(2)+'%')}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg APR (Funded)</div><div class="text-2xl font-semibold tabular-nums">${((snap.kpis && snap.kpis.avgAPRFunded != null) ? Number(snap.kpis.avgAPRFunded) : avgAPRFunded) == null ? '-' : (((snap.kpis && snap.kpis.avgAPRFunded != null) ? Number(snap.kpis.avgAPRFunded) : avgAPRFunded).toFixed(2) + '%')}</div></div>
-  <div class="rounded-xl border p-3 bg-white"><div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div><div class="text-xl font-semibold tabular-nums">${(() => { const v = snap?.kpis?.avgDiscountPct ?? snap?.kpis?.avgDiscountPctFunded; return v == null ? '-' : (Number(v).toFixed(2) + '%'); })()}</div></div>
-
-  <div class="text-xl font-semibold tabular-nums">
-    ${snap.kpis && snap.kpis.avgDiscountPct == null
-      ? '—'
-      : (snap.kpis.avgDiscountPct).toFixed(2) + '%'}
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">LTA</div>
+    <div class="text-2xl font-semibold tabular-nums">${formatPct(LTA)}</div>
   </div>
-</div>
 
-</div>
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">LTB</div>
+    <div class="text-2xl font-semibold tabular-nums">${formatPct(LTB)}</div>
+  </div>
 
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Avg LTV (Approved)</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${avgLTVApproved == null ? '-' : (avgLTVApproved.toFixed(2) + '%')}
+    </div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Avg APR (Funded)</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${(() => {
+        const s = window.lastBuiltSnapshot || {};
+        const v = s.kpis?.avgAPRFunded ?? s.kpis?.avgAPR;
+        return Number.isFinite(v) ? v.toFixed(2) + '%' : '–';
+      })()}
+    </div>
+  </div>
+
+  <div class="rounded-xl border p-3 bg-white">
+    <div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div>
+    <div class="text-2xl font-semibold tabular-nums">
+      ${(() => {
+        const s = window.lastBuiltSnapshot || {};
+        const v = s.kpis?.avgDiscountPctFunded ?? s.kpis?.avgDiscountPct;
+        return Number.isFinite(v) ? v.toFixed(2) + '%' : '–';
+      })()}
+    </div>
+  </div>
+  </div>
+  
 
    <!-- State Performance (this month) -->
    <div class="bg-white rounded-2xl border p-3 mb-4">
