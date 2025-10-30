@@ -585,6 +585,21 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
+  // --- normalize KPI values from the built snapshot ---
+const k = (snap && snap.kpis) || {};
+
+const avgAPR =
+  Number.isFinite(k.avgAPRFunded) ? k.avgAPRFunded :
+  Number.isFinite(k.avgAPR)       ? k.avgAPR       :
+  null;
+
+const avgFeePct =
+  Number.isFinite(k.avgDiscountPctFunded) ? k.avgDiscountPctFunded :
+  Number.isFinite(k.avgDiscountPct)       ? k.avgDiscountPct       :
+  null;
+
+// now use avgAPR and avgFeePct in the monthly_kpis upsert payload
+  
 // === Save Monthly KPIs to Supabase (real values from snap.kpis, with fallbacks) ===
 try {
   const y = snap?.year, m = snap?.month;
@@ -654,10 +669,10 @@ try {
       .upsert({
         year: y,
         month: m,
-        avg_ltv_approved:        avgLTVApprovedVal,
-        avg_apr_funded:          avgAPRFundedVal,
-        avg_discount_pct_funded: avgDiscountPctFundedVal
-      }, { onConflict: ['year','month'] })
+        avg_ltv_approved:          avgLTVApprovedVal,
+        avg_apr_funded:            avgAPRFundedVal,
+        avg_discount_pct_funded:   avgDiscountPctFundedVal,
+      }, { onConflict: 'year,month' }) // ✅ v2 expects a string      
       .select()
       .single();
 
@@ -674,6 +689,9 @@ try {
     return false;
   }
 }
+window.saveMonthlySnapshotSB  = saveMonthlySnapshotSB;   // ✅ correct name (singular)
+window.saveMonthlySnapshotsSB = window.saveMonthlySnapshotSB; // ✅ backup name for old code
+
 // === Rebuild Yearly Aggregates from `monthly_snapshots` ===================
 async function rebuildYearlyAggregatesSB(year) {
   try {
@@ -1545,6 +1563,18 @@ if (snap.kpis) {
 }
 }
   window.lastBuiltSnapshot = snap;
+// --- Autosave this month so KPIs persist on refresh ---
+if (typeof window.saveMonthlySnapshotsSB === 'function') {
+  setSaveStatus('Autosaving to Supabase…');
+  window.saveMonthlySnapshotsSB(snap)
+    .then(() => setSaveStatus('Autosave: OK'))
+    .catch(e => {
+      console.warn('[autosave] failed:', e);
+      setSaveStatus('[autosave] Save failed — use "Save to Supabase".');
+    });
+}
+
+
   console.log('[DEBUG] set window.lastBuiltSnapshot', {
     year: snap.year,
     month: snap.month,
