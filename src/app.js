@@ -215,11 +215,11 @@ try {
       .eq('month', month)
       .maybeSingle();
 
-    if (!kerr && krow) {
-      kpis.avgLTVApproved        = krow.avg_ltv_approved ?? null;
-      kpis.avgAPRFunded          = krow.avg_apr_funded ?? null;
-      kpis.avgDiscountPctFunded  = krow.avg_discount_pct_funded ?? null;
-    }
+      if (!kerr && krow) {
+        kpis.avgLTVApproved        = krow.avg_ltv_approved        != null ? Number(krow.avg_ltv_approved)        : null;
+        kpis.avgAPRFunded          = krow.avg_apr_funded          != null ? Number(krow.avg_apr_funded)          : null;
+        kpis.avgDiscountPctFunded  = krow.avg_discount_pct_funded != null ? Number(krow.avg_discount_pct_funded) : null;
+      }         
   }
 } catch (e) {
   console.error('[SB monthly] monthly_kpis fetch error:', e);
@@ -1564,16 +1564,30 @@ if (snap.kpis) {
 }
   window.lastBuiltSnapshot = snap;
 // --- Autosave this month so KPIs persist on refresh ---
-if (typeof window.saveMonthlySnapshotsSB === 'function') {
+const _saveFn =
+  window.saveMonthlySnapshotSB || window.saveMonthlySnapshotsSB; // accept either
+
+if (typeof _saveFn === 'function') {
   setSaveStatus('Autosaving to Supabase…');
-  window.saveMonthlySnapshotsSB(snap)
-    .then(() => setSaveStatus('Autosave: OK'))
+  _saveFn(snap)
+    .then(() => {
+      setSaveStatus('Autosave: OK');
+      // Also persist locally so tiles reload after a refresh (no re-upload needed)
+      try {
+        const snaps = getSnaps();            // read existing list
+        const id = snap.id;
+        const idx = snaps.findIndex(s => s.id === id);
+        if (idx >= 0) snaps[idx] = snap;     // replace same month
+        else snaps.push(snap);               // or add
+        snaps.sort((a,b) => String(a.id).localeCompare(String(b.id))); // keep ordered
+        setSnaps(snaps);                     // write back to localStorage
+      } catch (_) {}
+    })
     .catch(e => {
       console.warn('[autosave] failed:', e);
       setSaveStatus('[autosave] Save failed — use "Save to Supabase".');
     });
 }
-
 
   console.log('[DEBUG] set window.lastBuiltSnapshot', {
     year: snap.year,
@@ -1615,7 +1629,7 @@ if (typeof window.saveMonthlySnapshotsSB === 'function') {
     }
 
     // 9) Enable buttons
-    ['#btnSaveMonth','#btnExportRawAll','#btnExportFunded'].forEach(sel => {
+    ['#btnSaveMonth','#btnExportRawAll','#btnExportFunded','#btnDeleteMonth'].forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.disabled = false;
     });
@@ -1962,7 +1976,6 @@ function matchAndMergeFundedIntoSnapshot(snap) {
 
   // Update per-dealer funded counts
   const incKey = (m, k, v=1) => m.set(k, (m.get(k)||0)+v);
-  const dealerKey = (d,st,fi) => `${d}|${st}|${fi||''}`;
 
   const incByDealer = new Map();
   accepted.forEach(x => {
@@ -2308,6 +2321,49 @@ if (lastBuiltSnapshot.kpis.avgDiscountPctFunded == null && lastBuiltSnapshot.kpi
   $('#btnExportFunded') && ($('#btnExportFunded').disabled = false);
 });
 
+// Delete Month (removes this year-month from Supabase + local)
+// Wire BOTH buttons: upload-tab and monthly-tab
+['#btnDeleteMonth', '#btnDeleteMonthMonthly'].forEach((sel) => {
+  const btn = document.querySelector(sel);
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const s = window.lastBuiltSnapshot;
+    if (!s || !s.year || !s.month) { alert('Nothing to delete. Analyze a month first.'); return; }
+
+    const ok = confirm(`Delete data for ${s.year}-${String(s.month).padStart(2,'0')} from cloud + local?`);
+    if (!ok) return;
+
+    try {
+      clearSaveStatus();
+      setSaveStatus(`Deleting ${s.year}-${String(s.month).padStart(2,'0')}…`);
+
+      // 1) Delete from Supabase (both tables)
+      if (window.sb) {
+        await window.sb.from('monthly_snapshots').delete().eq('year', s.year).eq('month', s.month);
+        await window.sb.from('monthly_kpis').delete().eq('year', s.year).eq('month', s.month);
+      }
+
+      // 2) Remove from localStorage “snaps”
+      let snaps = getSnaps().filter(x => !(x.year === s.year && x.month === s.month));
+      setSnaps(snaps);
+
+      // 3) Clear working snapshot and refresh UI tiles
+      if (window.lastBuiltSnapshot?.year === s.year && window.lastBuiltSnapshot?.month === s.month) {
+        window.lastBuiltSnapshot = null;
+      }
+      setSaveStatus('Deleted — OK');
+      try { if (typeof refreshMonthlyGrid === 'function') refreshMonthlyGrid(); } catch {}
+
+    } catch (e) {
+      console.error('[delete month] error:', e);
+      setSaveStatus('Delete failed — see console.');
+      alert('Delete failed. Check Console for details.');
+    }
+  });
+});
+
+
 $('#btnSaveMonth')?.addEventListener('click', async () => {
   try {
     if (!lastBuiltSnapshot) {
@@ -2418,6 +2474,38 @@ async function refreshMonthlyGrid() {
   if (sb) {
     grid.innerHTML = '<div class="text-sm text-slate-500">Loading from Supabase…</div>';
     var snaps = await fetchMonthlySummariesSB();
+    // === Load saved KPI values (APR, Fee, LTV) from Supabase ===
+try {
+  if (window.sb && window.lastBuiltSnapshot?.year && window.lastBuiltSnapshot?.month) {
+    const { data: kpi, error: kerr } = await window.sb
+      .from('monthly_kpis')
+      .select('avg_apr_funded, avg_discount_pct_funded, avg_ltv_approved')
+      .eq('year', window.lastBuiltSnapshot.year)
+      .eq('month', window.lastBuiltSnapshot.month)
+      .maybeSingle();
+
+    if (!kerr && kpi) {
+      const avgAPR = Number(kpi.avg_apr_funded);
+      const avgFee = Number(kpi.avg_discount_pct_funded);
+      const avgLTV = Number(kpi.avg_ltv_approved);
+
+      // Update KPI tiles if the values exist
+      if (typeof updateKpiTile === 'function') {
+        updateKpiTile('Avg APR (Funded)', `${avgAPR.toFixed(2)}%`);
+      }
+      if (typeof updateKpiTile === 'function') {
+        updateKpiTile('Avg Lender Fee % (Funded)', `${avgDisc.toFixed(2)}%`);
+      }
+      if (typeof updateKpiTile === 'function') {
+        updateKpiTile('Avg LTV (Approved)', `${avgLTV.toFixed(2)}%`);
+      }
+      
+    }
+  }
+} catch (e) {
+  console.warn('[monthly refresh] KPI reload failed:', e);
+}
+
     if (!snaps || !snaps.length) {
       // ⤵️ Fallback to localStorage if SB is empty/locked (dev/RLS)
       const snapsLocal = getSnaps().slice(-12);
@@ -2829,121 +2917,226 @@ if ((!snap.fiRows || !snap.fiRows.length) && Array.isArray(snap.dealerRows)) {
 
 paintMonthlyFI(snap);
 paintMonthlyHighValues(snap);
+// -- Wire Monthly tab action buttons --
+const delMo = document.getElementById('btnDeleteMonthMonthly');
+if (delMo) delMo.disabled = false; // enable it in Monthly tab
+
+const expAll = document.getElementById('detailExportAll');
+if (expAll) {
+  expAll.addEventListener('click', () => {
+    const rows = Array.isArray(snap.dealerRows) ? snap.dealerRows : [];
+    if (!rows.length) { alert('No dealer rows to export.'); return; }
+    downloadCSV(rows, 'monthly_dealers_all.csv');
+  });
+}
+
+const expFunded = document.getElementById('detailExportFunded');
+if (expFunded) {
+  expFunded.addEventListener('click', () => {
+    const rows = (snap.dealerRows || []).filter(r =>
+      (Number(r.funded) || 0) > 0 || (Number(r.fundedAmt) || 0) > 0
+    );
+    if (!rows.length) { alert('No funded dealers found for this month.'); return; }
+    downloadCSV(rows, 'monthly_dealers_funded.csv');
+  });
+}
 
  // ===== Dealer render/search/sort (no template nesting hazards) =====
  const body = $('#mdDealerBody');
  const head = $('#mdDealerHead');
  const searchEl = $('#mdDealerSearch');
-// Build a quick "funded dollars by dealer|state|fi" lookup
-const amtByDealer = new Map();
-(snap.fundedRawRows || []).forEach(r => {
-  const key = `${String(r.Dealer||'').trim()}|${String(r.State||'').trim()}|${normFI(r.FI)}`;
-  const amt = parseNumber(r['Loan Amount']);
-  if (Number.isFinite(amt)) {
-    amtByDealer.set(key, (amtByDealer.get(key) || 0) + amt);
+
+// Build a quick 'funded dollars by dealer|state|fi' lookup
+const pickStr = (obj, names) => {
+  for (const n of names) {
+    if (obj && obj[n] != null && String(obj[n]).trim() !== '') {
+      return String(obj[n]).trim();
+    }
   }
+  return '';
+};
+
+const pickNum = (obj, names) => {
+  for (const n of names) {
+    const raw = obj?.[n];
+    if (raw == null || raw === '') continue;
+    const v = Number(String(raw).replace(/[^0-9.\-]/g, ''));
+    if (Number.isFinite(v)) return v;
+  }
+  return NaN;
+};
+
+const amtByDealer = new Map();
+
+// helper to normalize FI exactly like elsewhere
+const fiNormalize = (typeof normFI === 'function')
+  ? normFI
+  : (t) => (String(t || '').trim().toLowerCase() === 'franchise' ? 'Franchise' : 'Independent');
+
+// unified key builder (dealer|STATE|FI or dealer|STATE)
+const dealerKey = (dealer, state, fi /* optional */) => {
+  const d = String(dealer ?? '').trim();
+  const s = String(state  ?? '').trim().toUpperCase();
+  if (fi === undefined || fi === null || String(fi).trim() === '') return `${d}|${s}`;
+  return `${d}|${s}|${fi}`;
+};
+
+(snap.fundedRawRows || []).forEach(r => {
+  // read dealer / state from any header variant
+  const dealer = pickStr(r, ['Dealer', 'Dealer Name', 'dealer']);
+  const state  = pickStr(r, ['State', 'state']);
+  const fiSafe = fiNormalize(r.FI ?? r.fi);
+
+  // read the dollar amount from common headers
+  const amount = pickNum(r, [
+    'Loan Amount',
+    'fundedAmount',
+    'Funded $',
+    'Amount Financed',
+    'Amount',
+    'Loan',
+    'loan',
+  ]);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+
+  const kFull = dealerKey(dealer, state, fiSafe); // dealer|STATE|FI
+  const prev = Number(amtByDealer.get(kFull) || 0);
+  amtByDealer.set(kFull, prev + amount);
 });
- function renderDealerRows() {
+
+// (optional) keep the debug — confirms keys look right and count matches funded rows
+console.log('[funded map] size=', amtByDealer.size,
+            'sample=', Array.from(amtByDealer.entries()).slice(0, 5));
+
+
+function renderDealerRows() {
   if (!body) { console.warn('[dealer] tbody not found'); return; }
   console.log('[dealer] start', { mdSearch, sort: mdSort });
 
-   // 1) copy source
-   let arr = (snap.dealerRows ?? snap.dealers ?? []).slice();
-   // Make sure LTB is always correct, even if a saved row is missing it
-arr = arr.map(r => {
-  const total = Number(r.total) || 0;
-  const funded = Number(r.funded) || 0;
-  const ltbSafe = Number.isFinite(r.ltb) ? r.ltb : (total ? funded / total : 0);
-  const key = `${String(r.dealer).trim()}|${String(r.state).trim()}|${String(r.fi).trim()}`;
-  const fundedAmt = Number(amtByDealer.get(key)) || 0;
-  return { ...r, ltbSafe, fundedAmt };
-});
-   console.log('Dealer rows in snapshot:', {
-    hasDealerRows: Array.isArray(snap.dealerRows),
-    dealerRowsLen: snap.dealerRows?.length ?? 0,
-    hasDealers: Array.isArray(snap.dealers),
-    dealersLen: snap.dealers?.length ?? 0,
-    sample: (snap.dealerRows ?? snap.dealers)?.[0]
+  // 1) copy source defensively
+  let arr =
+    Array.isArray(snap.dealerRows) ? snap.dealerRows.slice()
+  : Array.isArray(snap.dealers)    ? snap.dealers.slice()
+  : [];
+
+  // 2) normalize numbers and compute ratios (use precomputed if present)
+  arr = arr.map(r => {
+    const total     = Number(r.total)    || 0;
+    const funded    = Number(r.funded)   || 0;
+    const approved  = Number(r.approved) || 0;
+    const counter   = Number(r.counter)  || 0;
+
+    const ltb = Number.isFinite(r.ltb) ? Number(r.ltb) : (total ? funded / total : 0);
+    const lta = Number.isFinite(r.lta) ? Number(r.lta) : (total ? (approved + counter) / total : 0);
+
+  // funded $ lookup key (normalized FI to match Step 1)
+const fiKey = (typeof normFI === 'function')
+? normFI(r.fi)
+: String(r.fi ?? '').trim();
+
+// funded $ lookup key(s): try dealer|state|fi, then fall back to dealer|state
+const kFull  = dealerKey(r.dealer, r.state, fiKey);  // dealer|STATE|fi (normalized)
+const kNoFi  = dealerKey(r.dealer, r.state);         // dealer|STATE (fallback)
+const fundedAmt = Number(amtByDealer.get(kFull) ?? amtByDealer.get(kNoFi) ?? 0);
+
+// expose normalized fields used by table render/sort
+return { ...r, ltb, lta, fundedAmt };
   });
-  
-   // 2) search by dealer
-   const q = (mdSearch || '').trim().toLowerCase();
-   if (q) arr = arr.filter(r => String(r.dealer||'').toLowerCase().includes(q));
 
-   // 3) sort
-   const { key, dir } = mdSort;
-   arr.sort((a, b) => {
-     // if sorting by LTB, use the safe value
-     const aVal =
-    key === 'ltb'       ? (a.ltbSafe ?? 0) :
-    key === 'fundedAmt' ? (Number(a.fundedAmt) || 0) :
-                          (a[key] ?? 0);
+  // 3) search by dealer
+  const q = (mdSearch || '').trim().toLowerCase();
+  if (q) arr = arr.filter(r => String(r.dealer||'').toLowerCase().includes(q));
 
-  const bVal =
-    key === 'ltb'       ? (b.ltbSafe ?? 0) :
-    key === 'fundedAmt' ? (Number(b.fundedAmt) || 0) :
-                          (b[key] ?? 0);
-   
-     if (typeof aVal === 'string' || typeof bVal === 'string') {
-       return dir === 'asc' ? String(aVal).localeCompare(String(bVal))
-                            : String(bVal).localeCompare(String(aVal));
-     }
-     return dir === 'asc' ? aVal - bVal : bVal - aVal;
-   });
-   
-  
-   // 4) mark active header
-   head?.querySelectorAll('.sortable').forEach(th => {
-     const k = th.getAttribute('data-key');
-     const active = (k === key);
-     const mark = document.createElement('span');
-     mark.className = 'dir';
-     mark.textContent = active ? (dir === 'asc' ? '↑' : '↓') : '↕';
-     const old = th.querySelector('.dir');
-     if (old) old.replaceWith(mark); else th.appendChild(mark);
-   });
+  // 4) sort
+  const { key, dir } = mdSort;
+  arr.sort((a, b) => {
+    const pick = (row) =>
+      key === 'ltb'       ? (Number(row.ltb)       || 0) :
+      key === 'lta'       ? (Number(row.lta)       || 0) :
+      key === 'fundedAmt' ? (Number(row.fundedAmt) || 0) :
+                            (row[key] ?? 0);
 
-   // 5) rows (all numeric right-aligned; LTA/LTB = % + tiny bar)
-   console.log('[dealer] length after filter/sort:', arr.length, 'sample:', arr[0]);
-   // LTB = funded / total (computed live so it stays correct even after merges)
-const getLTB = (r) => {
-  const total = Number(r?.total) || 0;
-  const funded = Number(r?.funded) || 0;
-  return total ? funded / total : 0;   // returns a 0..1 fraction
-};
-body.innerHTML = arr.map(r => {
-  // figure out the exact key for this dealer row
-  const rowKey = `${r.dealer}|${r.state}|${r.fi}`;
-  const fundedAmount = amtByDealer.get(rowKey) || 0;
+    const aVal = pick(a);
+    const bVal = pick(b);
 
-  return `
-     <tr class="border-t odd:bg-gray-50/40">
-       <td class="px-3 py-2">${r.dealer}</td>
-       <td class="px-3 py-2">${stateChip(r.state)}</td>
-       <td class="px-3 py-2">${fiChip(r.fi)}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.total ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.approved ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.counter ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.pending ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.denial ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${r.funded ?? 0}</td>
-       <td class="px-3 py-2 tabular-nums text-right">${formatMoney(fundedAmount)}</td>
-       <td class="px-3 py-2">
-       <div class="inline-flex items-center gap-2">
-         <span class="tabular-nums">${formatPct(r.lta||0)}</span>
-         <span class="inline-block w-20 align-middle">${pctBar(r.lta||0)}</span>
-       </div>
-     </td>
-     <td class="px-3 py-2">
-  <div class="inline-flex items-center gap-2">
-    <span class="tabular-nums">${formatPct(r.total ? (r.funded / r.total) : 0)}</span>
-    <span class="inline-block w-20 align-middle">${pctBar(r.total ? (r.funded / r.total) : 0)}</span>
-  </div>
-</td>
-     </tr>
-     `;
-    }).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="12">No data.</td></tr>';    
- }
+    if (typeof aVal === 'string' || typeof bVal === 'string') {
+      return dir === 'asc' ? String(aVal).localeCompare(String(bVal))
+                           : String(bVal).localeCompare(String(aVal));
+    }
+    return dir === 'asc' ? aVal - bVal : bVal - aVal;
+  });
+
+  // 5) mark active header
+  head?.querySelectorAll('.sortable').forEach(th => {
+    const k = th.getAttribute('data-key');
+    const active = (k === key);
+    const mark = document.createElement('span');
+    mark.className = 'dir';
+    mark.textContent = active ? (dir === 'asc' ? '↑' : '↓') : '↕';
+    const old = th.querySelector('.dir');
+    if (old) old.replaceWith(mark); else th.appendChild(mark);
+  });
+// Center the LTA / LTB headers so they align with the values
+head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
+  th.classList.remove('text-left', 'text-right');
+  th.classList.add('text-center');
+});
+
+  // 6) rows (numeric right-aligned; show LTA/LTB as % + tiny bar)
+  const pctBar = v => {
+    const w = Math.max(0, Math.min(1, Number(v || 0)));
+    return `<span class="inline-block h-1.5 rounded bg-slate-200 align-middle">
+              <span class="inline-block h-1.5 rounded bg-blue-500" style="width:${(w*100).toFixed(0)}%"></span>
+            </span>`;
+  };
+  const stateChip = s => s || '';
+  const fiChip = s => s || '';
+
+  body.innerHTML = arr.map(r => {
+    const lta = Number(r.lta) || 0;
+    const ltb = Number(r.ltb) || 0;
+    const fundedAmount = Number(r.fundedAmt) || 0;
+
+    return `
+      <tr class="border-t odd:bg-gray-50/40">
+        <td class="px-3 py-2">${r.dealer ?? ''}</td>
+        <td class="px-3 py-2">${stateChip(r.state)}</td>
+        <td class="px-3 py-2">${fiChip(r.fi)}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.total ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.approved ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.counter ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.pending ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.denial ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${r.funded ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${fundedAmount.toFixed(2)}</td>
+        <td class="px-3 py-2 tabular-nums text-right">
+          ${(lta*100).toFixed(2)}%
+          <span class="inline-block w-20 align-middle">${pctBar(lta)}</span>
+        </td>
+        <td class="px-3 py-2 tabular-nums text-right">
+          ${(ltb*100).toFixed(2)}%
+          <span class="inline-block w-20 align-middle">${pctBar(ltb)}</span>
+        </td>
+      </tr>`;
+  }).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="12">No data.</td></tr>';
+}
+
+// events (keep as you already had)
+searchEl?.addEventListener('input', (e) => {
+  mdSearch = e.target.value || '';
+  renderDealerRows();
+});
+document.getElementById('btnExportDealers')?.addEventListener('click', exportDealersCSV);
+head?.querySelectorAll('.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.getAttribute('data-key');
+    if (!k) return;
+    mdSort = { key: k, dir: (mdSort.key === k && mdSort.dir === 'desc') ? 'asc' : 'desc' };
+    renderDealerRows();
+  });
+});
+renderDealerRows();
+
  function exportDealersCSV() {
   // rebuild the same list you’re showing (respect search & sort)
   let arr = (snap.dealerRows || []).slice();
@@ -3025,7 +3218,9 @@ body.innerHTML = arr.map(r => {
   $('#backToGrid')?.addEventListener('click', () => {
     detail.classList.add('hidden');
   }, { once:true });
-}
+}  // closes the block that begins near line 2559
+
+
 // Paint: Franchise vs Independent (This Month) — FULL METRICS
 function paintMonthlyFI(snap) {
   const body = document.getElementById('mFiBody');
@@ -4199,4 +4394,14 @@ async function refreshYearly() {
     monthlyBtn.__mo_wired = true;
   }
 })();
+function updateKpiTile(label, value) {
+  const tiles = document.querySelectorAll('.kpi-tile');
+  for (const tile of tiles) {
+    const title = tile.querySelector('.kpi-title')?.textContent?.trim();
+    if (title && title.includes(label)) {
+      const val = tile.querySelector('.kpi-value');
+      if (val) val.textContent = value;
+    }
+  }
+}
 
