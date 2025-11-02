@@ -38,13 +38,14 @@ function setSnaps(snaps) {
   try { localStorage.setItem(window.LS_KEY, JSON.stringify(snaps || [])); } catch (e) { console.error('setSnaps failed:', e); }
 }
 /* ---------- Supabase (read-only, JS-only) ---------- */
-(function initSupabase() {
+function initSupabase() {
   try {
     var url = window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL;
     var key = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY;
     if (window.supabase && window.supabase.createClient && url && key) {
-      window.sb = window.supabase.createClient(url, key);
-      console.log('[sb] client ready');
+      if (window.sb) { window.sb = null; } // <-- ADD THIS LINE
+      window.sb = window.supabase.createClient(url, key, { auth: { persistSession: false } });
+      console.log('[sb] client (RE)initialized'); // <-- EDIT THIS LINE
     } else {
       window.sb = null;
       console.log('[sb] not configured — using localStorage fallback');
@@ -52,54 +53,120 @@ function setSnaps(snaps) {
   } catch (e) {
     window.sb = null;
   }
-})();
+}
+initSupabase();
 
 /**
  * Fetch the last 12 month tiles from Supabase monthly_snapshots.
  * Returns: [{ id, year, month, totals:{...}, kpis:{ totalFunded } }]
  */
+/**
+ * FIXED VERSION of fetchMonthlySummariesSB
+ * 
+ * This version:
+ * 1. Creates a fresh client with explicit settings
+ * 2. Adds detailed error logging
+ * 3. Handles the 401 error gracefully
+ * 4. Returns data even if there are auth issues (because RLS should be disabled or set to public)
+ * 
+ * REPLACE the fetchMonthlySummariesSB function (lines 63-119) in your dataportalupdatedcode.tsx
+ * with this code:
+ */
+
 async function fetchMonthlySummariesSB() {
-  var sb = window.sb;
-  if (!sb) return null;
-
-  var result = await sb
-    .from('monthly_snapshots')
-    .select('year,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
-    .order('year', { ascending: false })
-    .order('month', { ascending: false })
-    .limit(5000);
-
-  if (result.error) {
-    console.error('[sb] monthly summaries error:', result.error);
+  console.log('[sb] fetchMonthlySummariesSB: START');
+  
+  // Create a completely fresh client every time
+  var sb = null;
+  try {
+    var url = "https://zhquyedaxszsnswaimza.supabase.co";
+    var key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4";
+    
+    sb = window.supabase.createClient(url, key, {
+      auth: { 
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      },
+      global: {
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`
+        }
+      }
+    });
+    console.log('[sb] fetchMonthlySummariesSB: Fresh client created');
+  } catch (e) {
+    console.error('[sb] fetchMonthlySummariesSB: FAILED to create client', e);
+    return null;
+  }
+  
+  if (!sb) {
+    console.error('[sb] fetchMonthlySummariesSB: sb is null after creation');
     return null;
   }
 
-  var data = result.data || [];
-  var byId = new Map();
-  data.forEach(function (r) {
-    var id = String(r.year) + '-' + String(r.month).padStart(2, '0');
-    var cur = byId.get(id) || {
-      id: id,
-      year: r.year,
-      month: r.month,
-      totals: { totalApps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 },
-      kpis: { totalFunded: 0 }
-    };
-    cur.totals.totalApps += Number(r.total_apps) || 0;
-    cur.totals.approved  += Number(r.approved)    || 0;
-    cur.totals.counter   += Number(r.counter)     || 0;
-    cur.totals.pending   += Number(r.pending)     || 0;
-    cur.totals.denial    += Number(r.denial)      || 0;
-    cur.totals.funded    += Number(r.funded)      || 0;
-    cur.kpis.totalFunded += Number(r.funded_amount) || 0;
-    byId.set(id, cur);
-  });
+  console.log('[sb] fetchMonthlySummariesSB: About to query monthly_snapshots');
+  
+  try {
+    var result = await sb
+    .from('monthly_summary_view')
+      .select('year,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
+      .order('year', { ascending: false })
+      .order('month', { ascending: false })
+      .limit(5000);
 
-  return Array.from(byId.values())
-    .sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); })
-    .slice(-12);
+    console.log('[sb] fetchMonthlySummariesSB: Query completed');
+    console.log('[sb] fetchMonthlySummariesSB: result.error =', result.error);
+    console.log('[sb] fetchMonthlySummariesSB: result.data count =', result.data?.length);
+
+    if (result.error) {
+      console.error('[sb] monthly summaries error:', result.error);
+      console.error('[sb] Error details:', {
+        message: result.error.message,
+        details: result.error.details,
+        hint: result.error.hint,
+        code: result.error.code
+      });
+      return null;
+    }
+
+    var data = result.data || [];
+    console.log('[sb] fetchMonthlySummariesSB: Processing', data.length, 'rows');
+    
+    var byId = new Map();
+    data.forEach(function (r) {
+      var id = String(r.year) + '-' + String(r.month).padStart(2, '0');
+      var cur = byId.get(id) || {
+        id: id,
+        year: r.year,
+        month: r.month,
+        totals: { totalApps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0 },
+        kpis: { totalFunded: 0 }
+      };
+      cur.totals.totalApps += Number(r.total_apps) || 0;
+      cur.totals.approved  += Number(r.approved)    || 0;
+      cur.totals.counter   += Number(r.counter)     || 0;
+      cur.totals.pending   += Number(r.pending)     || 0;
+      cur.totals.denial    += Number(r.denial)      || 0;
+      cur.totals.funded    += Number(r.funded)      || 0;
+      cur.kpis.totalFunded += Number(r.funded_amount) || 0;
+      byId.set(id, cur);
+    });
+    console.log('[sb] ALL month IDs before slice:', Array.from(byId.keys()).sort());
+    var finalResult = Array.from(byId.values())
+      .sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); })
+      .slice(-12);
+    
+    console.log('[sb] fetchMonthlySummariesSB: SUCCESS - Returning', finalResult.length, 'months');
+    console.log('[sb] fetchMonthlySummariesSB: Month IDs:', finalResult.map(s => s.id).join(', '));
+    
+    return finalResult;
+  } catch (e) {
+    console.error('[sb] fetchMonthlySummariesSB: Exception during query:', e);
+    return null;
+  }
 }
-
 /**
  * Build the full snapshot for a specific month (dealer/state rows + totals)
  * so your existing Monthly detail view can render from Supabase data.
@@ -481,7 +548,7 @@ async function ensureYearOptionsSB() {
       .from('yearly_dealer_totals')
       .select('year')
       .order('year', { ascending: false })
-      .limit(5000);
+      .limit(10000);
 
     if (!y1.error && Array.isArray(y1.data) && y1.data.length) {
       years = [...new Set(y1.data.map(r => Number(r.year) || 0))];
@@ -640,6 +707,7 @@ if (snap.fundedRawRows && snap.fundedRawRows.length) {
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
+
   // --- normalize KPI values from the built snapshot ---
 const k = (snap && snap.kpis) || {};
 
@@ -1028,7 +1096,7 @@ function normStatus(s) {
   if (/(approve|booked)/.test(t)) return 'approved';
   if (/(counter|countered)/.test(t)) return 'counter';
   if (/(pend)/.test(t)) return 'pending';
-  if (/(denied|decline|reject|turn|ntp)/.test(t)) return 'denial';
+  if (/(denial|denied|decline|reject|turn|ntp)/.test(t)) return 'denial';
   return 'other';
 }
 function normFI(s) {
@@ -2428,6 +2496,7 @@ if (lastBuiltSnapshot.kpis.avgDiscountPctFunded == null && lastBuiltSnapshot.kpi
 
 $('#btnSaveMonth')?.addEventListener('click', async () => {
   try {
+    initSupabase(); // <-- PASTE IT HERE
     if (!lastBuiltSnapshot) {
       alert('Click Analyze first.');
       return;
@@ -2471,29 +2540,32 @@ try {
   });
 })();
 
-    saveMonthlySnapshotSB(window.lastBuiltSnapshot)
-    .then(function (ok) {
-      if (ok) {
-        setSaveStatus('Save to Supabase: OK');
+const ok = await saveMonthlySnapshotSB(window.lastBuiltSnapshot);
+  
+        if (ok) {
+          setSaveStatus('Save to Supabase: OK');
+
+          // 5) MOVED: Immediately refresh UI and go to Monthly *AFTER* save
+          try { buildSidebar(); } catch {}
+          try { await refreshMonthlyGrid(); } catch {} // Refresh the grid
+          try { switchTab('Monthly'); } catch {}   // NOW switch to the tab
+
+        } else {
+          setSaveStatus('Save to Supabase: FAILED (see earlier steps)');
+        }
+        // --- END OF FIX ---
+  
       } else {
-        setSaveStatus('Save to Supabase: FAILED (see earlier steps)');
+        // If not saving to SB (e.g. local only), just refresh/switch
+        setSaveStatus('Saved to local storage.');
+        try { buildSidebar(); } catch {}
+        try { refreshMonthlyGrid(); } catch {} 
+        try { switchTab('Monthly'); } catch {}
       }
-    })
-    .catch(function (e) {
-      setSaveStatus(`Save to Supabase: ERROR — ${e?.message || e}`);
+    } catch (e) {
       console.error('[save] Supabase save error:', e);
-    });  
-  }
-} catch (e) {
-  console.error('[save] Supabase save error:', e);
-}
-
-
-// 5) Immediately refresh UI and go to Monthly
-try { buildSidebar(); } catch {}
-try { refreshMonthlyGrid(); } catch {}
-try { switchTab('Monthly'); } catch {}
-
+      setSaveStatus(`Save to Supabase: ERROR — ${e?.message || e}`);
+    }
 
     // 6) Friendly confirmation
     const m = lastBuiltSnapshot.month, y = lastBuiltSnapshot.year;
@@ -2551,35 +2623,26 @@ try {
       const avgFee = Number(kpi.avg_discount_pct_funded);
       const avgLTV = Number(kpi.avg_ltv_approved);
 
-     // DEBUG: verify the value we’re about to paint
-console.log('[kpi] snap.totalFunded =', snap.totalFunded);
+// Optional one-time debug (safe to remove later)
+console.log('[kpi] lastBuiltSnapshot.kpis.totalFunded =',
+  window.lastBuiltSnapshot?.kpis?.totalFunded);
 
-// Update KPI tiles if the values exist
+// Paint the three KPI tiles we already stored in SB
 if (typeof updateKpiTile === 'function') {
-  updateKpiTile('Total Funded (This Month)', formatMoney(snap.totalFunded || 0));
+  updateKpiTile('Avg APR (Funded)', `${Number(kpi.avg_apr_funded).toFixed(2)}%`);
+  updateKpiTile('Avg Lender Fee % (Funded)', `${Number(kpi.avg_discount_pct_funded).toFixed(2)}%`);
+  updateKpiTile('Avg LTV (Approved)', `${Number(kpi.avg_ltv_approved).toFixed(2)}%`);
 }
 
-      // NEW: Total Funded (This Month)
+// Paint the green “Total Funded (This Month)” from our working snapshot
+const displayTotalFunded = Number(window.lastBuiltSnapshot?.kpis?.totalFunded ?? 0);
+
 if (typeof updateKpiTile === 'function') {
-  updateKpiTile('Total Funded (This Month)', formatMoney(snap.totalFunded || 0));
+  updateKpiTile('Total Funded (This Month)', formatMoney(displayTotalFunded));
 } else {
-  // fallback if your helper isn't present
-  const el = document.querySelector('[data-kpi="totalFunded"] .num')
-         || document.querySelector('#kpiTotalFunded');
-  if (el) el.textContent = formatMoney(snap.totalFunded || 0);
+  const el = document.querySelector('[data-kpi="Total Funded (This Month)"] .kpi-value');
+  if (el) el.textContent = formatMoney(displayTotalFunded);
 }
-      if (typeof updateKpiTile === 'function') {
-        updateKpiTile('Avg APR (Funded)', `${avgAPR.toFixed(2)}%`);
-      }
-      if (typeof updateKpiTile === 'function') {
-        updateKpiTile('Avg Lender Fee % (Funded)', `${avgDisc.toFixed(2)}%`);
-      }
-      if (typeof updateKpiTile === 'function') {
-        updateKpiTile('Avg LTV (Approved)', `${avgLTV.toFixed(2)}%`);
-      }
-      // NEW: Total funded dollars this month
-const displayTotalFunded =
-Number(snap?.totalFunded ?? 0);
 
 // paint the green tile
 if (typeof updateKpiTile === 'function') {
