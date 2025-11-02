@@ -160,9 +160,36 @@ async function buildMonthlySnapSB(year, month) {
     stateMap.set(sKey, sCur);
   });
 
-  var fundedRawRows = data.map(function (r) {
-    return { Dealer: r.dealer, State: r.state, FI: r.fi, 'Loan Amount': Number(r.funded_amount) || 0 };
-  });
+// Load individual funded deals from funded_deals table
+var fundedRawRows = [];
+try {
+  var fundedResult = await window.sb  // ← changed const to var
+    .from('funded_deals')
+    .select('dealer, state, fi, loan_amount, apr, lender_fee_pct, ltv')
+    .eq('year', year)
+    .eq('month', month)
+    .limit(10000);
+
+  var fundedData = fundedResult.data;  // ← changed const to var
+  var fundedErr = fundedResult.error;  // ← changed const to var
+
+  if (!fundedErr && Array.isArray(fundedData)) {
+    fundedRawRows = fundedData.map(function (r) {
+      return {
+        Dealer: r.dealer,
+        State: r.state,
+        FI: r.fi,
+        'Loan Amount': Number(r.loan_amount) || 0,
+        APR: Number(r.apr) || null,
+        'Lender Fee': Number(r.lender_fee_pct) || null,
+        LTV: Number(r.ltv) || null,
+        Status: 'funded'
+      };
+    });
+  }
+} catch (e) {
+  console.error('[sb] funded_deals fetch error:', e);
+}
 // Build FI (Franchise / Independent) tallies for the Monthly card
 // IMPORTANT: the Monthly card expects rows with a `type` field,
 // exactly "Franchise" or "Independent".
@@ -496,23 +523,6 @@ async function ensureYearOptionsSB() {
 // Writes one row per dealer into `monthly_snapshots` for (year, month).
 // Idempotent: deletes any existing rows for that (year,month) first.
 async function saveMonthlySnapshotSB(snap) {
-    // --- DEBUG: entry to saveMonthlySnapshotsSB ---
-    console.log('[DEBUG save] entered saveMonthlySnapshotsSB');
-
-    // 1) Snapshot basics
-    console.log('[DEBUG save] input snapshot keys:', Object.keys(snap || {}));
-    console.log('[DEBUG save] year, month, dealerRows.len =',
-      snap?.year, snap?.month,
-      Array.isArray(snap?.dealerRows) ? snap.dealerRows.length : null
-    );
-  
-    // 2) Peek at first raw dealer row (pre-mapping)
-    if (Array.isArray(snap?.dealerRows) && snap.dealerRows.length) {
-      console.log('[DEBUG save] first dealer row (raw):', snap.dealerRows[0]);
-    } else {
-      console.warn('[DEBUG save] WARN: dealerRows missing or empty');
-    }
-  
   try {
     window.lastSnap = snap;                // <-- add THIS line here
     if (!window.sb || !snap || !Array.isArray(snap.dealerRows)) return false;
@@ -582,6 +592,51 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
   
       setSaveStatus(`Step 3: inserted ${rows.length} rows`);
       console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);  
+ // 4) Save individual funded deals to funded_deals table
+if (snap.fundedRawRows && snap.fundedRawRows.length) {
+  // First, delete any existing funded deals for this (year, month)
+  const { error: delFundedErr } = await window.sb
+    .from('funded_deals')
+    .delete()
+    .eq('year', y)
+    .eq('month', m);
+  
+  if (delFundedErr) {
+    console.error('[sb] delete funded_deals failed:', delFundedErr);
+  }
+
+  // Prepare funded deal rows
+  const fundedDeals = (snap.fundedRawRows || []).map(r => ({
+    year: y,
+    month: m,
+    dealer: String(r.Dealer || '').trim(),
+    state: String(r.State || '').trim(),
+    fi: String(r.FI || '').trim(),
+    loan_amount: Number(r['Loan Amount']) || 0,
+    apr: Number(r.APR) || null,
+    lender_fee_pct: (() => {
+      const fee = String(r['Lender Fee'] || '').trim();
+      if (!fee) return null;
+      const n = parseFloat(fee.replace(/[^\d.-]/g, ''));
+      return Number.isFinite(n) ? n : null;
+    })(),
+    ltv: Number(r.LTV) || null
+  })).filter(d => d.loan_amount > 0); // only save deals with valid amounts
+
+  // Insert in batches (Supabase has a limit)
+  if (fundedDeals.length) {
+    const { error: insFundedErr } = await window.sb
+      .from('funded_deals')
+      .insert(fundedDeals);
+    
+    if (insFundedErr) {
+      console.error('[sb] insert funded_deals failed:', insFundedErr);
+      setSaveStatus(`Step 4: funded_deals insert failed – ${insFundedErr.message}`);
+    } else {
+      setSaveStatus(`Step 4: saved ${fundedDeals.length} individual funded deals`);
+    }
+  }
+}     
     // NEW: rebuild Yearly aggregates for this year
     await rebuildYearlyAggregatesSB(y);
     setSaveStatus('Step 4: rebuilt yearly aggregates — OK');
@@ -834,8 +889,14 @@ function monthName(m) {
 }
 function formatMoney(n) {
   const v = Number(n) || 0;
-  return v.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 });
+  return v.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 }
+
 function formatPct(x) {
   if (x == null || !isFinite(x)) return '-';
   return (x*100).toFixed(2) + '%';
@@ -1098,7 +1159,6 @@ const stateRows = Array.from(stateMap.values()).map(s => {
 
 // --- DEBUG: check the first state row once
 if (Array.isArray(stateRows) && stateRows.length) {
-  console.log('[DEBUG monthly] first state row:', stateRows[0]);
 }
 // --- Helpers to parse numbers like "10%" or "15,390" into plain floats ---
 function _num(v) {
@@ -1122,6 +1182,7 @@ function _avgFrom(rows, keyCandidates) {
   const denial    = dealerRows.reduce((a,r)=>a+r.denial,0);
   const funded    = dealerRows.reduce((a,r)=>a+r.funded,0);
   const totalFunded = fundedRawRows.reduce((a,r)=>a + num(r['Loan Amount']), 0);
+
 // Averages for tiles
 // LTV from APPROVED rows (use whichever header your sheet has)
 let avgLTVApproved = _avgFrom(approvedRawRows, ['LTV', 'LTV Buying', 'ltv']);
@@ -2191,7 +2252,8 @@ $('#btnAnalyze')?.addEventListener('click', () => {
   }
 
   try {
-    lastBuiltSnapshot = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
+    const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
+lastBuiltSnapshot = snap;
 
   } catch (e) {
     console.error('buildSnapshot error:', e);
@@ -2489,7 +2551,23 @@ try {
       const avgFee = Number(kpi.avg_discount_pct_funded);
       const avgLTV = Number(kpi.avg_ltv_approved);
 
-      // Update KPI tiles if the values exist
+     // DEBUG: verify the value we’re about to paint
+console.log('[kpi] snap.totalFunded =', snap.totalFunded);
+
+// Update KPI tiles if the values exist
+if (typeof updateKpiTile === 'function') {
+  updateKpiTile('Total Funded (This Month)', formatMoney(snap.totalFunded || 0));
+}
+
+      // NEW: Total Funded (This Month)
+if (typeof updateKpiTile === 'function') {
+  updateKpiTile('Total Funded (This Month)', formatMoney(snap.totalFunded || 0));
+} else {
+  // fallback if your helper isn't present
+  const el = document.querySelector('[data-kpi="totalFunded"] .num')
+         || document.querySelector('#kpiTotalFunded');
+  if (el) el.textContent = formatMoney(snap.totalFunded || 0);
+}
       if (typeof updateKpiTile === 'function') {
         updateKpiTile('Avg APR (Funded)', `${avgAPR.toFixed(2)}%`);
       }
@@ -2499,7 +2577,19 @@ try {
       if (typeof updateKpiTile === 'function') {
         updateKpiTile('Avg LTV (Approved)', `${avgLTV.toFixed(2)}%`);
       }
-      
+      // NEW: Total funded dollars this month
+const displayTotalFunded =
+Number(snap?.totalFunded ?? 0);
+
+// paint the green tile
+if (typeof updateKpiTile === 'function') {
+updateKpiTile('Total Funded (This Month)', formatMoney(displayTotalFunded));
+} else {
+// fallback if updateKpiTile isn't present
+const el = document.querySelector('[data-kpi="Total Funded (This Month)"] .kpi-value');
+if (el) el.textContent = formatMoney(displayTotalFunded);
+}
+
     }
   }
 } catch (e) {
@@ -2578,23 +2668,7 @@ async function renderMonthlyDetail(snap) {
   title.textContent = monthName(snap.month) + ' ' + snap.year;
   idSpan.textContent = '#' + (snap.id || (String(snap.year) + '-' + String(snap.month).padStart(2, '0')));
   if (detail.classList) detail.classList.remove('hidden');
-  console.log('[detail]', snap.id, {
-    dealerRows: snap.dealerRows?.length ?? 0,
-    stateRows : snap.stateRows?.length ?? 0,
-    fundedRaw : snap.fundedRawRows?.length ?? 0
-  });
-  
   const rows = snap.dealerRows || [];
-// --- DEBUG: monthly detail rows peek (post-analysis) ---
-console.log('[DEBUG monthly card] dealerRows length:',
-  Array.isArray(rows) ? rows.length : null
-);
-if (Array.isArray(rows) && rows.length) {
-  console.log('[DEBUG monthly card] first dealer row keys:', Object.keys(rows[0]));
-  console.log('[DEBUG monthly card] first dealer row sample:', rows[0]);
-} else {
-  console.warn('[DEBUG monthly card] dealerRows missing or empty at monthly view');
-}
 
   // ===== KPIs (your definitions) =====
   const T = snap.totals || {};
@@ -2683,104 +2757,102 @@ if (snap && snap.kpis) {
  `).join('') || `<tr><td class="px-3 py-6 text-gray-500" colspan="9">No state data.</td></tr>`;
 
  // ONE clean template for the entire section
- const s = window.lastBuiltSnapshot || {};
+ const s = snap || window.lastBuiltSnapshot || {};
  detailResults.innerHTML = `
    <!-- KPI tiles -->
    <!-- KPI tiles (organized) -->
 
-  <!-- KPI Tiles (Fixed Layout) -->
-  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
-  
-    <!-- 1) Primary highlight: Total Funded -->
-    <div class="rounded-xl border p-4 bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200 shadow-sm col-span-2">
-      <div class="text-xs font-medium text-emerald-700">Total Funded (This Month)</div>
-      <div class="text-3xl font-extrabold tabular-nums text-emerald-900">
-      ${formatMoney(Number.isFinite(s.kpis?.totalFunded) ? s.kpis.totalFunded : 0)}
-      </div>
-    </div>
-  
-    <!-- 2) Volume tiles -->
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Total Apps</div>
-    <div class="text-2xl font-semibold tabular-nums">${total}</div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Funded</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${funded} <span class="text-sm text-gray-500">(${formatPct(total ? funded / total : 0)})</span>
-    </div>
-  </div>
-
-  <!-- 3) Decision mix -->
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Approved</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${approved} <span class="text-sm text-gray-500">(${formatPct(total ? approved / total : 0)})</span>
-    </div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Counter</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${counter} <span class="text-sm text-gray-500">(${formatPct(total ? counter / total : 0)})</span>
-    </div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Pending</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${pending} <span class="text-sm text-gray-500">(${formatPct(total ? pending / total : 0)})</span>
-    </div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Denial</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${denial} <span class="text-sm text-gray-500">(${formatPct(total ? denial / total : 0)})</span>
-    </div>
-  </div>
-
-  <!-- 4) Ratios & quality -->
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">LTA</div>
-    <div class="text-2xl font-semibold tabular-nums">${formatPct(LTA)}</div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">LTB</div>
-    <div class="text-2xl font-semibold tabular-nums">${formatPct(LTB)}</div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Avg LTV (Approved)</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${avgLTVApproved == null ? '-' : (avgLTVApproved.toFixed(2) + '%')}
-    </div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Avg APR (Funded)</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${(() => {
-        const s = window.lastBuiltSnapshot || {};
-        const v = s.kpis?.avgAPRFunded ?? s.kpis?.avgAPR;
-        return Number.isFinite(v) ? v.toFixed(2) + '%' : '–';
-      })()}
-    </div>
-  </div>
-
-  <div class="rounded-xl border p-3 bg-white">
-    <div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div>
-    <div class="text-2xl font-semibold tabular-nums">
-      ${(() => {
-        const s = window.lastBuiltSnapshot || {};
-        const v = s.kpis?.avgDiscountPctFunded ?? s.kpis?.avgDiscountPct;
-        return Number.isFinite(v) ? v.toFixed(2) + '%' : '–';
-      })()}
-    </div>
-  </div>
-  </div>
+   <!-- KPI Tiles (Fixed Layout) -->
+   <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
+   
+     <!-- 1) Primary highlight: Total Funded (spans 2 columns) -->
+     <div class="rounded-xl border p-4 bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200 shadow-sm col-span-2">
+       <div class="text-xs font-medium text-emerald-700">Total Funded (This Month)</div>
+       <div class="text-3xl font-extrabold tabular-nums text-emerald-900">
+         ${formatMoney(Number.isFinite(snap?.kpis?.totalFunded) ? snap.kpis.totalFunded : 0)}
+       </div>
+     </div>
+   
+     <!-- 2) Volume tiles (each takes 1 column) -->
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Total Apps</div>
+       <div class="text-2xl font-semibold tabular-nums">${total}</div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Funded</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${funded} <span class="text-sm text-gray-500">(${formatPct(total ? funded / total : 0)})</span>
+       </div>
+     </div>
+   
+     <!-- 3) Rest of the tiles... -->
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Approved</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${approved} <span class="text-sm text-gray-500">(${formatPct(total ? approved / total : 0)})</span>
+       </div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Counter</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${counter} <span class="text-sm text-gray-500">(${formatPct(total ? counter / total : 0)})</span>
+       </div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Pending</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${pending} <span class="text-sm text-gray-500">(${formatPct(total ? pending / total : 0)})</span>
+       </div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Denial</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${denial} <span class="text-sm text-gray-500">(${formatPct(total ? denial / total : 0)})</span>
+       </div>
+     </div>
+   
+     <!-- 4) Ratios & quality metrics -->
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">LTA</div>
+       <div class="text-2xl font-semibold tabular-nums">${formatPct(LTA)}</div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">LTB</div>
+       <div class="text-2xl font-semibold tabular-nums">${formatPct(LTB)}</div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Avg LTV (Approved)</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${avgLTVApproved == null ? '—' : (avgLTVApproved.toFixed(2) + '%')}
+       </div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Avg APR (Funded)</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${(() => {
+           const v = snap?.kpis?.avgAPRFunded ?? snap?.kpis?.avgAPR;
+           return Number.isFinite(v) ? v.toFixed(2) + '%' : '—';
+         })()}
+       </div>
+     </div>
+   
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Avg Lender Fee (Funded)</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${(() => {
+           const v = snap?.kpis?.avgDiscountPctFunded ?? snap?.kpis?.avgDiscountPct;
+           return Number.isFinite(v) ? v.toFixed(2) + '%' : '—';
+         })()}
+       </div>
+     </div>
+   </div>
   
 
    <!-- State Performance (this month) -->
@@ -3008,10 +3080,11 @@ const dealerKey = (dealer, state, fi /* optional */) => {
 console.log('[funded map] size=', amtByDealer.size,
             'sample=', Array.from(amtByDealer.entries()).slice(0, 5));
 
+// helper — format numbers as USD currency
 
 function renderDealerRows() {
   if (!body) { console.warn('[dealer] tbody not found'); return; }
-  console.log('[dealer] start', { mdSearch, sort: mdSort });
+  console.log('[dealer] start', { mdSearch });
 
   // 1) copy source defensively
   let arr =
@@ -3108,7 +3181,7 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
         <td class="px-3 py-2 tabular-nums text-right">${r.pending ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.denial ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.funded ?? 0}</td>
-        <td class="px-3 py-2 tabular-nums text-right">${fundedAmount.toFixed(2)}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${formatMoney(fundedAmount)}</td>
         <td class="px-3 py-2 tabular-nums text-right">
           ${(lta*100).toFixed(2)}%
           <span class="inline-block w-20 align-middle">${pctBar(lta)}</span>
