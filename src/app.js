@@ -3455,7 +3455,7 @@ async function fetchMonthlyYearListSB(year) {
 
   // Get all rows for the selected year, then aggregate in the browser
   var result = await sb
-    .from('monthly_snapshots')
+  .from('monthly_summary_view')
     .select('year,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
     .eq('year', year)
     .limit(50000);
