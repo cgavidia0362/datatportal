@@ -823,18 +823,30 @@ async function rebuildYearlyAggregatesSB(year) {
     if (!y) return false;
 
     // 1) Pull ALL rows for the year from monthly_snapshots
-    const { data, error } = await window.sb
-      .from('monthly_snapshots')
-      .select('dealer,state,fi,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
-      .eq('year', y)
-      .limit(50000);
-
-    if (error) {
-      console.error('[sb] rebuildYearlyAggregatesSB: fetch monthly_snapshots failed:', error);
-      return false;
+    // Fetch month-by-month to avoid Supabase's 1000 row limit
+    console.log('[sb] rebuildYearlyAggregatesSB: Fetching data for', y);
+    const allRows = [];
+    
+    for (let month = 1; month <= 12; month++) {
+      const { data, error } = await window.sb
+        .from('monthly_snapshots')
+        .select('dealer,state,fi,month,total_apps,approved,counter,pending,denial,funded,funded_amount')
+        .eq('year', y)
+        .eq('month', month);
+      
+      if (error) {
+        console.error(`[sb] rebuildYearlyAggregatesSB: fetch month ${month} failed:`, error);
+        continue; // Skip this month but continue with others
+      }
+      
+      if (data && data.length > 0) {
+        console.log(`[sb] Fetched ${data.length} rows for month ${month}`);
+        allRows.push(...data);
+      }
     }
-
-    const rows = Array.isArray(data) ? data : [];
+    
+    console.log(`[sb] Total rows fetched: ${allRows.length}`);
+    const rows = allRows;
 
     // 2) Build aggregations
     // 2a) by dealer|state|fi  (for yearly_dealer_totals)
@@ -4580,4 +4592,3 @@ function updateKpiTile(label, value) {
     }
   }
 }
-
