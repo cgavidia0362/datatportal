@@ -2549,7 +2549,11 @@ const ok = await saveMonthlySnapshotSB(window.lastBuiltSnapshot);
           try { buildSidebar(); } catch {}
           try { await refreshMonthlyGrid(); } catch {} // Refresh the grid
           try { switchTab('Monthly'); } catch {}   // NOW switch to the tab
-
+// Rebuild yearly aggregates so Yearly tab is up-to-date
+setSaveStatus('Rebuilding yearly aggregates...');
+const y = lastBuiltSnapshot.year;
+await rebuildYearlyAggregatesSB(y);
+setSaveStatus('Save complete! Yearly data updated.');
         } else {
           setSaveStatus('Save to Supabase: FAILED (see earlier steps)');
         }
@@ -2567,11 +2571,6 @@ const ok = await saveMonthlySnapshotSB(window.lastBuiltSnapshot);
       setSaveStatus(`Save to Supabase: ERROR — ${e?.message || e}`);
     }
 
-    // 6) Friendly confirmation
-    const m = lastBuiltSnapshot.month, y = lastBuiltSnapshot.year;
-    console.log('Saved month:', lastBuiltSnapshot.id);
-// ⬇️ NEW: rebuild Yearly tables so the Yearly tab populates
-await rebuildYearlyAggregatesSB(y);
   } catch (err) {
     console.error('Save month failed:', err);
     alert('Oops — could not save this month. Open the Console for details.');
@@ -3562,26 +3561,26 @@ const lta = s.totals.totalApps ? approvedVal / s.totals.totalApps : 0;
       fundedSeries.push(s.totals.funded || 0);
       amountSeries.push(s.kpis.totalFunded || 0);
       tbody.insertAdjacentHTML('beforeend', `
-        <tr class="border-t odd:bg-gray-50/40">
-          <td class="px-3 py-2">${monthName(s.month)} ${s.year}</td>
-          <td class="px-3 py-2 tabular-nums">${s.totals.totalApps}</td>
-          <td class="px-3 py-2 tabular-nums">${(s.totals.approved || 0) + (s.totals.counter || 0)}</td>
-          <td class="px-3 py-2 tabular-nums">${s.totals.funded}</td>
-          <td class="px-3 py-2">
-          <div class="inline-flex items-center gap-2">
-            <span class="tabular-nums">${formatPct(lta)}</span>
-            <span class="inline-block w-20 align-middle">${pctBar(lta)}</span>
-          </div>
-        </td>
+      <tr class="border-t odd:bg-gray-50/40">
+        <td class="px-3 py-2">${monthName(s.month)} ${s.year}</td>
+        <td class="px-3 py-2 tabular-nums">${s.totals.totalApps}</td>
+        <td class="px-3 py-2 tabular-nums">${(s.totals.approved || 0) + (s.totals.counter || 0)}</td>
+        <td class="px-3 py-2 tabular-nums">${s.totals.funded}</td>
+        <td class="px-3 py-2 tabular-nums">${formatMoney(s.kpis.totalFunded)}</td>
         <td class="px-3 py-2">
-          <div class="inline-flex items-center gap-2">
-            <span class="tabular-nums">${formatPct(ltb)}</span>
-            <span class="inline-block w-20 align-middle">${pctBar(ltb)}</span>
-          </div>
-        </td>        
-          <td class="px-3 py-2 tabular-nums">${formatMoney(s.kpis.totalFunded)}</td>
-        </tr>
-      `);
+        <div class="inline-flex items-center gap-2">
+          <span class="tabular-nums">${formatPct(lta)}</span>
+          <span class="inline-block w-20 align-middle">${pctBar(lta)}</span>
+        </div>
+      </td>
+      <td class="px-3 py-2">
+        <div class="inline-flex items-center gap-2">
+          <span class="tabular-nums">${formatPct(ltb)}</span>
+          <span class="inline-block w-20 align-middle">${pctBar(ltb)}</span>
+        </div>
+      </td>
+      </tr>
+    `);
     });
   }
 
