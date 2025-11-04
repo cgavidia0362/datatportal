@@ -4065,14 +4065,17 @@ if (window.sb) {
     // Expose to the existing renderers (matrix / trends / sparklines)
     window.spData = seriesMap;
     // Re-render state performance now that data is ready
-try {
-  if (typeof spBuildMatrix === 'function') spBuildMatrix();        // matrix tab
-  if (typeof spBuildTrends === 'function') spBuildTrends();        // trends tab
-  if (typeof spBuildSparklines === 'function') spBuildSparklines();// sparklines tab
-} catch (e) {
-  console.error('[yearly/state] render after data error:', e);
-}
-
+   // Re-render state performance now that data is ready
+    // Call the render functions directly (they're defined below)
+    setTimeout(() => {
+      try {
+        spRenderMatrix();
+        spRenderTrends();
+        spRenderSpark();
+      } catch (e) {
+        console.error('[yearly/state] render error:', e);
+      }
+    }, 200);  // Increased timeout to ensure functions are defined
   })().catch(console.error);
 } else {
   // Fallback: derive from in-memory list (unchanged)
@@ -4084,13 +4087,21 @@ const mSel = $('#spMetric'); const nSel = $('#spTopN');
 if (mSel && !mSel.value) mSel.value = 'funded';
 if (nSel && !nSel.value) nSel.value = '10';
 spShow('matrix');
-spRenderAll();
+
 
 $('#spMetric')?.addEventListener('change', spRenderAll);
 $('#spTopN')?.addEventListener('change', spRenderAll);
 $('#spViewMatrix')?.addEventListener('click', () => spShow('matrix'));
 $('#spViewTrends')?.addEventListener('click', () => spShow('trends'));
 $('#spViewSpark')?.addEventListener('click', () => spShow('spark'));
+// After all data loads, wait a bit then render State Performance
+setTimeout(() => {
+  if (window.spData && window.spData.size > 0) {
+    spRenderMatrix();
+    spRenderTrends();
+    spRenderSpark();
+  }
+}, 500);
 }
 
 /* ---------- State Performance ---------- */
@@ -4148,13 +4159,13 @@ function spRenderMatrix() {
   // header
   head.innerHTML = `<tr>
   <th class="px-3 py-2">State</th>
-  ${spMonths.map(m=>`<th class="px-3 py-2 text-right tabular-nums">${m[1]}</th>`).join('')}
+  ${window.spMonths.map(m=>`<th class="px-3 py-2 text-right tabular-nums">${m[1]}</th>`).join('')}
   <th class="px-3 py-2 text-right tabular-nums">YTD</th>
   </tr>`;
 
   // rows
-  const rows = spStates.map(st => {
-    const series = spData.get(st) || [];
+  const rows = window.spStates.map(st => {
+    const series = window.spData.get(st) || [];
     const vals   = series.map(p => p[metric] || 0);
     const ytd    = vals.reduce((a,b)=>a+(b||0),0);
     return { st, vals, ytd };
@@ -4174,8 +4185,8 @@ function spRenderTrends() {
   if (!tbody) return;
   const metric = ($('#spMetric')?.value)||'funded';
   const topN   = parseInt(($('#spTopN')?.value)||'10',10);
-  const rows = spStates.map(st => {
-    const series = spData.get(st) || [];
+  const rows = window.spStates.map(st => {
+    const series = window.spData.get(st) || [];
     const vals   = series.map(p => p[metric] || 0);
     const first  = vals.find(v=>Number.isFinite(v)) ?? 0;
     const last   = [...vals].reverse().find(v=>Number.isFinite(v)) ?? 0;
@@ -4193,6 +4204,36 @@ function spRenderTrends() {
       <td class="px-3 py-2 tabular-nums text-right">${metric==='amount'?formatMoney(r.ytd):(metric==='ltb'?formatPct(r.ytd):r.ytd)}</td>
     </tr>
   `).join('') || `<tr><td class="px-3 py-2 text-gray-500" colspan="5">No data.</td></tr>`;
+  // Render the trends chart
+  const canvas = $('#spTrendsCanvas');
+  if (canvas && typeof Chart !== 'undefined') {
+    if (window.spTrendsChart) {
+      try { window.spTrendsChart.destroy(); } catch {}
+    }
+    
+    const datasets = rows.map((r, idx) => {
+      const series = window.spData.get(r.st) || [];
+      const vals = series.map(p => p[metric] || 0);
+      return {
+        label: r.st,
+        data: vals,
+        tension: 0.2,
+        borderWidth: 2
+      };
+    });
+    
+    window.spTrendsChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: window.spMonths.map(m => m[1]),
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true, position: 'bottom' } }
+      }
+    });
+  }
 }
 
 function spRenderSpark() {
@@ -4204,8 +4245,8 @@ function spRenderSpark() {
 
   const metric = ($('#spMetric')?.value)||'funded';
   const topN   = parseInt(($('#spTopN')?.value)||'10',10);
-  const rows = spStates.map(st => {
-    const series = spData.get(st) || [];
+  const rows = window.spStates.map(st => {
+    const series = window.spData.get(st) || [];
     const vals   = series.map(p => p[metric] || 0);
     const ytd    = vals.reduce((a,b)=>a+(b||0),0);
     return { st, vals, ytd };
@@ -4227,7 +4268,7 @@ function spRenderSpark() {
     if (!ctx || typeof Chart === 'undefined') return;
     const ch = new Chart(ctx, {
       type: 'line',
-      data: { labels: spMonths.map(m=>m[1]), datasets: [{ data: r.vals, tension: 0.2 }] },
+      data: { labels: window.spMonths.map(m=>m[1]), datasets: [{ data: r.vals, tension: 0.2 }] },
       options: { plugins:{ legend:{display:false} }, scales:{ x:{display:false}, y:{display:false} } }
     });
     spSparkCharts.push(ch);
