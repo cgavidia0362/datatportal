@@ -3575,6 +3575,8 @@ if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
   const labels = [];
   const fundedSeries = [];
   const amountSeries = [];
+  const totalAppsSeries = [];
+  const approvedSeries = [];
 
   if (tbody) {
     tbody.innerHTML = '';
@@ -3585,6 +3587,8 @@ const lta = s.totals.totalApps ? approvedVal / s.totals.totalApps : 0;
       labels.push(`${monthName(s.month)} ${s.year}`);
       fundedSeries.push(s.totals.funded || 0);
       amountSeries.push(s.kpis.totalFunded || 0);
+      totalAppsSeries.push(s.totals.totalApps || 0);
+      approvedSeries.push(approvedVal);
       tbody.insertAdjacentHTML('beforeend', `
       <tr class="border-t odd:bg-gray-50/40">
         <td class="px-3 py-2">${monthName(s.month)} ${s.year}</td>
@@ -3609,22 +3613,41 @@ const lta = s.totals.totalApps ? approvedVal / s.totals.totalApps : 0;
     });
   }
 
- // Line chart with toggle (Deals vs Amount)
+ // Line chart with toggle (Deals vs Amount vs Total Apps vs Approved)
 const ctx = $('#yrFundedChart');
 let yrChartMetric = 'deals';
 
 function drawYrChart() {
   if (!ctx) return;
   if (yrChart) { try { yrChart.destroy(); } catch {} }
+  
   const isAmount = (yrChartMetric === 'amount');
+  const isTotalApps = (yrChartMetric === 'totalapps');
+  const isApproved = (yrChartMetric === 'approved');
+  
+  let chartData, chartLabel;
+  
+  if (isAmount) {
+    chartData = amountSeries;
+    chartLabel = 'Total Funded ($)';
+  } else if (isTotalApps) {
+    chartData = totalAppsSeries;
+    chartLabel = 'Total Apps';
+  } else if (isApproved) {
+    chartData = approvedSeries;
+    chartLabel = 'Total Approved';
+  } else {
+    chartData = fundedSeries;
+    chartLabel = 'Funded (count)';
+  }
 
   yrChart = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
       datasets: [{
-        label: isAmount ? 'Total Funded ($)' : 'Funded (count)',
-        data:  isAmount ? amountSeries       : fundedSeries,
+        label: chartLabel,
+        data: chartData,
         tension: 0.2
       }]
     },
@@ -3646,29 +3669,43 @@ function drawYrChart() {
 // first draw (default = Deals)
 drawYrChart();
 
-// Buttons to switch metric
-const btnDeals  = document.getElementById('yrChartDeals');
-const btnAmount = document.getElementById('yrChartAmount');
+// Dropdown to switch metric
+const metricSelect = document.getElementById('yrChartMetric');
 
 function setActive(which) {
   yrChartMetric = which;
-
-  // flip button styles so the active one is blue
-  if (btnDeals && btnAmount) {
-    if (which === 'deals') {
-      btnDeals.className  = 'px-3 py-1.5 text-sm bg-blue-600 text-white';
-      btnAmount.className = 'px-3 py-1.5 text-sm hover:bg-gray-50';
-    } else {
-      btnDeals.className  = 'px-3 py-1.5 text-sm hover:bg-gray-50';
-      btnAmount.className = 'px-3 py-1.5 text-sm bg-blue-600 text-white';
-    }
-  }
-
+  if (metricSelect) metricSelect.value = which;
   drawYrChart();
 }
 
-btnDeals?.addEventListener('click',  () => setActive('deals'));
-btnAmount?.addEventListener('click', () => setActive('amount'));
+// If dropdown doesn't exist, create it programmatically
+if (!metricSelect) {
+  // Try to find the button container and replace with dropdown
+  const btnDeals = document.getElementById('yrChartDeals');
+  const btnAmount = document.getElementById('yrChartAmount');
+  
+  if (btnDeals && btnAmount) {
+    const container = btnDeals.parentElement;
+    const select = document.createElement('select');
+    select.id = 'yrChartMetric';
+    select.className = 'px-3 py-1.5 text-sm border rounded';
+    select.innerHTML = `
+      <option value="deals">Funded (count)</option>
+      <option value="amount">Funded ($)</option>
+      <option value="totalapps">Total Apps</option>
+      <option value="approved">Total Approved</option>
+    `;
+    select.value = 'deals';
+    select.addEventListener('change', (e) => setActive(e.target.value));
+    
+    // Replace buttons with dropdown
+    btnDeals.replaceWith(select);
+    btnAmount.remove();
+  }
+} else {
+  // Dropdown exists, just add event listener
+  metricSelect.addEventListener('change', (e) => setActive(e.target.value));
+}
 
 // ==== Yearly Dealer aggregation (Dealer|State|FI) ====
 // support Yearly IDs (yr*) or existing md* IDs
@@ -4116,6 +4153,18 @@ if (window.sb) {
 
 
 const mSel = $('#spMetric'); const nSel = $('#spTopN');
+
+// Add "Total Apps" option if it doesn't exist
+if (mSel) {
+  const hasTotal = Array.from(mSel.options).some(opt => opt.value === 'total');
+  if (!hasTotal) {
+    const option = document.createElement('option');
+    option.value = 'total';
+    option.textContent = 'Total Apps';
+    mSel.appendChild(option);
+  }
+}
+
 if (mSel && !mSel.value) mSel.value = 'funded';
 if (nSel && !nSel.value) nSel.value = '10';
 spShow('matrix');
