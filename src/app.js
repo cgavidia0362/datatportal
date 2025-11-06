@@ -3025,10 +3025,10 @@ if (snap && snap.kpis) {
      <table class="min-w-full text-sm">
        <thead class="bg-slate-50 text-left" id="mdDealerHead">   
          <tr>
-           <th class="px-3 py-2">Dealer</th>
-           <th class="px-3 py-2">State</th>
-           <th class="px-3 py-2">FI</th>
-           <th class="px-3 py-2 text-right sortable" data-key="total">Total Apps <span class="dir">↕</span></th>
+           <th class="px-3 py-2 sortable cursor-pointer" data-key="dealer">Dealer <span class="dir">↕</span></th>
+           <th class="px-3 py-2 sortable cursor-pointer" data-key="state">State <span class="dir">↕</span></th>
+           <th class="px-3 py-2 sortable cursor-pointer" data-key="fi">FI <span class="dir">↕</span></th>
+           <th class="px-3 py-2 text-right sortable cursor-pointer" data-key="total">Total Apps <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="approved">Approved <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="counter">Counter <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="pending">Pending <span class="dir">↕</span></th>
@@ -3268,21 +3268,34 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
   }).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="12">No data.</td></tr>';
 }
 
+// Make renderDealerRows globally accessible for event handlers
+window.renderDealerRows = renderDealerRows;
+
 // events (keep as you already had)
 searchEl?.addEventListener('input', (e) => {
   mdSearch = e.target.value || '';
-  renderDealerRows();
+  window.renderDealerRows();
 });
 document.getElementById('btnExportDealers')?.addEventListener('click', exportDealersCSV);
-head?.querySelectorAll('.sortable').forEach(th => {
+// Remove old listeners by cloning
+const newHead = head.cloneNode(true);
+head.parentNode.replaceChild(newHead, head);
+const freshHead = $('#mdDealerHead');
+
+freshHead?.querySelectorAll('.sortable').forEach(th => {
   th.addEventListener('click', () => {
     const k = th.getAttribute('data-key');
     if (!k) return;
-    mdSort = { key: k, dir: (mdSort.key === k && mdSort.dir === 'desc') ? 'asc' : 'desc' };
-    renderDealerRows();
+    // Toggle: if same column, flip direction; if new column, start with asc
+    if (mdSort.key === k) {
+      mdSort = { key: k, dir: (mdSort.dir === 'asc') ? 'desc' : 'asc' };
+    } else {
+      mdSort = { key: k, dir: 'asc' };
+    }
+    window.renderDealerRows();
   });
 });
-renderDealerRows();
+window.renderDealerRows();
 
  function exportDealersCSV() {
   // rebuild the same list you’re showing (respect search & sort)
@@ -3772,8 +3785,9 @@ if (dBody) {
     });
   }
   function updateSortIcons() {
-    if (!dHead) return;
-    dHead.querySelectorAll('th.sortable').forEach((th) => {
+    const currentHead = document.getElementById('yrDealerHead') || document.getElementById('mdDealerHead');
+    if (!currentHead) return;
+    currentHead.querySelectorAll('th.sortable').forEach((th) => {
       const span = th.querySelector('.dir');
       if (!span) return;
       const k = th.getAttribute('data-key') || '';
@@ -3786,19 +3800,26 @@ if (dBody) {
   }
   
   if (dHead) {
-    dHead.querySelectorAll('th.sortable').forEach((th) => {
-      th.addEventListener('click', () => {
-        const k = th.getAttribute('data-key') || 'dealer';
-        if (k === sortKey) {
-          sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
-        } else {
-          sortKey = k;
-          sortDir = 'asc';
-        }
-        updateSortIcons();
-        paint();
+    // Clone and replace the header to remove all old event listeners
+    const newHead = dHead.cloneNode(true);
+    dHead.parentNode.replaceChild(newHead, dHead);
+    const freshHead = document.getElementById(dHead.id);
+    
+    if (freshHead) {
+      freshHead.querySelectorAll('th.sortable').forEach((th) => {
+        th.addEventListener('click', () => {
+          const k = th.getAttribute('data-key') || 'dealer';
+          if (k === sortKey) {
+            sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
+          } else {
+            sortKey = k;
+            sortDir = 'asc';
+          }
+          updateSortIcons();
+          paint();
+        });
       });
-    });
+    }
   }  
 
   if (dSearch) dSearch.addEventListener('input', () => paint());
