@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buying Analysis Portal — Complete Fixed Version</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+    
+    <script>
+      window.NEXT_PUBLIC_SUPABASE_URL = "https://zhquyedaxszsnswaimza.supabase.co";
+      window.NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4";
+    </script>
+
+    <style>
+      :root {
+        color-scheme: light; 
+      }
+      
+      input[type="text"],
+      input[type="number"],
+      input[type="search"],
+      select,
+      textarea {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        border-color: rgba(0,0,0,0.15);
+        outline: none;
+      }
+      
+      input::placeholder,
+      textarea::placeholder {
+        color: #6b7280 !important;
+      }
+
+      .sidebar { width: 260px; }
+      
+      /* CRITICAL: Fix tab panel display */
+      .tab-panel {
+        display: none;
+      }
+      
+      .tab-panel.active {
+        display: block !important;
+      }
+    </style>
+  </head>
+  
+  <body class="bg-slate-50 text-slate-900 antialiased">
+    <div class="min-h-screen flex">
+      <!-- Sidebar -->
+      <aside class="sidebar flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+        <div class="p-4 border-b">
+          <div class="font-bold text-lg">Buying Analysis</div>
+          <div class="text-xs text-gray-500">Fixed Version</div>
+        </div>
+
+        <nav class="flex-1 p-2 space-y-1" id="sidebar-nav">
+          <button onclick="showTab('Upload')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">📤 Upload</button>
+          <button onclick="showTab('Monthly')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">📊 Monthly</button>
+          <button onclick="showTab('Yearly')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">📈 Yearly</button>
+          <button onclick="showTab('Settings')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">⚙️ Settings</button>
+        </nav>
+
+        <div class="p-3 text-xs text-gray-500 border-t">v2.0 · Fixed</div>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="flex-1 flex flex-col">
+        <header class="bg-white border-b border-gray-200">
+          <div class="px-4 py-3">
+            <h1 class="text-xl font-semibold">Buying Analysis Portal - FIXED VERSION</h1>
+          </div>
+        </header>
+
+        <main class="flex-1 p-6 overflow-auto">
+          
+          <!-- Upload Tab -->
+          <div id="tab-Upload" class="tab-panel active">
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-2xl font-bold mb-4">Upload Data</h2>
+              <p class="text-gray-600">Upload tab functionality would go here...</p>
+            </div>
+          </div>
+
+          <!-- Monthly Tab -->
+          <div id="tab-Monthly" class="tab-panel">
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-2xl font-bold mb-4">Monthly View</h2>
+              <p class="text-gray-600">Monthly data would go here...</p>
+            </div>
+          </div>
+
+          <!-- Yearly Tab -->
+          <div id="tab-Yearly" class="tab-panel">
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-2xl font-bold mb-4">Yearly View</h2>
+              <p class="text-gray-600">Yearly data would go here...</p>
+            </div>
+          </div>
+
+          <!-- Settings Tab -->
+          <div id="tab-Settings" class="tab-panel">
+            <div class="mb-6">
+              <h2 class="text-2xl font-bold text-gray-900">Settings</h2>
+              <p class="text-sm text-gray-600 mt-1">Manage your master dealer list</p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+              <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Master Dealer List</h3>
+                <button id="btnAddDealer" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                  + Add Dealer
+                </button>
+              </div>
+
+              <p class="text-sm text-gray-600 mb-4">
+                The master dealer list ensures data consistency across uploads.
+              </p>
+
+              <!-- Search and Filter -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <input type="text" id="masterDealerSearch" placeholder="Search dealers..." 
+                       class="px-3 py-2 border border-gray-300 rounded-lg">
+                <select id="masterStateFilter" class="px-3 py-2 border border-gray-300 rounded-lg">
+                  <option value="">All States</option>
+                </select>
+                <select id="masterFIFilter" class="px-3 py-2 border border-gray-300 rounded-lg">
+                  <option value="">All Types</option>
+                  <option value="Franchise">Franchise</option>
+                  <option value="Independent">Independent</option>
+                </select>
+              </div>
+
+              <!-- Table -->
+              <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                <table class="min-w-full text-sm divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dealer Name</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">FI Type</th>
+                      <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterDealersBody" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+              </div>
+              
+              <div id="masterDealersLoading" class="text-center py-8 text-gray-500" style="display: none;">
+                <svg class="animate-spin h-8 w-8 mx-auto text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2">Loading dealers...</p>
+              </div>
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </div>
+
+    <!-- EMBEDDED MASTER DEALERS FUNCTIONALITY -->
+    <script>
+      console.log('[FIXED VERSION] Starting initialization...');
+      
+      // Initialize Supabase
+      let supabaseClient = null;
+      try {
+        supabaseClient = window.supabase.createClient(
+          window.NEXT_PUBLIC_SUPABASE_URL,
+          window.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        );
+        console.log('[Supabase] Client initialized successfully');
+      } catch (e) {
+        console.error('[Supabase] Failed to initialize:', e);
+      }
+
+      // Store current dealers globally
+      window.currentMasterDealers = [];
+
+      // Fetch dealers from database
+      async function fetchMasterDealers() {
+        console.log('[Dealers] Fetching from database...');
+        try {
+          const { data, error } = await supabaseClient
+            .from('master_dealers')
+            .select('*')
+            .order('dealer_name');
+
+          if (error) {
+            console.error('[Dealers] Error fetching:', error);
+            return [];
+          }
+
+          console.log(`[Dealers] Fetched ${data.length} dealers`);
+          return data;
+        } catch (e) {
+          console.error('[Dealers] Exception:', e);
+          return [];
+        }
+      }
+
+      // Render dealers in table
+      function renderMasterDealersList(dealers) {
+        console.log(`[Dealers] Rendering ${dealers.length} dealers...`);
+        
+        const tbody = document.getElementById('masterDealersBody');
+        const loading = document.getElementById('masterDealersLoading');
+        
+        if (!tbody) {
+          console.error('[Dealers] Table body not found!');
+          return;
+        }
+
+        // Hide loading, show table
+        if (loading) loading.style.display = 'none';
+        
+        // Clear existing rows
+        tbody.innerHTML = '';
+
+        // Add dealer rows
+        dealers.forEach(dealer => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td class="px-4 py-3 whitespace-nowrap">${dealer.dealer_name}</td>
+            <td class="px-4 py-3 whitespace-nowrap">${dealer.state}</td>
+            <td class="px-4 py-3 whitespace-nowrap">${dealer.fi}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-right">
+              <button onclick="editDealer(${dealer.id})" class="text-blue-600 hover:text-blue-800 text-sm mr-3">Edit</button>
+              <button onclick="deleteDealer(${dealer.id})" class="text-red-600 hover:text-red-800 text-sm">Delete</button>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        console.log('[Dealers] Rendered successfully!');
+      }
+
+      // Initialize Settings tab
+      async function initSettingsTab() {
+        console.log('[Settings] Initializing tab...');
+        
+        const loading = document.getElementById('masterDealersLoading');
+        const tbody = document.getElementById('masterDealersBody');
+        
+        // Show loading
+        if (loading) loading.style.display = 'block';
+        if (tbody) tbody.innerHTML = '';
+
+        try {
+          // Fetch dealers
+          const dealers = await fetchMasterDealers();
+          window.currentMasterDealers = dealers;
+          
+          // Render dealers
+          renderMasterDealersList(dealers);
+          
+          // Populate state filter
+          const stateFilter = document.getElementById('masterStateFilter');
+          if (stateFilter) {
+            const states = [...new Set(dealers.map(d => d.state))].sort();
+            states.forEach(state => {
+              const option = document.createElement('option');
+              option.value = state;
+              option.textContent = state;
+              stateFilter.appendChild(option);
+            });
+          }
+          
+          console.log('[Settings] Initialization complete!');
+        } catch (e) {
+          console.error('[Settings] Initialization failed:', e);
+          if (loading) loading.style.display = 'none';
+        }
+      }
+
+      // Tab switching
+      function showTab(tabName) {
+        console.log('[Tabs] Switching to:', tabName);
+        
+        // Hide all tabs
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+          panel.classList.remove('active');
+        });
+        
+        // Show selected tab
+        const tab = document.getElementById('tab-' + tabName);
+        if (tab) {
+          tab.classList.add('active');
+          console.log('[Tabs] Showed tab:', tabName);
+        } else {
+          console.error('[Tabs] Tab not found:', tabName);
+        }
+        
+        // Update button styles
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+          btn.classList.remove('bg-blue-50', 'text-blue-700', 'font-semibold');
+        });
+        event.target.classList.add('bg-blue-50', 'text-blue-700', 'font-semibold');
+        
+        // Initialize Settings tab if needed
+        if (tabName === 'Settings') {
+          console.log('[Tabs] Calling initSettingsTab...');
+          initSettingsTab();
+        }
+      }
+
+      // Search functionality
+      document.addEventListener('DOMContentLoaded', () => {
+        console.log('[Init] Page loaded, setting up search...');
+        
+        const searchInput = document.getElementById('masterDealerSearch');
+        const stateFilter = document.getElementById('masterStateFilter');
+        const fiFilter = document.getElementById('masterFIFilter');
+        
+        function filterDealers() {
+          const search = searchInput?.value.toLowerCase() || '';
+          const state = stateFilter?.value || '';
+          const fi = fiFilter?.value || '';
+          
+          const filtered = window.currentMasterDealers.filter(dealer => {
+            const matchesSearch = dealer.dealer_name.toLowerCase().includes(search);
+            const matchesState = !state || dealer.state === state;
+            const matchesFI = !fi || dealer.fi === fi;
+            return matchesSearch && matchesState && matchesFI;
+          });
+          
+          renderMasterDealersList(filtered);
+        }
+        
+        if (searchInput) searchInput.addEventListener('input', filterDealers);
+        if (stateFilter) stateFilter.addEventListener('change', filterDealers);
+        if (fiFilter) fiFilter.addEventListener('change', filterDealers);
+        
+        console.log('[Init] Setup complete!');
+      });
+
+      // Placeholder functions for edit/delete
+      function editDealer(id) {
+        alert('Edit dealer ' + id + ' - functionality coming soon!');
+      }
+      
+      function deleteDealer(id) {
+        if (confirm('Are you sure you want to delete this dealer?')) {
+          alert('Delete dealer ' + id + ' - functionality coming soon!');
+        }
+      }
+
+      console.log('[FIXED VERSION] All code loaded successfully!');
+    </script>
+  </body>
+</html>

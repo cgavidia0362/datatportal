@@ -134,12 +134,8 @@ th, td {
           <div class="text-xs text-gray-500">Client-side preview</div>
         </div>
 
-        <!-- PRE-FILLED NAV (fallback so sidebar always shows) -->
+        <!-- Sidebar nav will be populated by JavaScript -->
         <nav class="flex-1 p-2 space-y-1" id="sidebar-nav">
-          <button data-tab="tab-Upload"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Upload</button>
-          <button data-tab="tab-Monthly" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Monthly</button>
-          <button data-tab="tab-Yearly"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Yearly</button>
-          <button data-tab="tab-ILReps"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">IL Reps</button>
         </nav>
 
         <div class="p-3 text-xs text-gray-500 border-t">v1.4 · LocalStorage</div>
@@ -247,7 +243,7 @@ th, td {
       <h3 class="font-semibold text-red-700">Review dealer name mismatches before merge</h3>
       <label class="ml-auto text-sm flex items-center gap-2">
         <input id="mergeIncludeReviewed" type="checkbox" class="rounded border-gray-300">
-        Include reviewed rows I’ve fixed
+        Include reviewed rows I've fixed
       </label>      
     </div>
 
@@ -273,7 +269,7 @@ th, td {
     <div class="flex items-center justify-between gap-3 border-t bg-yellow-50 px-4 py-3">
       <div class="flex items-center gap-2">
         <span class="inline-flex h-2 w-2 rounded-full bg-red-500"></span>
-        <span class="text-xs text-gray-700">Items in red are likely branch/numbered variants (e.g., “#2”, “- 801 NORTH”).</span>
+        <span class="text-xs text-gray-700">Items in red are likely branch/numbered variants (e.g., "#2", "- 801 NORTH").</span>
       </div>
       <div class="flex items-center gap-2">
         <button id="mergeCancelBtn" class="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50">
@@ -555,6 +551,65 @@ th, td {
             </div>
           </div>
 
+          <!-- Settings Tab - MOVED TO CORRECT LOCATION -->
+          <div id="tab-Settings" class="tab-panel hidden">
+            <div class="mb-6">
+              <h2 class="text-2xl font-bold text-gray-900">Settings</h2>
+              <p class="text-sm text-gray-600 mt-1">Manage your master dealer list and upload preferences</p>
+            </div>
+
+            <!-- Master Dealers Section -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Master Dealer List</h3>
+                <button id="btnAddDealer" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                  + Add Dealer
+                </button>
+              </div>
+
+              <p class="text-sm text-gray-600 mb-4">
+                The master dealer list ensures data consistency across uploads. When you upload data, 
+                dealers will be validated against this list to prevent errors.
+              </p>
+
+              <!-- Search and Filter -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <input type="text" id="masterDealerSearch" placeholder="Search dealers..." 
+                       class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <select id="masterStateFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="">All States</option>
+                </select>
+                <select id="masterFIFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="">All Types</option>
+                  <option value="Franchise">Franchise</option>
+                  <option value="Independent">Independent</option>
+                </select>
+              </div>
+
+              <!-- Dealers Table -->
+              <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                <table class="min-w-full text-sm divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dealer Name</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FI Type</th>
+                      <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterDealersBody" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+              </div>
+              <div id="masterDealersLoading" class="text-center py-8 text-gray-500" style="display: none;">
+                <svg class="animate-spin h-8 w-8 mx-auto text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2">Loading dealers...</p>
+              </div>
+            </div>
+          </div>
+
         </main>
       </div>
     </div>
@@ -567,49 +622,6 @@ th, td {
       try { if (window.spStates === undefined) { window.spStates = []; } } catch(e) { window.spStates = []; }
     </script>
 
-    <!-- Minimal, guarded sidebar wiring (only runs if your app.js didn't already wire it) -->
-    <script>
-      (function () {
-        const $$ = (s) => Array.from(document.querySelectorAll(s));
-        const $  = (s) => document.querySelector(s);
-
-        function showPanel(id) {
-          $$('.tab-panel').forEach(el => el.classList.add('hidden'));
-          const el = document.getElementById(id);
-          if (el) el.classList.remove('hidden');
-          $$('#sidebar-nav button[data-tab]').forEach(b => {
-            const active = b.dataset.tab === id;
-            b.classList.toggle('bg-blue-50', active);
-            b.classList.toggle('text-blue-700', active);
-            b.classList.toggle('font-semibold', active);
-          });
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-          const nav = document.getElementById('sidebar-nav');
-          // If nav is empty or app didn't attach clicks, wire a simple router
-          const needsWiring = !nav || nav.innerText.trim() === '' ||
-            !nav.querySelector('button[data-tab]');
-
-          if (needsWiring) {
-            if (nav) {
-              nav.innerHTML = `
-                <button data-tab="tab-Upload"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Upload</button>
-                <button data-tab="tab-Monthly" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Monthly</button>
-                <button data-tab="tab-Yearly"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Yearly</button>
-                <button data-tab="tab-ILReps"  class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">IL Reps</button>
-              `;
-            }
-          }
-
-          $$('#sidebar-nav button[data-tab]').forEach(btn => {
-            btn.addEventListener('click', () => showPanel(btn.dataset.tab));
-          });
-          // Default view
-          showPanel('tab-Upload');
-        });
-      })();
-    </script>
    <!-- Safety: Dummy Snapshot wiring (robust, multi-month, auto-detects LS key) -->
 <script>
 (function () {
@@ -769,3 +781,106 @@ th, td {
   });
 })();
 </script>
+<!-- Add/Edit Dealer Modal -->
+<div id="dealerModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+    <div class="p-6">
+      <h3 id="dealerModalTitle" class="text-xl font-semibold mb-4">Add Dealer</h3>
+      <form id="dealerForm">
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Dealer Name *</label>
+            <input type="text" id="dealerFormName" required 
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="Enter dealer name">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">State *</label>
+            <input type="text" id="dealerFormState" required maxlength="2" 
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg uppercase focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="IL">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">FI Type *</label>
+            <select id="dealerFormFI" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">Select...</option>
+              <option value="Franchise">Franchise</option>
+              <option value="Independent">Independent</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">
+            Save
+          </button>
+          <button type="button" id="btnCancelDealer" class="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Review Modal -->
+<div id="uploadReviewModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div class="p-6 border-b border-gray-200">
+      <h3 class="text-xl font-semibold">⚠️ Review Upload Issues</h3>
+      <p class="text-sm text-gray-600 mt-1">Please review and resolve the following issues before proceeding</p>
+    </div>
+    
+    <div class="flex-1 overflow-y-auto p-6">
+      <div id="uploadReviewContent"></div>
+    </div>
+    
+    <div class="p-6 border-t border-gray-200 bg-gray-50">
+      <div class="flex gap-3">
+        <button id="btnApplyReview" class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">
+          Apply Changes & Continue
+        </button>
+        <button id="btnCancelReview" class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition">
+          Cancel Upload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="master-dealers-module.js"></script>
+// AUTO-FIX: Relocate Settings tab on page load
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('[Settings Fix] Running auto-relocation...');
+  
+  // Run the fix multiple times to ensure it sticks
+  function fixSettings() {
+    const settings = document.getElementById('tab-Settings');
+    if (!settings) {
+      console.error('[Settings Fix] Settings tab not found!');
+      return false;
+    }
+    
+    const main = document.querySelector('main');
+    if (settings.parentElement !== main) {
+      console.log('[Settings Fix] Settings tab is in wrong location, relocating...');
+      const settingsHTML = settings.outerHTML;
+      settings.remove();
+      main.insertAdjacentHTML('beforeend', settingsHTML);
+      console.log('[Settings Fix] Settings tab relocated successfully!');
+      return true;
+    } else {
+      console.log('[Settings Fix] Settings tab is already in correct location');
+      return false;
+    }
+  }
+  
+  // Fix immediately
+  setTimeout(fixSettings, 100);
+  // Fix again after sidebar builds
+  setTimeout(fixSettings, 500);
+  // Fix again to be sure
+  setTimeout(fixSettings, 1000);
+  // One final fix
+  setTimeout(fixSettings, 2000);
+});
+</body>
+</html>

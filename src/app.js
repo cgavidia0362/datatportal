@@ -28,7 +28,14 @@ function setSaveStatus(msg) {
   const t = new Date().toLocaleTimeString();
   el.textContent += (el.textContent ? '\n' : '') + `[${t}] ${msg}`;
 }
-
+/* ---------- Dealer Key Helper (used by merge functions) ---------- */
+window.dealerKey = (dealer, state, fi) => {
+  const d = String(dealer ?? '').trim();
+  const s = String(state ?? '').trim().toUpperCase();
+  if (fi === undefined || fi === null || String(fi).trim() === '') return `${d}|${s}`;
+  return `${d}|${s}|${fi}`;
+};
+const dealerKey = window.dealerKey;
 /* ---------- Storage helpers ---------- */
 window.LS_KEY = 'ma_snaps_sidebar_v1';
 function getSnaps() {
@@ -618,7 +625,8 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
       const denial  = Number(r.denial)   || 0;
       const funded  = Number(r.funded)   || 0;
 
-      // funded_amount: try common property names we already compute in UI
+      if (r.dealer === 'cardinal buick gmc') console.log('[SAVE DEBUG] Cardinal row:', r);
+      if (r.dealer === '2036 drive today') console.log('[SAVE DEBUG] Normal dealer row:', r);
       const fundedAmount =
         Number(r.funded_amount) || Number(r.fundedAmt) || Number(r.amount) || 0;
 
@@ -659,19 +667,19 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
   
       setSaveStatus(`Step 3: inserted ${rows.length} rows`);
       console.log('[sb] saved month to Supabase:', y, String(m).padStart(2,'0'), 'rows:', rows.length);  
+ // Always delete existing funded deals for this month first
+const { error: delFundedErr } = await window.sb
+.from('funded_deals')
+.delete()
+.eq('year', y)
+.eq('month', m);
+
+if (delFundedErr) {
+console.error('[sb] delete funded_deals failed:', delFundedErr);
+}     
  // 4) Save individual funded deals to funded_deals table
 if (snap.fundedRawRows && snap.fundedRawRows.length) {
-  // First, delete any existing funded deals for this (year, month)
-  const { error: delFundedErr } = await window.sb
-    .from('funded_deals')
-    .delete()
-    .eq('year', y)
-    .eq('month', m);
   
-  if (delFundedErr) {
-    console.error('[sb] delete funded_deals failed:', delFundedErr);
-  }
-
   // Prepare funded deal rows
   const fundedDeals = (snap.fundedRawRows || []).map(r => ({
     year: y,
@@ -1069,11 +1077,21 @@ function _looksLikeBranchOrNumbered(name) {
 // Normalize dealer names for matching (strip punctuation, company suffixes, collapse whitespace)
 function normalizeDealerName(s) {
   if (!s) return '';
-  let t = String(s).toUpperCase();
-  t = t.replace(/&/g,' AND ');
-  t = t.replace(/[.,/\\\-_'`]/g,' ');
-  t = t.replace(/\b(LLC|INC|CO|COMPANY|CORP|CORPORATION|LTD|THE|AUTO|AUTO GROUP|GROUP)\b/g,' ');
-  t = t.replace(/\s+/g,' ').trim();
+  let t = String(s).toLowerCase();  // ← CHANGED: toLowerCase instead of toUpperCase
+  console.log('[NORM] Step 1 - lowercase:', t); // ← ADD THIS LINE
+  
+  // FORCE remove ALL punctuation first
+  t = t.replace(/[^a-z0-9\s]/g, '');  // ← CHANGED: a-z instead of A-Z
+  console.log('[NORM] Step 2 - after punctuation removal:', t); // ← ADD THIS LINE
+  
+  // Then remove company suffixes
+  t = t.replace(/\b(llc|inc|co|company|corp|corporation|ltd|the|auto|group)\b/g, '');  // ← CHANGED: lowercase patterns
+  console.log('[NORM] Step 3 - after suffix removal:', t); // ← ADD THIS LINE
+  
+  // Collapse whitespace
+  t = t.replace(/\s+/g, ' ').trim();
+  console.log('[NORM] Step 4 - final:', t); // ← ADD THIS LINE
+  
   return t;
 }
 function normalizeState(s) {
@@ -1299,6 +1317,7 @@ const TABS = [
   { id: 'Monthly', label: 'Monthly' },
   { id: 'Yearly',  label: 'Yearly' },
   { id: 'ILReps',  label: 'IL Reps' },
+  { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
 ];
 function buildSidebar() {
   const nav = $('#sidebar-nav');
@@ -1331,6 +1350,26 @@ function switchTab(id) {
       }
     });
   }  
+  if (id === 'tab-Settings' || id === 'Settings') {
+    // CRITICAL FIX: Ensure Settings tab is in the right place before showing
+    const settingsTab = document.getElementById('tab-Settings');
+    const main = document.querySelector('main');
+    
+    if (settingsTab && main && settingsTab.parentElement !== main) {
+      console.log('[switchTab] Relocating Settings tab to correct position...');
+      const settingsHTML = settingsTab.outerHTML;
+      settingsTab.remove();
+      main.insertAdjacentHTML('beforeend', settingsHTML);
+    }
+    
+    // Initialize Settings tab when user clicks on it
+    console.log('[switchTab] Settings tab clicked, calling initSettingsTab...');
+    if (typeof initSettingsTab === 'function') {
+      initSettingsTab();
+    } else {
+      console.error('[switchTab] initSettingsTab function not found!');
+    }
+  }
 }
 
 /* ---------- Upload & Map ---------- */
@@ -2021,23 +2060,35 @@ function pickFunded(r, key) {
 function matchAndMergeFundedIntoSnapshot(snap) {
   if (!fundedParsed.rows?.length) return { merged: 0, exact:0, high:0, review:0, unmatched:0 };
 
-  // Build an index of dealers from the snapshot
-  const appRows = snap.dealerRows || [];
-  const byState = new Map(); // state -> [{dealer, key, row}]
-  appRows.forEach(r => {
-    const st = normalizeState(r.state);
-    const nm = normalizeDealerName(r.dealer);
-    const key = `${nm}|${st}`;
-    if (!byState.has(st)) byState.set(st, []);
-    byState.get(st).push({ dealer:r.dealer, key, row:r });
-  });
+// Build an index of dealers from the snapshot
+const appRows = snap.dealerRows || [];
+const byState = new Map(); // state -> [{dealer, key, row}]
+const dealerCorrections = snap._dealerCorrections || new Map();
+
+appRows.forEach(r => {
+  const st = normalizeState(r.state);
+  const nm = normalizeDealerName(r.dealer);
+  const key = `${nm}|${st}`;
+  if (!byState.has(st)) byState.set(st, []);
+  byState.get(st).push({ dealer:r.dealer, key, row:r });
+  
+  // Also index by corrected values if this dealer was corrected
+  const correction = dealerCorrections.get(nm);
+  if (correction) {
+    const correctedState = normalizeState(correction.state);
+    const correctedKey = `${nm}|${correctedState}`;
+    if (!byState.has(correctedState)) byState.set(correctedState, []);
+    byState.get(correctedState).push({ dealer:r.dealer, key: correctedKey, row:r, isCorrected: true });
+    console.log('[Merge] Added correction mapping:', correctedKey, '→', r.dealer);
+  }
+});
 
   const accepted = [];      // funded rows we will merge
   const needsReview = [];   // low-confidence candidates
   const unmatched = [];     // no candidates
 
-  const HIGH = 0.92;
-  const LOW  = 0.80;
+  const HIGH = 0.70;  // Lowered to catch more matches
+  const LOW  = 0.60;  // Lowered threshold
 
   fundedParsed.rows.forEach((r) => {
     const dealer = normalizeDealerName(pickFunded(r,'dealer'));
@@ -2045,13 +2096,15 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     const amt    = parseNumber(pickFunded(r,'loan'));
     const apr    = parseNumber(pickFunded(r,'apr'));
     let fee      = pickFunded(r,'fee');
-
+// Debug logging for Cardinal Buick GMC
+if (dealer.includes('cardinal')) {
+  console.log('[CARDINAL DEBUG] Processing funded row:', dealer, state);
+}
     if (!dealer || !state || !isFinite(amt)) {
       unmatched.push({ r, reason:'missing fields' });
       return;
     }
 
-    // normalize fee to percent if possible
     let feePct = null;
     const feeStr = String(fee||'').trim();
     if (feeStr) {
@@ -2061,17 +2114,19 @@ function matchAndMergeFundedIntoSnapshot(snap) {
       else if (isFinite(amt) && amt>0) feePct = asNum/amt;
     }
 
-    const key = `${dealer}|${state}`;
+    const key = dealer + '|' + state;
     const candidates = byState.get(state) || [];
 
-    // exact
     const exact = candidates.find(c => c.key === key);
     if (exact) {
       accepted.push({ r, dealer: exact.row.dealer, state, amt, apr, feePct, match:'exact', row: exact.row });
+     // Debug for Cardinal
+  if (dealer.includes('cardinal')) {
+    console.log('[CARDINAL DEBUG] EXACT MATCH found! Matched to:', exact.row.dealer);
+  } 
       return;
     }
 
-    // fuzzy within state
     let best = { sim: 0, cand: null };
     candidates.forEach(c => {
       const sim = diceSimilarity(dealer, c.dealer);
@@ -2080,10 +2135,18 @@ function matchAndMergeFundedIntoSnapshot(snap) {
 
     if (best.cand && best.sim >= HIGH) {
       accepted.push({ r, dealer: best.cand.row.dealer, state, amt, apr, feePct, match:'high', row: best.cand.row });
+    // Debug for Cardinal  
+  if (dealer.includes('cardinal')) {
+    console.log('[CARDINAL DEBUG] HIGH CONFIDENCE MATCH! Matched to:', best.cand.row.dealer, 'Similarity:', best.sim);
+  }  
     } else if (best.cand && best.sim >= LOW) {
       needsReview.push({ r, suggestion: best.cand.row.dealer, sim: best.sim, state, amt });
     } else {
       unmatched.push({ r, reason:'no good candidate' });
+      // Debug for Cardinal
+  if (dealer.includes('cardinal')) {
+    console.log('[CARDINAL DEBUG] NO MATCH FOUND - Added to unmatched array');
+  }
     }
   });
 
@@ -2119,17 +2182,20 @@ function matchAndMergeFundedIntoSnapshot(snap) {
   const incKey = (m, k, v=1) => m.set(k, (m.get(k)||0)+v);
 
   const incByDealer = new Map();
+  const amountByDealer = new Map();
   accepted.forEach(x => {
     const fi = x.row.fi || '';
-    incKey(incByDealer, dealerKey(x.dealer, x.state, fi), 1);
+    const key = dealerKey(x.dealer, x.state, fi);
+    incKey(incByDealer, key, 1);
+    incKey(amountByDealer, key, x.amt);  // ADD THIS LINE to sum amounts
   });
 
   (snap.dealerRows || []).forEach(r => {
     const k = dealerKey(r.dealer, r.state, r.fi);
     r.funded = (r.funded||0) + (incByDealer.get(k)||0);
+    r.funded_amount = (r.funded_amount||0) + (amountByDealer.get(k)||0);  // ADD THIS LINE
     r.ltb = r.total ? r.funded / r.total : 0;
   });
-
   // Update state and FI tallies
   const incByState = new Map();
   accepted.forEach(x => incKey(incByState, x.state, 1));
@@ -2156,19 +2222,32 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     if (/%/.test(s)) return parseNumber(s)/100;
     const n = parseNumber(s); const amt = parseNumber(r['Loan Amount']);
     return (isFinite(n) && isFinite(amt) && amt>0) ? n/amt : null;
+    return (isFinite(n) && isFinite(amt) && amt>0) ? n/amt : null;
   }).filter(v=>v!=null && isFinite(v));
 
   snap.kpis.avgFundedAmount = fundedArr.length ? (snap.kpis.totalFunded / fundedArr.length) : null;
   snap.kpis.avgAPR = aprArr.length ? (aprArr.reduce((a,b)=>a+b,0)/aprArr.length) : null;
   snap.kpis.avgDiscountPct = feePctArr.length ? (feePctArr.reduce((a,b)=>a+b,0)/feePctArr.length) : null;
 
-  return {
-    merged: accepted.length,
-    exact: accepted.filter(x=>x.match==='exact').length,
-    high:  accepted.filter(x=>x.match==='high').length,
-    review: needsReview.length,
-    unmatched: unmatched.length
-  };
+ return {
+  merged: accepted.length,
+  exact: accepted.filter(x=>x.match==='exact').length,
+  high:  accepted.filter(x=>x.match==='high').length,
+  review: needsReview.length,
+  unmatched: unmatched.length,
+  unmatchedDetails: unmatched.map(u => ({
+    dealerName: pickFunded(u.r, 'dealer'),
+    state: normalizeState(pickFunded(u.r, 'state')),
+    amount: parseNumber(pickFunded(u.r, 'loan')),
+    count: 1
+  })),
+  needsReviewDetails: needsReview.map(nr => ({
+    dealerName: pickFunded(nr.r, 'dealer'),
+    state: normalizeState(pickFunded(nr.r, 'state')),
+    amount: parseNumber(pickFunded(nr.r, 'loan')),
+    count: 1
+  }))
+};
 }
 function mergeFundedIntoSnapshot(snap, fundedParsed, fundedMapping, opts) {
   // opts: { accepted: [{fundedName, targetName, match:'exact'|'high'|'manual'}], … }
@@ -2309,7 +2388,7 @@ function recomputeAggregatesFromDealers(snap) {
 
 const mergeFundedData = matchAndMergeFundedIntoSnapshot;
 
-$('#btnAnalyze')?.addEventListener('click', () => {
+$('#btnAnalyze')?.addEventListener('click', async () => {
   const y = num($('#inpYear')?.value);
   const m = num($('#inpMonth')?.value);
   if (!y || !m || m < 1 || m > 12) {
@@ -2334,6 +2413,150 @@ $('#btnAnalyze')?.addEventListener('click', () => {
   try {
     const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
 lastBuiltSnapshot = snap;
+// ===== DETECT FUNDED-ONLY DEALERS =====
+// Find dealers who funded deals but had NO applications this month
+let orphansForModal = [];
+
+if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
+  console.log('[Funded-Only] Checking for dealers who funded but did not apply...');
+  
+  // Build a set of all dealers from the APPLICATION CSV (normalized)
+  const appDealerSet = new Set();
+  (snap.dealerRows || []).forEach(function(r) {
+    const key = normalizeDealerName(r.dealer).trim() + '|' + normalizeState(r.state).trim();
+    console.log('[Debug] Adding app dealer to set:', key);
+    appDealerSet.add(key);
+  });
+  
+  console.log('[Debug] Total app dealers in set:', appDealerSet.size);
+  console.log('[Debug] First 5 app dealer keys:', Array.from(appDealerSet).slice(0, 5));
+  
+  console.log('[Funded-Only] Found', appDealerSet.size, 'dealers in application CSV');
+  
+  // Build a map of funded deals by dealer
+  const fundedByDealer = new Map();
+  
+  fundedParsed.rows.forEach(function(row) {
+    const dealerCol = fundedMapping.dealer || '';
+    const stateCol = fundedMapping.state || '';
+    const loanCol = fundedMapping.loan || '';
+    
+    if (!dealerCol || !stateCol || !loanCol) return;
+    
+    const dealer = normalizeDealerName(String(row[dealerCol] || '').trim());
+    const state = normalizeState(String(row[stateCol] || '').trim());
+    console.log('[Debug] Funded dealer BEFORE norm:', String(row[dealerCol] || '').trim(), '→ AFTER norm:', dealer);  // ADD THIS
+    console.log('[Debug] CHAR CODES:', dealer.split('').map(c => c.charCodeAt(0)).join(','));
+    const amount = parseFloat(String(row[loanCol] || '0').replace(/[^0-9.-]/g, '')) || 0;
+    
+    if (!dealer || !state || amount <= 0) return;
+    
+    const key = dealer.trim() + '|' + state.trim();
+    
+    if (!fundedByDealer.has(key)) {
+      fundedByDealer.set(key, {
+        dealerName: dealer,
+        state: state,
+        fundedCount: 0,
+        fundedAmount: 0
+      });
+    }
+    
+    const entry = fundedByDealer.get(key);
+    entry.fundedCount += 1;
+    entry.fundedAmount += amount;
+  });
+  
+  console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
+  
+  // Find dealers who are in FUNDED but NOT in APPLICATION
+  fundedByDealer.forEach(function(entry, key) {
+    console.log('[Debug] Checking funded dealer:', key, 'in app set?', appDealerSet.has(key));
+    if (!appDealerSet.has(key)) {
+      orphansForModal.push({
+        dealer: entry.dealerName,
+        state: entry.state,
+        fi: 'Independent',
+        count: entry.fundedCount,
+        amount: entry.fundedAmount,
+        action: 'create-row'
+      });
+    }
+  });
+  
+  console.log('[Funded-Only] Found', orphansForModal.length, 'funded-only dealers (funded but no apps)');
+  
+  if (orphansForModal.length > 0) {
+    console.log('[Funded-Only] Examples:', orphansForModal.slice(0, 3));
+  }
+}
+// ===== END FUNDED-ONLY DEALER DETECTION =====
+// ===== MASTER DEALER VALIDATION =====
+// Add this code RIGHT AFTER line 2336 (after lastBuiltSnapshot = snap;)
+// and BEFORE line 2343 (before the Pre-merge funded file review comment)
+
+// Validate the snapshot against master dealer list
+try {
+  const validationIssues = await validateSnapshot(lastBuiltSnapshot);
+  
+  // Do a preliminary merge to identify unmatched funded dealers
+  let unmatchedFundedDealers = [];
+  if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
+    const snapshotCopy = JSON.parse(JSON.stringify(lastBuiltSnapshot));
+    const originalFundedParsed = window.fundedParsed;
+    const originalConfirm = window.confirm;
+    
+    window.fundedParsed = fundedParsed;
+    window.confirm = () => false; // Auto-reject to prevent actual merge
+    
+    try {
+      if (typeof matchAndMergeFundedIntoSnapshot === 'function') {
+        const prelimResult = matchAndMergeFundedIntoSnapshot(snapshotCopy);
+        unmatchedFundedDealers = orphansForModal || [];  // Use our own detection (works better!)
+        console.log('[Debug] prelimResult full object:', prelimResult);
+    console.log('[Debug] unmatchedDetails:', prelimResult.unmatchedDetails);
+        console.log('[Validation] Preliminary merge found', unmatchedFundedDealers.length, 'unmatched dealers');
+      }
+    } finally {
+      window.fundedParsed = originalFundedParsed;
+      window.confirm = originalConfirm;
+    }
+  }
+  
+  // Store unmatched in uploadReviewData for later
+  window.uploadReviewData.unmatchedFunded = unmatchedFundedDealers;
+
+  const hasIssues = 
+    validationIssues.mismatches.length > 0 || 
+    validationIssues.newDealers.length > 0 ||
+    orphansForModal.length > 0;
+  
+  if (hasIssues) {
+    console.log('[Validation] Issues found:', {
+      mismatches: validationIssues.mismatches.length,
+      newDealers: validationIssues.newDealers.length,
+      unmatchedFunded: unmatchedFundedDealers.length
+    });
+    
+    // Show the review modal  
+    showUploadReviewModal(
+      validationIssues, 
+      orphansForModal, // Pass the funded-only dealers we detected
+      lastBuiltSnapshot,
+      fundedParsed?.rows || null
+    );
+    
+    // STOP HERE - user will proceed after review
+    return;
+  }
+  
+  console.log('[Validation] ✅ No issues found - proceeding with upload');
+  
+} catch (validationError) {
+  console.error('[Validation] Error during validation:', validationError);
+  // Continue anyway if validation fails (don't block the user)
+}
+// ===== END MASTER DEALER VALIDATION =====
 
   } catch (e) {
     console.error('buildSnapshot error:', e);
@@ -2418,10 +2641,106 @@ _pendingMerge = {
   accepted: engineAccepted
 };
 
-      // show modal
-      document.getElementById('mergeModal')?.classList.remove('hidden');
-      // Stop here; the merge will be done in the Proceed handler
-      return;
+// Wire up the upload review modal buttons BEFORE showing it
+console.log('[DEBUG] About to attach button listeners');
+
+// First, remove any existing listeners by cloning and replacing the buttons
+const oldApplyBtn = document.getElementById('btnApplyReview');
+const oldCancelBtn = document.getElementById('btnCancelReview');
+
+if (oldApplyBtn) {
+  const newApplyBtn = oldApplyBtn.cloneNode(true);
+  oldApplyBtn.parentNode.replaceChild(newApplyBtn, oldApplyBtn);
+  console.log('[DEBUG] Cloned Apply button to remove old listeners');
+}
+
+if (oldCancelBtn) {
+  const newCancelBtn = oldCancelBtn.cloneNode(true);
+  oldCancelBtn.parentNode.replaceChild(newCancelBtn, oldCancelBtn);
+  console.log('[DEBUG] Cloned Cancel button to remove old listeners');
+}
+
+// Now attach fresh listeners to the new buttons
+document.getElementById('btnApplyReview')?.addEventListener('click', async () => {
+  console.log('[DEBUG] Apply button clicked!');
+  
+  const modal = document.getElementById('uploadReviewModal');
+  if (!modal) {
+    console.log('[DEBUG] Modal not found!');
+    return;
+  }
+  
+  // Get all the user's choices from the dropdowns
+  const rows = modal.querySelectorAll('#uploadReviewContent tbody tr');
+  const resolutions = [];
+  
+  rows.forEach(row => {
+    const dealerName = row.cells[0]?.textContent?.trim();
+    const dropdown = row.querySelector('select');
+    const choice = dropdown?.value;
+    
+    if (dealerName && choice) {
+      resolutions.push({ dealer: dealerName, action: choice });
+    }
+  });
+  
+  console.log('[Upload Review] User resolutions:', resolutions);
+  
+  // Hide modal
+  modal.classList.add('hidden');
+  console.log('[DEBUG] Modal hidden');
+  
+  // Continue with the normal analyze flow
+  const s = window.lastBuiltSnapshot;
+  if (s) {
+    const res = document.getElementById('resultsArea');
+    if (res) {
+      res.innerHTML = `
+        <div class="text-sm">
+          <div class="font-semibold mb-1">Analyzed: ${monthName(s.month)} ${s.year}</div>
+          <ul class="list-disc ml-5 space-y-0.5">
+            <li>Total apps: <b>${s.totals.totalApps}</b></li>
+            <li>Approved: <b>${s.totals.approved}</b></li>
+            <li>Funded: <b>${s.totals.funded}</b></li>
+            <li>Total Funded: <b>${formatMoney(s.kpis.totalFunded)}</b></li>
+            <li>Dealers: <b>${s.dealerRows.length}</b>, States: <b>${s.stateRows.length}</b></li>
+          </ul>
+        </div>
+      `;
+    }
+    
+    // Enable save buttons
+    ['#btnSaveMonth','#btnExportRawAll','#btnExportFunded','#btnDeleteMonth'].forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) el.disabled = false;
+    });
+    
+    console.log('[DEBUG] Results shown, buttons enabled');
+  }
+});
+
+document.getElementById('btnCancelReview')?.addEventListener('click', () => {
+  console.log('[DEBUG] Cancel button clicked!');
+  
+  const modal = document.getElementById('uploadReviewModal');
+  if (modal) modal.classList.add('hidden');
+  window.lastBuiltSnapshot = null;
+  console.log('[Upload Review] Upload cancelled by user');
+});
+
+console.log('[DEBUG] Button listeners attached');
+
+document.getElementById('btnCancelReview')?.addEventListener('click', () => {
+  const modal = document.getElementById('uploadReviewModal');
+  if (modal) modal.classList.add('hidden');
+  window.lastBuiltSnapshot = null;
+  console.log('[Upload Review] Upload cancelled by user');
+}, { once: true }); // IMPORTANT: only add listener once
+
+// Now show modal
+document.getElementById('uploadReviewModal')?.classList.remove('hidden');
+// Stop here; user will proceed via button click
+
     } else {
       // No flags → safe to merge directly
       // NOTE: mergeFundedData already exists from the prior step you added
@@ -2644,32 +2963,11 @@ if (typeof updateKpiTile === 'function') {
   updateKpiTile('Avg Lender Fee % (Funded)', `${Number(kpi.avg_discount_pct_funded).toFixed(2)}%`);
   updateKpiTile('Avg LTV (Approved)', `${Number(kpi.avg_ltv_approved).toFixed(2)}%`);
 }
-
-// Paint the green “Total Funded (This Month)” from our working snapshot
-const displayTotalFunded = Number(window.lastBuiltSnapshot?.kpis?.totalFunded ?? 0);
-
-if (typeof updateKpiTile === 'function') {
-  updateKpiTile('Total Funded (This Month)', formatMoney(displayTotalFunded));
-} else {
-  const el = document.querySelector('[data-kpi="Total Funded (This Month)"] .kpi-value');
-  if (el) el.textContent = formatMoney(displayTotalFunded);
 }
-
-// paint the green tile
-if (typeof updateKpiTile === 'function') {
-updateKpiTile('Total Funded (This Month)', formatMoney(displayTotalFunded));
-} else {
-// fallback if updateKpiTile isn't present
-const el = document.querySelector('[data-kpi="Total Funded (This Month)"] .kpi-value');
-if (el) el.textContent = formatMoney(displayTotalFunded);
 }
-
-    }
-  }
 } catch (e) {
-  console.warn('[monthly refresh] KPI reload failed:', e);
+console.warn('[monthly refresh] KPI reload failed:', e);
 }
-
     if (!snaps || !snaps.length) {
       // ⤵️ Fallback to localStorage if SB is empty/locked (dev/RLS)
       const snapsLocal = getSnaps().slice(-12);
@@ -2744,6 +3042,25 @@ async function renderMonthlyDetail(snap) {
   if (detail.classList) detail.classList.remove('hidden');
   const rows = snap.dealerRows || [];
 
+  // Calculate Total Funded from actual database
+let displayTotalFunded = snap.kpis?.totalFunded || 0;
+if (window.sb && snap.year && snap.month) {
+  console.log('[KPI Debug] Fetching total funded for', snap.year, snap.month);
+  console.log('[KPI Debug] snap object:', snap);
+  const { data: monthData, error: monthErr } = await window.sb
+    .from('monthly_snapshots')
+    .select('funded_amount')
+    .eq('year', snap.year)
+    .eq('month', snap.month);
+  
+    if (!monthErr && monthData) {
+      console.log('[KPI Debug] Query returned', monthData.length, 'rows');
+      console.log('[KPI Debug] First 5 rows:', monthData.slice(0, 5));
+      displayTotalFunded = monthData.reduce((sum, row) => sum + (Number(row.funded_amount) || 0), 0);
+      console.log('[KPI Debug] Calculated total:', displayTotalFunded);
+    snap.kpis.totalFunded = displayTotalFunded;
+  }
+}
   // ===== KPIs (your definitions) =====
   const T = snap.totals || {};
   const total = T.totalApps || 0;
@@ -3118,14 +3435,6 @@ const amtByDealer = new Map();
 const fiNormalize = (typeof normFI === 'function')
   ? normFI
   : (t) => (String(t || '').trim().toLowerCase() === 'franchise' ? 'Franchise' : 'Independent');
-
-// unified key builder (dealer|STATE|FI or dealer|STATE)
-const dealerKey = (dealer, state, fi /* optional */) => {
-  const d = String(dealer ?? '').trim();
-  const s = String(state  ?? '').trim().toUpperCase();
-  if (fi === undefined || fi === null || String(fi).trim() === '') return `${d}|${s}`;
-  return `${d}|${s}|${fi}`;
-};
 
 (snap.fundedRawRows || []).forEach(r => {
   // read dealer / state from any header variant

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings Tab Test</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    window.NEXT_PUBLIC_SUPABASE_URL = "https://zhquyedaxszsnswaimza.supabase.co";
+    window.NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4";
+  </script>
+</head>
+<body class="bg-gray-100 p-8">
+  <div class="max-w-7xl mx-auto">
+    <div class="bg-white rounded-lg shadow-lg p-8">
+      <h1 class="text-3xl font-bold mb-2">Settings Tab - Standalone Test</h1>
+      <p class="text-gray-600 mb-6">This page tests ONLY the Settings tab functionality</p>
+      
+      <button id="loadDealersBtn" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium mb-6">
+        Load Dealers from Database
+      </button>
+      
+      <div id="status" class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm"></div>
+      
+      <!-- Master Dealers Section -->
+      <div class="bg-white rounded-lg border border-gray-200 p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Master Dealer List</h3>
+          <button id="btnAddDealer" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            + Add Dealer
+          </button>
+        </div>
+
+        <!-- Search and Filter -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <input type="text" id="masterDealerSearch" placeholder="Search dealers..." 
+                 class="px-3 py-2 border border-gray-300 rounded-lg">
+          <select id="masterStateFilter" class="px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">All States</option>
+          </select>
+          <select id="masterFIFilter" class="px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="">All Types</option>
+            <option value="Franchise">Franchise</option>
+            <option value="Independent">Independent</option>
+          </select>
+        </div>
+
+        <!-- Dealers Table -->
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+          <table class="min-w-full text-sm divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dealer Name</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">FI Type</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="masterDealersBody" class="bg-white divide-y divide-gray-200">
+              <!-- Dealers will be inserted here -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div id="masterDealersLoading" class="text-center py-8 text-gray-500" style="display: none;">
+          <svg class="animate-spin h-8 w-8 mx-auto text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p class="mt-2">Loading dealers...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="master-dealers-module.js"></script>
+  
+  <script>
+    function log(msg) {
+      const status = document.getElementById('status');
+      const time = new Date().toLocaleTimeString();
+      status.innerHTML += `[${time}] ${msg}<br>`;
+      console.log(msg);
+    }
+    
+    document.getElementById('loadDealersBtn').addEventListener('click', async () => {
+      log('Button clicked!');
+      
+      if (typeof initSettingsTab === 'function') {
+        log('initSettingsTab function found, calling it...');
+        try {
+          await initSettingsTab();
+          log('initSettingsTab completed!');
+          
+          const count = document.getElementById('masterDealersBody').children.length;
+          log(`Table now has ${count} rows`);
+        } catch (e) {
+          log('ERROR: ' + e.message);
+        }
+      } else {
+        log('ERROR: initSettingsTab function NOT found!');
+        log('Make sure master-dealers-module.js is loaded correctly');
+      }
+    });
+    
+    log('Page loaded successfully');
+    log('Waiting for button click...');
+  </script>
+</body>
+</html>
