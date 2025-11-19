@@ -210,7 +210,8 @@ async function buildMonthlySnapSB(year, month) {
       counter: Number(r.counter) || 0,
       pending: Number(r.pending) || 0,
       denial: Number(r.denial) || 0,
-      funded: Number(r.funded) || 0
+      funded: Number(r.funded) || 0,
+      funded_amount: Number(r.funded_amount) || 0
     };
     dealers.push(row);
 
@@ -3493,7 +3494,7 @@ const fiKey = (typeof normFI === 'function')
 // funded $ lookup key(s): try dealer|state|fi, then fall back to dealer|state
 const kFull  = dealerKey(r.dealer, r.state, fiKey);  // dealer|STATE|fi (normalized)
 const kNoFi  = dealerKey(r.dealer, r.state);         // dealer|STATE (fallback)
-const fundedAmt = Number(amtByDealer.get(kFull) ?? amtByDealer.get(kNoFi) ?? 0);
+const fundedAmt = Number(r.funded_amount ?? amtByDealer.get(kFull) ?? amtByDealer.get(kNoFi) ?? 0);
 
 // expose normalized fields used by table render/sort
 return { ...r, ltb, lta, fundedAmt };
