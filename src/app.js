@@ -2134,7 +2134,13 @@ if (dealer.includes('cardinal')) {
       if (sim > best.sim) best = { sim, cand: c };
     });
 
-    if (best.cand && best.sim >= HIGH) {
+   // Extract first word from each dealer name
+const dealerFirstWord = dealer.split(/\s+/)[0];
+const candFirstWord = best.cand.row.dealer.toLowerCase().split(/\s+/)[0];
+const firstWordMatch = dealerFirstWord === candFirstWord;
+
+// Only accept high-confidence match if first words match OR similarity is very high (>85%)
+if (best.cand && best.sim >= HIGH && (firstWordMatch || best.sim >= 0.85)) {
       accepted.push({ r, dealer: best.cand.row.dealer, state, amt, apr, feePct, match:'high', row: best.cand.row });
     // Debug for Cardinal  
   if (dealer.includes('cardinal')) {
