@@ -1,4 +1,5 @@
 console.log('[BUILD] src/app.js loaded at', new Date().toISOString());
+Chart.register(ChartDataLabels);
 /* ======================================================================
    Buying Analysis Portal — app.js (Full, self-contained)
    - Keeps your existing IDs and layout from the provided HTML
@@ -3969,7 +3970,27 @@ function drawYrChart() {
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: { 
+        legend: { display: false },
+        datalabels: {
+          display: true,
+          align: 'top',
+          anchor: 'end',
+          backgroundColor: 'rgba(255, 255, 255, 0.8)',
+          borderRadius: 3,
+          padding: 4,
+          font: {
+            size: 14,
+            weight: 'bold'
+          },
+          formatter: (value) => {
+            if (isAmount) {
+              return '$' + Number(value).toLocaleString(undefined, {maximumFractionDigits: 0});
+            }
+            return value;
+          }
+        }
+      },
       // If showing dollars, format the Y axis as money; otherwise leave as plain numbers
       scales: isAmount ? {
         y: {

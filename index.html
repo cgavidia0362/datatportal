@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <!-- Chart.js for the Yearly line chart -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
 <!-- SheetJS for reading .xlsx files -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -138,7 +139,6 @@ th, td {
         <nav class="flex-1 p-2 space-y-1" id="sidebar-nav">
         </nav>
 
-        <div class="p-3 text-xs text-gray-500 border-t">v1.4 · LocalStorage</div>
       </aside>
 
       <!-- Main -->
@@ -150,10 +150,6 @@ th, td {
               <button id="mobileMenuBtn" class="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm">☰</button>
               <h1 class="text-xl font-semibold">Buying Analysis Portal</h1>
               <span class="ml-2 text-xs text-gray-500">Preview — Sidebar</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button id="seedDummyBtn" class="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50">Load Dummy Snapshot</button>
-              <button id="clearStorageBtn" class="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Reset Demo Data</button>
             </div>
           </div>
         </header>
