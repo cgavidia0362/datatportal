@@ -372,13 +372,13 @@ th, td {
 
             <!-- Line chart -->
             <div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="font-semibold">Funded by Month</h3>
+              <h3 class="font-semibold mb-2">Funded by Month</h3>
+              <div class="flex items-center justify-center mb-2">
                 <div class="inline-flex rounded-lg border overflow-hidden">
                   <button id="yrChartDeals"  class="px-3 py-1.5 text-sm bg-blue-600 text-white">Deals</button>
                   <button id="yrChartAmount" class="px-3 py-1.5 text-sm hover:bg-gray-50">Amount</button>
                 </div>
-              </div>              
+              </div>
               <div class="w-full"><canvas id="yrFundedChart" height="80"></canvas></div>
             </div>
 
@@ -408,13 +408,11 @@ th, td {
 
             <!-- State Performance (Matrix / Ranking / Sparklines) -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5 mb-4">
-              <div class="flex flex-wrap items-center gap-2 mb-2">
-              <h3 class="font-semibold text-slate-800 flex-1">State Performance</h3>
-
+              <h3 class="font-semibold text-slate-800 mb-3">State Performance</h3>
+              <div class="flex flex-wrap items-center justify-center gap-2 mb-2">
                 <!-- view tabs -->
                 <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden shadow-sm">
                 <button id="spViewMatrix" class="px-3 py-1.5 text-sm bg-indigo-600 text-white">Matrix</button>
-                <button id="spViewTrends" class="px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Trends</button>
                 <button id="spViewSpark"  class="px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Sparklines</button>
               </div>
 
@@ -439,7 +437,6 @@ th, td {
                   </select>
                 </div>
               </div>
-
 <!-- Matrix -->
 <div id="spMatrixCard">
 <div class="overflow-x-auto scroll-shadow-x rounded-xl border border-slate-200">

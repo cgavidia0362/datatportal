@@ -3970,17 +3970,26 @@ function drawYrChart() {
     },
     options: {
       responsive: true,
+      layout: {
+        padding: {
+          top: 25,
+          right: 25,
+          bottom: 10,
+          left: 10
+        }
+      },
       plugins: { 
         legend: { display: false },
         datalabels: {
           display: true,
           align: 'top',
           anchor: 'end',
+          offset: 8,
           backgroundColor: 'rgba(255, 255, 255, 0.8)',
           borderRadius: 3,
           padding: 4,
           font: {
-            size: 14,
+            size: 11,
             weight: 'bold'
           },
           formatter: (value) => {
@@ -4444,29 +4453,30 @@ if (window.sb) {
     // -> [{ state, months:[{ total, approved, counter, pending, denial, funded, fundedAmount }×12], ytd:{...} }]
     const stateYTD = (await fetchStateMonthlyYTD_SB(year)) || [];
 
-    // 12 month labels for the selected year
-    window.spMonths = Array.from({ length: 12 }, (_, i) => {
-      const m = i + 1;
-      return [`${year}-${String(m).padStart(2, '0')}`, monthName(m)];
-    });
+  // Month labels from actual data (only months that exist)
+  window.spMonths = list.map(s => [`${s.year}-${String(s.month).padStart(2,'0')}`, monthName(s.month)]);
 
     // Sorted list of state codes
     const states = stateYTD.map(s => s.state || '??').sort();
     window.spStates = states;
 
-    // Build the series map: state -> [{ total, approved, funded, amount, ltb } per month]
-    const seriesMap = new Map();
-    stateYTD.forEach(s => {
-      const series = (s.months || []).map(cell => {
-        const total    = Number(cell.total)        || 0;
-        const approved = (Number(cell.approved)    || 0) + (Number(cell.counter) || 0);
-        const funded   = Number(cell.funded)       || 0;
-        const amount   = Number(cell.fundedAmount) || 0;  // used by “Funded (amount)”
-        const ltb      = total ? funded / total    : 0;   // LTB%
-        return { total, approved, funded, amount, ltb };
-      });
-      seriesMap.set(s.state || '??', series);
-    });
+// Build the series map: state -> [{ total, approved, funded, amount, ltb } per month]
+const seriesMap = new Map();
+stateYTD.forEach(s => {
+  // Only include months that have data (use spMonths which we already filtered)
+  const series = window.spMonths.map((monthInfo, idx) => {
+    const monthNum = parseInt(monthInfo[0].split('-')[1], 10); // Extract month number from 'YYYY-MM'
+    const mIdx = monthNum - 1; // Convert to 0-indexed
+    const cell = s.months[mIdx] || {};
+    const total    = Number(cell.total)        || 0;
+    const approved = (Number(cell.approved)    || 0) + (Number(cell.counter) || 0);
+    const funded   = Number(cell.funded)       || 0;
+    const amount   = Number(cell.fundedAmount) || 0;
+    const ltb      = total ? funded / total    : 0;
+    return { total, approved, funded, amount, ltb };
+  });
+  seriesMap.set(s.state || '??', series);
+});
 
     // Expose to the existing renderers (matrix / trends / sparklines)
     window.spData = seriesMap;
@@ -4687,7 +4697,7 @@ function spRenderSpark() {
     const ch = new Chart(ctx, {
       type: 'line',
       data: { labels: window.spMonths.map(m=>m[1]), datasets: [{ data: r.vals, tension: 0.2 }] },
-      options: { plugins:{ legend:{display:false} }, scales:{ x:{display:false}, y:{display:false} } }
+      options: { plugins:{ legend:{display:false}, datalabels:{display:false} }, scales:{ x:{display:false}, y:{display:false} } }
     });
     spSparkCharts.push(ch);
   });
