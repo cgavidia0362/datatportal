@@ -1319,6 +1319,7 @@ const TABS = [
   { id: 'Monthly', label: 'Monthly' },
   { id: 'Yearly',  label: 'Yearly' },
   { id: 'ILReps',  label: 'IL Reps' },
+  { id: 'BuyingDaily', label: '📊 Buying Daily' },
   { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
 ];
 function buildSidebar() {
@@ -1352,6 +1353,7 @@ function switchTab(id) {
       }
     });
   }  
+  if (id === 'BuyingDaily') { if (typeof window.initBuyingDaily === 'function') window.initBuyingDaily(); }
   if (id === 'tab-Settings' || id === 'Settings') {
     // CRITICAL FIX: Ensure Settings tab is in the right place before showing
     const settingsTab = document.getElementById('tab-Settings');
@@ -5009,3 +5011,416 @@ function updateKpiTile(label, value) {
     }
   }
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+ * BUYING DAILY MODULE  –  100 % self-contained, no Supabase dependency
+ * ═══════════════════════════════════════════════════════════════════════════ */
+(function BuyingDailyModule() {
+  'use strict';
+
+  // ── CONFIG ─────────────────────────────────────────────────────────────────
+  const STATUSES = ['Accepted','Approved','Counter','Denial','Duplicate','Funded','Pending Approval'];
+  const STATUS_COLORS = {
+    'Accepted':'#10b981', 'Approved':'#3b82f6', 'Counter':'#f59e0b',
+    'Denial':'#ef4444',   'Duplicate':'#8b5cf6', 'Funded':'#06b6d4',
+    'Pending Approval':'#f97316'
+  };
+  const STATUS_LIGHT = {
+    'Accepted':'rgba(16,185,129,.18)',  'Approved':'rgba(59,130,246,.18)',
+    'Counter':'rgba(245,158,11,.18)',   'Denial':'rgba(239,68,68,.18)',
+    'Duplicate':'rgba(139,92,246,.18)', 'Funded':'rgba(6,182,212,.18)',
+    'Pending Approval':'rgba(249,115,22,.18)'
+  };
+  // KPI element id ← status key mapping
+  const KPI_MAP = {
+    'Accepted':'Accepted', 'Approved':'Approved', 'Counter':'Counter',
+    'Denial':'Denial',     'Duplicate':'Duplicate', 'Funded':'Funded',
+    'Pending Approval':'Pending'
+  };
+
+  // ── STATE ──────────────────────────────────────────────────────────────────
+  let bdData = {};             // { "MM/DD/YYYY": { Accepted:n, ... } }
+  let bdCharts = {};           // chart.js instances keyed by canvas id
+  let bdInitDone = false;      // guard: only wire events once
+
+  // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
+  window.initBuyingDaily = function () {
+    if (bdInitDone) { render(); return; }
+    bdInitDone = true;
+
+    // Small delay so StackBlitz DOM is fully ready before we grab elements
+    setTimeout(function() {
+      var dateFrom  = document.getElementById('bdDateFrom');
+      var dateTo    = document.getElementById('bdDateTo');
+      var csvInput  = document.getElementById('bdCsvInput');
+      var strip     = document.getElementById('bdUploadStrip');
+
+      // Safety: if any element is still missing, log which one and bail
+      var missing = [];
+      if (!dateFrom)  missing.push('bdDateFrom');
+      if (!dateTo)    missing.push('bdDateTo');
+      if (!csvInput)  missing.push('bdCsvInput');
+      if (!strip)     missing.push('bdUploadStrip');
+      if (missing.length) {
+        console.error('[BuyingDaily] Missing elements: ' + missing.join(', ') + ' — init aborted.');
+        bdInitDone = false; // allow retry on next click
+        return;
+      }
+
+      // view toggle buttons
+      document.querySelectorAll('[data-bd-view]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('[data-bd-view]').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          showPanel(btn.dataset.bdView);
+          render();
+        });
+      });
+
+      // date range inputs
+      dateFrom.addEventListener('change', render);
+      dateTo.addEventListener('change', render);
+
+      // file input
+      csvInput.addEventListener('change', function(e) {
+        if (e.target.files[0]) parseCSV(e.target.files[0]);
+      });
+
+      // drag & drop on upload strip
+      strip.addEventListener('dragover',  function(e) { e.preventDefault(); strip.classList.add('dragover'); });
+      strip.addEventListener('dragleave', function()  { strip.classList.remove('dragover'); });
+      strip.addEventListener('drop', function(e) {
+        e.preventDefault(); strip.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) parseCSV(e.dataTransfer.files[0]);
+      });
+
+      console.log('[BuyingDaily] Module initialised successfully.');
+    }, 150);
+  };
+
+  // ── CSV PARSING ────────────────────────────────────────────────────────────
+  function parseCSV(file) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete(results) {
+        const newData = {};
+        let totalRows = 0;
+
+        results.data.forEach(row => {
+          const status = (row['Status Last'] || '').trim();
+          const ts     = (row['Timestamp Submit'] || '').trim();
+          if (!status || !ts) return;
+
+          const datePart = ts.split(' ')[0]; // "MM/DD/YYYY"
+          if (!newData[datePart]) {
+            newData[datePart] = {};
+            STATUSES.forEach(s => newData[datePart][s] = 0);
+          }
+          // bucket: known status → use as-is, unknown → Pending Approval
+          const key = STATUSES.includes(status) ? status : 'Pending Approval';
+          newData[datePart][key] = (newData[datePart][key] || 0) + 1;
+          totalRows++;
+        });
+
+        bdData = newData;
+
+        // auto-set date range to full span
+        const isoKeys = Object.keys(bdData).map(d => toISO(d)).sort();
+        if (isoKeys.length) {
+          document.getElementById('bdDateFrom').value = isoKeys[0];
+          document.getElementById('bdDateTo').value   = isoKeys[isoKeys.length - 1];
+        }
+
+        // update status badge
+        const statusEl = document.getElementById('bdUploadStatus');
+        statusEl.style.display = 'block';
+        statusEl.textContent = '✅ "' + file.name + '" loaded (' + Object.keys(bdData).length + ' days · ' + totalRows.toLocaleString() + ' applications)';
+
+        render();
+      },
+      error(err) { alert('Error parsing CSV:\n' + err.message); }
+    });
+  }
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+  function toISO(mmddyyyy) {
+    const p = mmddyyyy.split('/');
+    return p[2] + '-' + p[0].padStart(2,'0') + '-' + p[1].padStart(2,'0');
+  }
+  function pct(val, total) { return total ? ((val / total) * 100).toFixed(1) : '0.0'; }
+  function fmt(n) { return Number(n).toLocaleString(); }
+  function totalOf(obj) { return STATUSES.reduce((s, k) => s + (obj[k] || 0), 0); }
+
+  function getFilteredDates() {
+    const from = document.getElementById('bdDateFrom').value;
+    const to   = document.getElementById('bdDateTo').value;
+    return Object.keys(bdData)
+      .filter(d => { const iso = toISO(d); return iso >= from && iso <= to; })
+      .sort((a, b) => toISO(a).localeCompare(toISO(b)));
+  }
+
+  function sumByStatus(dates) {
+    const out = {}; STATUSES.forEach(s => out[s] = 0);
+    dates.forEach(d => {
+      const day = bdData[d] || {};
+      STATUSES.forEach(s => out[s] += (day[s] || 0));
+    });
+    return out;
+  }
+
+  // ISO week key  e.g. "2026-W02"
+  function getWeekKey(mmddyyyy) {
+    const [m, d, y] = mmddyyyy.split('/').map(Number);
+    const date  = new Date(y, m - 1, d);
+    const jan1  = new Date(y, 0, 1);
+    const dayN  = Math.ceil((date - jan1) / 86400000);
+    const weekN = Math.ceil((dayN + jan1.getDay()) / 7);
+    return y + '-W' + String(weekN).padStart(2, '0');
+  }
+
+  function getMonthKey(mmddyyyy) {
+    const [m, , y] = mmddyyyy.split('/');
+    return y + '-' + m;
+  }
+
+  function groupBy(fn) {
+    const groups = {};
+    getFilteredDates().forEach(d => {
+      const key = fn(d);
+      (groups[key] = groups[key] || []).push(d);
+    });
+    return groups;
+  }
+
+  // ── MASTER RENDER ──────────────────────────────────────────────────────────
+  function render() {
+    if (!Object.keys(bdData).length) return; // nothing uploaded yet
+
+    const dates  = getFilteredDates();
+    const totals = sumByStatus(dates);
+    const grand  = totalOf(totals);
+
+    // ── KPI tiles ──
+    document.getElementById('bdKpiTotal').textContent    = fmt(grand);
+    document.getElementById('bdKpiTotalSub').textContent = dates.length + ' day' + (dates.length !== 1 ? 's' : '') + ' selected';
+
+    STATUSES.forEach(s => {
+      const short = KPI_MAP[s];
+      const elVal = document.getElementById('bdKpi' + short);
+      const elPct = document.getElementById('bdKpi' + short + 'Pct');
+      if (elVal) elVal.textContent = fmt(totals[s]);
+      if (elPct) elPct.textContent = pct(totals[s], grand) + '%';
+    });
+
+    renderDaily(dates);
+    renderWeekly();
+    renderMonthly();
+  }
+
+  // ── DAILY VIEW ─────────────────────────────────────────────────────────────
+  function renderDaily(dates) {
+    document.getElementById('bdDailyBadge').textContent = dates.length + ' days';
+
+    document.getElementById('bdDailyTbody').innerHTML = dates.map(d => {
+      const day    = bdData[d] || {};
+      const total  = totalOf(day);
+      const dRate  = total ? (day['Denial'] || 0) / total : 0;
+      const dateObj = new Date(toISO(d) + 'T00:00:00');
+      const label   = dateObj.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+
+      return '<tr>' +
+        '<td>' + label + '</td>' +
+        '<td class="bd-total-col">' + fmt(total) + '</td>' +
+        STATUSES.map(s => {
+          let cls = '';
+          if (s === 'Denial') cls = ' class="bd-denial-val"';
+          if (s === 'Funded') cls = ' class="bd-funded-val"';
+          return '<td' + cls + '>' + fmt(day[s] || 0) + '</td>';
+        }).join('') +
+        '<td><div class="bd-mini-bar-wrap">' +
+          '<div class="bd-mini-bar"><div class="bd-fill" style="width:' + (dRate*100).toFixed(1) + '%;"></div></div>' +
+          '<span style="font-size:.78rem;color:#ef4444;font-weight:600;">' + (dRate*100).toFixed(1) + '%</span>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ── WEEKLY VIEW ────────────────────────────────────────────────────────────
+  function renderWeekly() {
+    const groups = groupBy(getWeekKey);
+    const keys   = Object.keys(groups).sort();
+    const rows   = keys.map(k => ({ key: k, totals: sumByStatus(groups[k]) }));
+
+    renderComparison('bdWeeklyCompare', rows, 'Week');
+    buildBarChart('bdWeeklyChart', rows.map(r => r.key), rows);
+
+    // summary table
+    document.getElementById('bdWeeklyTbody').innerHTML = rows.map((r, i) => {
+      const total     = totalOf(r.totals);
+      const prevTotal = i > 0 ? totalOf(rows[i-1].totals) : null;
+      const chg       = prevTotal ? ((total - prevTotal) / prevTotal * 100).toFixed(1) : null;
+
+      return '<tr>' +
+        '<td>' + r.key + '</td>' +
+        '<td class="bd-total-col">' + fmt(total) + '</td>' +
+        STATUSES.map(s => '<td>' + fmt(r.totals[s]) + '</td>').join('') +
+        '<td>' + (chg !== null ? changeTag(chg) : '<span style="color:#94a3b8;font-size:.78rem;">—</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ── MONTHLY VIEW ───────────────────────────────────────────────────────────
+  function renderMonthly() {
+    const groups = groupBy(getMonthKey);
+    const keys   = Object.keys(groups).sort();
+    const rows   = keys.map(k => ({ key: k, totals: sumByStatus(groups[k]) }));
+
+    // pretty month labels for chart
+    const monthLabels = rows.map(r => {
+      const [y, m] = r.key.split('-');
+      return new Date(y, m - 1).toLocaleString('en-US', { month:'long', year:'numeric' });
+    });
+
+    renderComparison('bdMonthlyCompare', rows, 'Month');
+    buildBarChart('bdMonthlyChart', monthLabels, rows);
+
+    // summary table
+    document.getElementById('bdMonthlyTbody').innerHTML = rows.map((r, i) => {
+      const total     = totalOf(r.totals);
+      const prevTotal = i > 0 ? totalOf(rows[i-1].totals) : null;
+      const chg       = prevTotal ? ((total - prevTotal) / prevTotal * 100).toFixed(1) : null;
+      const [y, m]    = r.key.split('-');
+      const label     = new Date(y, m - 1).toLocaleString('en-US', { month:'long', year:'numeric' });
+
+      return '<tr>' +
+        '<td>' + label + '</td>' +
+        '<td class="bd-total-col">' + fmt(total) + '</td>' +
+        STATUSES.map(s => '<td>' + fmt(r.totals[s]) + '</td>').join('') +
+        '<td>' + (chg !== null ? changeTag(chg) : '<span style="color:#94a3b8;font-size:.78rem;">—</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ── BAR CHART BUILDER ──────────────────────────────────────────────────────
+  function buildBarChart(canvasId, labels, rows) {
+    // destroy existing
+    if (bdCharts[canvasId]) { bdCharts[canvasId].destroy(); delete bdCharts[canvasId]; }
+
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    bdCharts[canvasId] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: STATUSES.map(s => ({
+          label: s,
+          data: rows.map(r => r.totals[s]),
+          backgroundColor: STATUS_LIGHT[s],
+          borderColor: STATUS_COLORS[s],
+          borderWidth: 2,
+          borderRadius: 4
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { usePointStyle: true, pointStyle: 'circle', padding: 14, font: { size: 12 } }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
+          y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  // ── COMPARISON CARDS ───────────────────────────────────────────────────────
+  function renderComparison(containerId, rows, label) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (rows.length < 2) { el.innerHTML = ''; return; }
+
+    const curr = rows[rows.length - 1];
+    const prev = rows[rows.length - 2];
+    const cT   = totalOf(curr.totals);
+    const pT   = totalOf(prev.totals);
+
+    // Left card: raw totals with change badges
+    const totalRows = [
+      ['Total Apps',  cT,                          pT,                          ''],
+      ['Denial',      curr.totals['Denial'],       prev.totals['Denial'],       '#ef4444'],
+      ['Funded',      curr.totals['Funded'],       prev.totals['Funded'],       '#06b6d4'],
+      ['Approved',    curr.totals['Approved'],     prev.totals['Approved'],     '#3b82f6']
+    ];
+
+    let leftHTML = '<div class="bd-compare-card"><h4>📊 ' + label + ' vs Previous – Totals</h4>';
+    totalRows.forEach(function(item) {
+      const name = item[0], c = item[1], p = item[2], color = item[3];
+      const chg = p ? ((c - p) / p * 100).toFixed(1) : null;
+      leftHTML +=
+        '<div class="bd-comp-row">' +
+          '<span class="bd-comp-label">' +
+            (color ? '<span class="bd-comp-dot" style="background:' + color + '"></span>' : '') +
+            name +
+          '</span>' +
+          '<span><span class="bd-comp-val">' + fmt(c) + '</span>' +
+            (chg !== null ? changeTag(chg) : '') +
+          '</span>' +
+        '</div>';
+    });
+    leftHTML += '</div>';
+
+    // Right card: rates
+    const rateRows = [
+      ['Denial Rate',    curr.totals['Denial'],           cT, prev.totals['Denial'],           pT, true],
+      ['Approval Rate',  curr.totals['Approved'],         cT, prev.totals['Approved'],         pT, false],
+      ['Funded Rate',    curr.totals['Funded'],           cT, prev.totals['Funded'],           pT, false],
+      ['Pending Rate',   curr.totals['Pending Approval'], cT, prev.totals['Pending Approval'], pT, true]
+    ];
+
+    let rightHTML = '<div class="bd-compare-card"><h4>📈 ' + label + ' vs Previous – Rates</h4>';
+    rateRows.forEach(function(item) {
+      const name = item[0];
+      const cRate = item[2] ? (item[1] / item[2] * 100).toFixed(1) : '0.0';
+      const pRate = item[4] ? (item[3] / item[4] * 100).toFixed(1) : '0.0';
+      const diff  = (parseFloat(cRate) - parseFloat(pRate)).toFixed(1);
+      const isBad = item[5]; // true = higher is worse (denial, pending)
+      let cls = 'neutral';
+      if (parseFloat(diff) > 0)  cls = isBad ? 'down' : 'up';
+      if (parseFloat(diff) < 0)  cls = isBad ? 'up'   : 'down';
+
+      rightHTML +=
+        '<div class="bd-comp-row">' +
+          '<span class="bd-comp-label">' + name + '</span>' +
+          '<span>' +
+            '<span class="bd-comp-val">' + cRate + '%</span> ' +
+            '<span class="bd-comp-change ' + cls + '">' + (parseFloat(diff) > 0 ? '+' : '') + diff + '%</span>' +
+          '</span>' +
+        '</div>';
+    });
+    rightHTML += '</div>';
+
+    el.innerHTML = leftHTML + rightHTML;
+  }
+
+  // ── CHANGE TAG HELPER ──────────────────────────────────────────────────────
+  function changeTag(chg) {
+    const cls = Number(chg) > 0 ? 'up' : Number(chg) < 0 ? 'down' : 'neutral';
+    return '<span class="bd-comp-change ' + cls + '">' + (Number(chg) > 0 ? '+' : '') + chg + '%</span>';
+  }
+
+  // ── VIEW SWITCHER ──────────────────────────────────────────────────────────
+  function showPanel(view) {
+    ['daily','weekly','monthly'].forEach(function(v) {
+      const el = document.getElementById('bd-panel-' + v);
+      if (el) el.classList.toggle('active', v === view);
+    });
+  }
+
+})(); /* end BuyingDailyModule IIFE */

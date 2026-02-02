@@ -124,6 +124,174 @@ th, td {
 .tab-btn:last-child { border-right:1px solid rgba(0,0,0,0.08); }
 .tab-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
 
+/* ═══════════ BUYING DAILY STYLES (bd- prefix) ═══════════ */
+/* Upload strip */
+.upload-strip-bd {
+  background: #fff;
+  border: 2px dashed #cbd5e1;
+  border-radius: 14px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 18px;
+  transition: border-color .2s, background .2s;
+}
+.upload-strip-bd:hover, .upload-strip-bd.dragover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+.bd-upload-icon  { font-size: 2rem; flex-shrink: 0; }
+.bd-upload-text  { flex: 1; }
+.bd-upload-text strong { display: block; font-size: .95rem; color: #0f172a; }
+.bd-upload-text span   { font-size: .82rem; color: #64748b; }
+.bd-upload-status { font-size: .78rem; color: #22c55e; font-weight: 600; margin-top: 4px; }
+.bd-btn-upload {
+  background: #3b82f6; color: #fff; border: none;
+  padding: 10px 22px; border-radius: 8px;
+  font-size: .88rem; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: background .2s;
+}
+.bd-btn-upload:hover { background: #2563eb; }
+
+/* Controls bar */
+.bd-controls-bar {
+  display: flex; align-items: center;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.bd-toggle-group {
+  display: flex; background: #e2e8f0;
+  border-radius: 10px; padding: 3px; gap: 2px;
+}
+.bd-toggle-group button {
+  border: none; background: transparent;
+  padding: 8px 18px; border-radius: 8px;
+  font-size: .85rem; font-weight: 600;
+  color: #64748b; cursor: pointer; transition: all .2s;
+}
+.bd-toggle-group button.active {
+  background: #fff; color: #3b82f6;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.bd-date-range { display: flex; align-items: center; gap: 6px; }
+.bd-date-range input[type="date"] {
+  padding: 8px 10px; border: 1px solid #cbd5e1;
+  border-radius: 8px; font-size: .85rem;
+  background: #fff !important; color: #1e293b !important; outline: none;
+}
+.bd-date-range input[type="date"]:focus { border-color: #3b82f6; }
+.bd-date-range span { color: #94a3b8; font-size: .82rem; }
+
+/* KPI tiles */
+.bd-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px; margin-bottom: 18px;
+}
+.bd-kpi-card {
+  background: #fff; border-radius: 14px;
+  padding: 14px 16px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.bd-kpi-card.bd-highlight {
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  color: #fff; border-color: transparent;
+}
+.bd-kpi-label {
+  font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: #64748b; margin-bottom: 3px;
+}
+.bd-kpi-card.bd-highlight .bd-kpi-label { color: rgba(255,255,255,.75); }
+.bd-kpi-value { font-size: 1.45rem; font-weight: 700; color: #0f172a; }
+.bd-kpi-card.bd-highlight .bd-kpi-value { color: #fff; font-size: 1.7rem; }
+.bd-kpi-pct { font-size: .75rem; color: #94a3b8; margin-top: 2px; }
+.bd-kpi-card.bd-highlight .bd-kpi-pct { color: rgba(255,255,255,.65); }
+
+/* Section cards */
+.bd-section-card {
+  background: #fff; border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  padding: 20px 22px; margin-bottom: 16px;
+}
+.bd-section-card h3 {
+  font-size: .97rem; font-weight: 700;
+  color: #0f172a; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.bd-badge {
+  font-size: .72rem; font-weight: 600;
+  background: #eff6ff; color: #3b82f6;
+  padding: 2px 8px; border-radius: 20px;
+}
+
+/* Table */
+.bd-table-wrap { overflow-x: auto; }
+.bd-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+.bd-table thead th {
+  background: #f1f5f9; text-align: right;
+  padding: 10px 12px; font-weight: 600;
+  color: #475569; font-size: .74rem;
+  text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 2px solid #e2e8f0; white-space: nowrap;
+}
+.bd-table thead th:first-child { text-align: left; }
+.bd-table tbody tr { border-bottom: 1px solid #f1f5f9; transition: background .15s; }
+.bd-table tbody tr:hover { background: #f8fafc; }
+.bd-table tbody td { padding: 9px 12px; text-align: right; color: #475569; }
+.bd-table tbody td:first-child { text-align: left; font-weight: 600; color: #0f172a; }
+.bd-table .bd-total-col { font-weight: 700; color: #1e40af; }
+.bd-table .bd-denial-val { color: #dc2626; font-weight: 600; }
+.bd-table .bd-funded-val { color: #0891b2; font-weight: 600; }
+
+/* mini progress bar (denial rate column) */
+.bd-mini-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.bd-mini-bar { flex: 1; height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden; min-width: 60px; }
+.bd-mini-bar .bd-fill { height: 100%; border-radius: 3px; background: #ef4444; }
+
+/* Comparison cards */
+.bd-compare-strip {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 14px; margin-bottom: 16px;
+}
+.bd-compare-card {
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 14px; padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.bd-compare-card h4 {
+  font-size: .78rem; font-weight: 600;
+  color: #64748b; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 10px;
+}
+.bd-comp-row {
+  display: flex; justify-content: space-between;
+  align-items: center; padding: 6px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.bd-comp-row:last-child { border-bottom: none; }
+.bd-comp-label { font-size: .84rem; color: #475569; display: flex; align-items: center; }
+.bd-comp-val { font-weight: 700; font-size: .9rem; color: #0f172a; }
+.bd-comp-change { font-size: .74rem; font-weight: 600; padding: 2px 7px; border-radius: 12px; margin-left: 8px; }
+.bd-comp-change.up   { background: #dcfce7; color: #16a34a; }
+.bd-comp-change.down { background: #fee2e2; color: #dc2626; }
+.bd-comp-change.neutral { background: #f1f5f9; color: #64748b; }
+.bd-comp-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+/* Chart */
+.bd-chart-wrap { position: relative; width: 100%; height: 280px; }
+
+/* View panel toggle */
+.bd-view-panel { display: none; }
+.bd-view-panel.active { display: block; }
+
+@media (max-width: 700px) {
+  .bd-compare-strip { grid-template-columns: 1fr; }
+  .bd-kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+/* ═══════════ END BUYING DAILY STYLES ═══════════ */
+
     </style>
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased">
@@ -536,6 +704,7 @@ th, td {
               </div>
             </div>
           </div>
+          </div>
 
           <!-- IL Reps (placeholder) -->
           <div id="tab-ILReps" class="tab-panel hidden">
@@ -543,6 +712,171 @@ th, td {
               IL Reps view coming soon.
             </div>
           </div>
+
+          <!-- ═══════════ BUYING DAILY TAB ═══════════ -->
+          <div id="tab-BuyingDaily" class="tab-panel hidden">
+
+            <!-- Upload Strip -->
+            <div class="upload-strip-bd" id="bdUploadStrip">
+              <div class="bd-upload-icon">📁</div>
+              <div class="bd-upload-text">
+                <strong>Upload your daily applications CSV</strong>
+                <span>Drag &amp; drop here or click the button. Needs: Application Id, Status Last, Timestamp Submit columns.</span>
+                <div class="bd-upload-status" id="bdUploadStatus" style="display:none;">✅ Data loaded</div>
+              </div>
+              <label>
+                <button class="bd-btn-upload" onclick="document.getElementById('bdCsvInput').click()">Choose File</button>
+                <input type="file" id="bdCsvInput" accept=".csv"/>
+              </label>
+            </div>
+
+            <!-- Controls Bar -->
+            <div class="bd-controls-bar">
+              <div class="bd-toggle-group">
+                <button class="active" data-bd-view="daily">Daily</button>
+                <button data-bd-view="weekly">Weekly</button>
+                <button data-bd-view="monthly">Monthly</button>
+              </div>
+              <div class="bd-date-range">
+                <input type="date" id="bdDateFrom"/>
+                <span>→</span>
+                <input type="date" id="bdDateTo"/>
+              </div>
+            </div>
+
+            <!-- KPI Tiles -->
+            <div class="bd-kpi-row">
+              <div class="bd-kpi-card bd-highlight">
+                <div class="bd-kpi-label">Total Apps</div>
+                <div class="bd-kpi-value" id="bdKpiTotal">–</div>
+                <div class="bd-kpi-pct" id="bdKpiTotalSub">No data uploaded</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#10b981;">Accepted</div>
+                <div class="bd-kpi-value" id="bdKpiAccepted">–</div>
+                <div class="bd-kpi-pct" id="bdKpiAcceptedPct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#3b82f6;">Approved</div>
+                <div class="bd-kpi-value" id="bdKpiApproved">–</div>
+                <div class="bd-kpi-pct" id="bdKpiApprovedPct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#f59e0b;">Counter</div>
+                <div class="bd-kpi-value" id="bdKpiCounter">–</div>
+                <div class="bd-kpi-pct" id="bdKpiCounterPct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#ef4444;">Denial</div>
+                <div class="bd-kpi-value" id="bdKpiDenial">–</div>
+                <div class="bd-kpi-pct" id="bdKpiDenialPct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#8b5cf6;">Duplicate</div>
+                <div class="bd-kpi-value" id="bdKpiDuplicate">–</div>
+                <div class="bd-kpi-pct" id="bdKpiDuplicatePct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#06b6d4;">Funded</div>
+                <div class="bd-kpi-value" id="bdKpiFunded">–</div>
+                <div class="bd-kpi-pct" id="bdKpiFundedPct">–</div>
+              </div>
+              <div class="bd-kpi-card">
+                <div class="bd-kpi-label" style="color:#f97316;">Pending</div>
+                <div class="bd-kpi-value" id="bdKpiPending">–</div>
+                <div class="bd-kpi-pct" id="bdKpiPendingPct">–</div>
+              </div>
+            </div>
+
+            <!-- ── DAILY PANEL ── -->
+            <div class="bd-view-panel active" id="bd-panel-daily">
+              <div class="bd-section-card">
+                <h3>📅 Daily Breakdown <span class="bd-badge" id="bdDailyBadge">–</span></h3>
+                <div class="bd-table-wrap">
+                  <table class="bd-table">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;">Date</th>
+                        <th>Total</th>
+                        <th>Accepted</th>
+                        <th>Approved</th>
+                        <th>Counter</th>
+                        <th>Denial</th>
+                        <th>Duplicate</th>
+                        <th>Funded</th>
+                        <th>Pending</th>
+                        <th style="min-width:140px;">Denial Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bdDailyTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── WEEKLY PANEL ── -->
+            <div class="bd-view-panel" id="bd-panel-weekly">
+              <div class="bd-compare-strip" id="bdWeeklyCompare"></div>
+              <div class="bd-section-card">
+                <h3>📈 Weekly Totals – Applications by Status</h3>
+                <div class="bd-chart-wrap"><canvas id="bdWeeklyChart"></canvas></div>
+              </div>
+              <div class="bd-section-card">
+                <h3>📊 Weekly Summary</h3>
+                <div class="bd-table-wrap">
+                  <table class="bd-table">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;">Week</th>
+                        <th>Total</th>
+                        <th>Accepted</th>
+                        <th>Approved</th>
+                        <th>Counter</th>
+                        <th>Denial</th>
+                        <th>Duplicate</th>
+                        <th>Funded</th>
+                        <th>Pending</th>
+                        <th>vs Prev</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bdWeeklyTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── MONTHLY PANEL ── -->
+            <div class="bd-view-panel" id="bd-panel-monthly">
+              <div class="bd-compare-strip" id="bdMonthlyCompare"></div>
+              <div class="bd-section-card">
+                <h3>📈 Monthly Totals – Applications by Status</h3>
+                <div class="bd-chart-wrap"><canvas id="bdMonthlyChart"></canvas></div>
+              </div>
+              <div class="bd-section-card">
+                <h3>📊 Monthly Summary</h3>
+                <div class="bd-table-wrap">
+                  <table class="bd-table">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;">Month</th>
+                        <th>Total</th>
+                        <th>Accepted</th>
+                        <th>Approved</th>
+                        <th>Counter</th>
+                        <th>Denial</th>
+                        <th>Duplicate</th>
+                        <th>Funded</th>
+                        <th>Pending</th>
+                        <th>vs Prev</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bdMonthlyTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- end tab-BuyingDaily -->
 
           <!-- Settings Tab - MOVED TO CORRECT LOCATION -->
           <div id="tab-Settings" class="tab-panel hidden">
@@ -845,6 +1179,7 @@ th, td {
   </div>
 </div>
 <script src="master-dealers-module.js"></script>
+<script>
 // AUTO-FIX: Relocate Settings tab on page load
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[Settings Fix] Running auto-relocation...');
@@ -880,5 +1215,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // One final fix
   setTimeout(fixSettings, 2000);
 });
+</script>
 </body>
 </html>
