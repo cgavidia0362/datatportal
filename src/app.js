@@ -5093,6 +5093,40 @@ function updateKpiTile(label, value) {
         if (e.dataTransfer.files[0]) parseCSV(e.dataTransfer.files[0]);
       });
 
+      // ── Load persisted data from Supabase on first init ──
+      (async function loadFromSupabase() {
+        try {
+          if (!window.sb) { console.warn('[BuyingDaily] Supabase client not ready.'); return; }
+          const { data, error } = await window.sb
+            .from('buying_daily_data')
+            .select('data, file_name, total_rows')
+            .eq('id', 1)
+            .single();
+
+          if (error) { console.warn('[BuyingDaily] Supabase fetch error:', error); return; }
+          if (!data || !data.data) { console.log('[BuyingDaily] No saved data in Supabase yet.'); return; }
+
+          bdData = data.data;
+
+          // restore date range
+          var isoKeys = Object.keys(bdData).map(function(d) { return toISO(d); }).sort();
+          if (isoKeys.length) {
+            dateFrom.value = isoKeys[0];
+            dateTo.value   = isoKeys[isoKeys.length - 1];
+          }
+
+          // restore status badge
+          var statusEl = document.getElementById('bdUploadStatus');
+          if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.textContent = '✅ "' + (data.file_name || 'saved file') + '" loaded (' + Object.keys(bdData).length + ' days · ' + (data.total_rows || 0).toLocaleString() + ' applications)';
+          }
+
+          render();
+          console.log('[BuyingDaily] Restored data from Supabase.');
+        } catch(e) { console.warn('[BuyingDaily] Supabase load failed:', e); }
+      })();
+
       console.log('[BuyingDaily] Module initialised successfully.');
     }, 150);
   };
@@ -5123,6 +5157,23 @@ function updateKpiTile(label, value) {
         });
 
         bdData = newData;
+
+        // persist to Supabase so data survives page refreshes
+        (async function saveToSupabase() {
+          try {
+            if (!window.sb) { console.warn('[BuyingDaily] Supabase client not ready for save.'); return; }
+            const { error } = await window.sb
+              .from('buying_daily_data')
+              .upsert({
+                id: 1,
+                file_name: file.name,
+                total_rows: totalRows,
+                data: bdData
+              });
+            if (error) { console.warn('[BuyingDaily] Supabase save error:', error); }
+            else        { console.log('[BuyingDaily] Saved to Supabase successfully.'); }
+          } catch(e) { console.warn('[BuyingDaily] Supabase save failed:', e); }
+        })();
 
         // auto-set date range to full span
         const isoKeys = Object.keys(bdData).map(d => toISO(d)).sort();
