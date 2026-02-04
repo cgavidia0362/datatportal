@@ -585,12 +585,18 @@ async function ensureYearOptionsSB() {
     used = 'fallback(currentYear)';
   }
 
+  // Preserve the currently selected year before rebuilding
+  const previousSelection = Number(sel.value);
+
   // Build options
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
 
-  // Keep selected if valid; otherwise choose the newest
-  const current = Number(sel.value);
-  if (!current || !years.includes(current)) sel.value = String(years[0]);
+  // Restore previous selection if it's still valid; otherwise choose the newest
+  if (previousSelection && years.includes(previousSelection)) {
+    sel.value = String(previousSelection);
+  } else {
+    sel.value = String(years[0]);
+  }
 
   console.log('[yearly] year select populated via:', used, '→', years);
 }
@@ -4935,45 +4941,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 // --- Minimal Yearly refresh wrapper (safe, no breaking) ---
-async function refreshYearly() {
-  // Always find the real <select> used in the Yearly header
-  const yearSel = findYearSelect();
-  if (!yearSel) { console.warn('[yearly] cannot refresh: no year <select>'); return; }
-
-  // Fill the dropdown from Supabase (with safe fallbacks)
-  await ensureYearOptionsSB();
-
-  // Decide which year to render (newest if empty)
-  let year = Number(yearSel.value);
-  if (!year) {
-    const opts = Array.from(yearSel.options)
-      .map(o => Number(o.value))
-      .filter(Boolean)
-      .sort((a, b) => b - a);
-    year = opts[0] || new Date().getFullYear();
-    yearSel.value = String(year);
-  }
-
-  // Re-render whenever the user changes the dropdown
-  yearSel.onchange = () => { renderYearly(); };
-
-  // Draw the Yearly view for the selected year
-  await renderYearly();
-}
-// Re-render Yearly when the user changes the year
-
-(function wireYearSelectChange(){
-  const sel =
-    document.getElementById('yrYear') ||
-    document.getElementById('yearSelect') ||
-    document.getElementById('yrSelect') ||
-    document.querySelector('[data-role="year-select"]');
-  if (!sel) return;
-  sel.addEventListener('change', async () => {
-    if (typeof refreshYearly === 'function') await refreshYearly();
-  });
-})();
-/* ---- Fallback wiring for the pre-filled sidebar in the HTML ---- */
 (function wireYearlyFallback() {
   // 1) If the Yearly panel is (or becomes) visible, render it
   try { refreshYearly(); } catch {}
