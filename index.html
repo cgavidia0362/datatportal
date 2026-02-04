@@ -181,6 +181,14 @@ th, td {
 }
 .bd-date-range input[type="date"]:focus { border-color: #3b82f6; }
 .bd-date-range span { color: #94a3b8; font-size: .82rem; }
+.bd-state-select {
+  padding: 8px 32px 8px 12px; border: 1px solid #cbd5e1;
+  border-radius: 8px; font-size: .85rem;
+  background: #fff url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22%3E%3Cpath d=%22M1 1l5 5 5-5%22 stroke=%22%23666%22 fill=%22none%22 stroke-width=%221.5%22/%3E%3C/svg%3E') no-repeat right 10px center;
+  color: #1e293b !important; outline: none; cursor: pointer;
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+}
+.bd-state-select:focus { border-color: #3b82f6; }
 
 /* KPI tiles */
 .bd-kpi-row {
@@ -737,6 +745,9 @@ th, td {
                 <button data-bd-view="weekly">Weekly</button>
                 <button data-bd-view="monthly">Monthly</button>
               </div>
+              <select id="bdStateFilter" class="bd-state-select">
+                <option value="ALL">All States</option>
+              </select>
               <div class="bd-date-range">
                 <input type="date" id="bdDateFrom"/>
                 <span>→</span>

@@ -5038,7 +5038,9 @@ function updateKpiTile(label, value) {
   };
 
   // ── STATE ──────────────────────────────────────────────────────────────────
-  let bdData = {};             // { "MM/DD/YYYY": { Accepted:n, ... } }
+  let bdData = {};             // { "MM/DD/YYYY": { "ALL": {...}, "IL": {...}, ... } }
+  let bdStates = [];           // ["IL", "IN", "TX", ...] populated from CSV
+  let bdCurrentState = 'ALL';  // currently selected state filter
   let bdCharts = {};           // chart.js instances keyed by canvas id
   let bdInitDone = false;      // guard: only wire events once
 
@@ -5080,6 +5082,15 @@ function updateKpiTile(label, value) {
       dateFrom.addEventListener('change', render);
       dateTo.addEventListener('change', render);
 
+      // state filter dropdown
+      var stateFilter = document.getElementById('bdStateFilter');
+      if (stateFilter) {
+        stateFilter.addEventListener('change', function() {
+          bdCurrentState = stateFilter.value;
+          render();
+        });
+      }
+
       // file input
       csvInput.addEventListener('change', function(e) {
         if (e.target.files[0]) parseCSV(e.target.files[0]);
@@ -5099,7 +5110,7 @@ function updateKpiTile(label, value) {
           if (!window.sb) { console.warn('[BuyingDaily] Supabase client not ready.'); return; }
           const { data, error } = await window.sb
             .from('buying_daily_data')
-            .select('data, file_name, total_rows')
+            .select('data, file_name, total_rows, states')
             .eq('id', 1)
             .single();
 
@@ -5107,6 +5118,19 @@ function updateKpiTile(label, value) {
           if (!data || !data.data) { console.log('[BuyingDaily] No saved data in Supabase yet.'); return; }
 
           bdData = data.data;
+          bdStates = data.states || [];
+
+          // restore state dropdown
+          var stateFilter = document.getElementById('bdStateFilter');
+          if (stateFilter && bdStates.length) {
+            stateFilter.innerHTML = '<option value="ALL">All States</option>';
+            bdStates.forEach(function(st) {
+              var opt = document.createElement('option');
+              opt.value = st;
+              opt.textContent = st;
+              stateFilter.appendChild(opt);
+            });
+          }
 
           // restore date range
           var isoKeys = Object.keys(bdData).map(function(d) { return toISO(d); }).sort();
@@ -5138,27 +5162,62 @@ function updateKpiTile(label, value) {
       skipEmptyLines: true,
       complete(results) {
         const newData = {};
+        const stateSet = new Set();
         let totalRows = 0;
 
+        // First pass: build state-aware data
         results.data.forEach(row => {
           const status = (row['Status Last'] || '').trim();
           const ts     = (row['Timestamp Submit'] || '').trim();
+          const state  = (row['State'] || '').trim().toUpperCase();
+          
           if (!status || !ts) return;
 
           const datePart = ts.split(' ')[0]; // "MM/DD/YYYY"
+          
+          // Initialize date if needed
           if (!newData[datePart]) {
-            newData[datePart] = {};
-            STATUSES.forEach(s => newData[datePart][s] = 0);
+            newData[datePart] = { ALL: {} };
+            STATUSES.forEach(s => newData[datePart].ALL[s] = 0);
           }
-          // bucket: known status → use as-is, unknown → Pending Approval
+
+          // Initialize state for this date if needed
+          if (state && !newData[datePart][state]) {
+            newData[datePart][state] = {};
+            STATUSES.forEach(s => newData[datePart][state][s] = 0);
+          }
+
+          // Bucket status
           const key = STATUSES.includes(status) ? status : 'Pending Approval';
-          newData[datePart][key] = (newData[datePart][key] || 0) + 1;
+          
+          // Increment ALL totals
+          newData[datePart].ALL[key]++;
+          
+          // Increment state-specific totals
+          if (state) {
+            newData[datePart][state][key]++;
+            stateSet.add(state);
+          }
+
           totalRows++;
         });
 
         bdData = newData;
+        bdStates = Array.from(stateSet).sort();
 
-        // persist to Supabase so data survives page refreshes
+        // Populate state dropdown
+        const stateFilter = document.getElementById('bdStateFilter');
+        if (stateFilter) {
+          stateFilter.innerHTML = '<option value="ALL">All States</option>';
+          bdStates.forEach(function(st) {
+            const opt = document.createElement('option');
+            opt.value = st;
+            opt.textContent = st;
+            stateFilter.appendChild(opt);
+          });
+        }
+
+        // persist to Supabase
         (async function saveToSupabase() {
           try {
             if (!window.sb) { console.warn('[BuyingDaily] Supabase client not ready for save.'); return; }
@@ -5168,14 +5227,15 @@ function updateKpiTile(label, value) {
                 id: 1,
                 file_name: file.name,
                 total_rows: totalRows,
-                data: bdData
+                data: bdData,
+                states: bdStates
               });
             if (error) { console.warn('[BuyingDaily] Supabase save error:', error); }
             else        { console.log('[BuyingDaily] Saved to Supabase successfully.'); }
           } catch(e) { console.warn('[BuyingDaily] Supabase save failed:', e); }
         })();
 
-        // auto-set date range to full span
+        // auto-set date range
         const isoKeys = Object.keys(bdData).map(d => toISO(d)).sort();
         if (isoKeys.length) {
           document.getElementById('bdDateFrom').value = isoKeys[0];
@@ -5213,8 +5273,9 @@ function updateKpiTile(label, value) {
   function sumByStatus(dates) {
     const out = {}; STATUSES.forEach(s => out[s] = 0);
     dates.forEach(d => {
-      const day = bdData[d] || {};
-      STATUSES.forEach(s => out[s] += (day[s] || 0));
+      const dayData = bdData[d] || {};
+      const stateData = dayData[bdCurrentState] || {};
+      STATUSES.forEach(s => out[s] += (stateData[s] || 0));
     });
     return out;
   }
@@ -5273,7 +5334,7 @@ function updateKpiTile(label, value) {
     document.getElementById('bdDailyBadge').textContent = dates.length + ' days';
 
     document.getElementById('bdDailyTbody').innerHTML = dates.map(d => {
-      const day    = bdData[d] || {};
+      const day    = (bdData[d] || {})[bdCurrentState] || {};
       const total  = totalOf(day);
       const dRate  = total ? (day['Denial'] || 0) / total : 0;
       const dateObj = new Date(toISO(d) + 'T00:00:00');
