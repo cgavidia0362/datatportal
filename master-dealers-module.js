@@ -712,6 +712,17 @@ async function initSettingsTab() {
   document.getElementById('masterStateFilter')?.addEventListener('change', filterMasterDealers);
   document.getElementById('masterFIFilter')?.addEventListener('change', filterMasterDealers);
   document.getElementById('masterNoRepFilter')?.addEventListener('change', filterMasterDealers);
+  
+  // Dealer modal form submit
+  document.getElementById('dealerForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveDealerForm();
+  });
+  
+  // Cancel button
+  document.getElementById('btnCancelDealer')?.addEventListener('click', () => {
+    hideDealerModal();
+  });
 
 
   // Upload CSV button - SIMPLIFIED VERSION
