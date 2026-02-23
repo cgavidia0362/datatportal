@@ -4994,6 +4994,7 @@ function updateKpiTile(label, value) {
   let rpCurrentRep = 'ALL';
   let rpCurrentMonth = null;
   let rpChart = null;
+  let rpCurrentMetric = 'apps'; // Chart metric: apps, funded, or fundedAmt
   let rpInitDone = false;
 
   // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
@@ -5016,6 +5017,14 @@ function updateKpiTile(label, value) {
       monthSelect.addEventListener('change', async function() {
         rpCurrentMonth = monthSelect.value;
         await render();
+      });
+    }
+
+    const metricSelect = document.getElementById('rpChartMetric');
+    if (metricSelect) {
+      metricSelect.addEventListener('change', function() {
+        rpCurrentMetric = metricSelect.value;
+        renderChart(); // Just re-render chart, no need to reload data
       });
     }
 
@@ -5043,32 +5052,52 @@ function updateKpiTile(label, value) {
       }
 
       rpMasterDealers = dealers || [];
+      console.log('[RepPerformance] Loaded', rpMasterDealers.length, 'dealers from master_dealers');
+      const dealersWithRep = rpMasterDealers.filter(d => d.rep);
+      console.log('[RepPerformance]', dealersWithRep.length, 'dealers have rep assignments');
 
       // 2) Load monthly_snapshots to calculate metrics
       const { data: snapshots, error: snapshotsError } = await window.sb
         .from('monthly_snapshots')
-        .select('year, month, dealer, state, fi, total_apps, funded, funded_amount');
+        .select('year, month, dealer, state, fi, total_apps, funded, funded_amount')
+        .limit(50000);
 
       if (snapshotsError) {
         console.error('[RepPerformance] Error loading snapshots:', snapshotsError);
         return;
       }
 
+      console.log('[RepPerformance] Loaded', (snapshots || []).length, 'snapshot rows');
+
       // 3) Build rpData by matching dealers to reps
       rpData = {};
       const dealerToRep = {};
+      let matchedCount = 0;
+      let unmatchedCount = 0;
 
       // Map dealer -> rep
       rpMasterDealers.forEach(function(d) {
         const key = window.dealerKey(d.dealer_name, d.state, d.fi);
         if (d.rep) dealerToRep[key] = d.rep.trim();
       });
+      console.log('[RepPerformance] First 5 dealer keys:', Object.keys(dealerToRep).slice(0, 5));
+      console.log('[RepPerformance] Total dealer->rep mappings:', Object.keys(dealerToRep).length);
 
       // Aggregate snapshots by rep and month
+      let firstSnapLogged = false;
       (snapshots || []).forEach(function(snap) {
         const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi);
+        if (!firstSnapLogged) {
+          console.log('[RepPerformance] First snapshot dealer key:', dealerKeyVal, '| dealer:', snap.dealer, '| state:', snap.state, '| fi:', snap.fi);
+          console.log('[RepPerformance] Key exists in map?', dealerKeyVal in dealerToRep);
+          firstSnapLogged = true;
+        }
         const rep = dealerToRep[dealerKeyVal];
-        if (!rep) return; // Skip dealers without rep assignment
+        if (!rep) {
+          unmatchedCount++;
+          return; // Skip dealers without rep assignment
+        }
+        matchedCount++;
 
         const monthKey = String(snap.year) + '-' + String(snap.month).padStart(2, '0');
 
@@ -5095,6 +5124,16 @@ function updateKpiTile(label, value) {
         rpData[rep][monthKey].dealers[dealerName].funded += Number(snap.funded) || 0;
         rpData[rep][monthKey].dealers[dealerName].fundedAmt += Number(snap.funded_amount) || 0;
       });
+
+      console.log('[RepPerformance] Matched:', matchedCount, 'Unmatched:', unmatchedCount);
+      console.log('[RepPerformance] Built data for reps:', Object.keys(rpData));
+      
+      // Count total months across all reps
+      const allMonths = new Set();
+      Object.values(rpData).forEach(repMonths => {
+        Object.keys(repMonths).forEach(m => allMonths.add(m));
+      });
+      console.log('[RepPerformance] Found', allMonths.size, 'unique months:', Array.from(allMonths).sort());
 
       // 4) Populate rep dropdown
       populateRepDropdown();
@@ -5207,7 +5246,9 @@ function updateKpiTile(label, value) {
     const dealerArray = Object.entries(dealers).map(([name, data]) => ({
       name,
       ...data
-    })).sort((a, b) => b.fundedAmt - a.fundedAmt); // Sort by funded amount desc
+    }))
+    .filter(d => d.funded >= 1) // Only show dealers with at least 1 funded deal
+    .sort((a, b) => b.fundedAmt - a.fundedAmt); // Sort by funded amount desc
 
     document.getElementById('rpDealerBadge').textContent = dealerArray.length + ' dealers';
 
@@ -5237,9 +5278,28 @@ function updateKpiTile(label, value) {
       return new Date(y, mo - 1).toLocaleDateString('en-US', { month: 'short' });
     });
 
-    const apps = last6.map(function(m) { return repMonths[m].apps; });
-    const funded = last6.map(function(m) { return repMonths[m].funded; });
-    const fundedAmt = last6.map(function(m) { return repMonths[m].fundedAmt / 1000; }); // in K
+    // Get data based on selected metric
+    let data, label, color, bgColor, yAxisLabel;
+    
+    if (rpCurrentMetric === 'apps') {
+      data = last6.map(function(m) { return repMonths[m].apps; });
+      label = 'Applications';
+      color = '#3b82f6';
+      bgColor = 'rgba(59, 130, 246, 0.1)';
+      yAxisLabel = 'Applications';
+    } else if (rpCurrentMetric === 'funded') {
+      data = last6.map(function(m) { return repMonths[m].funded; });
+      label = 'Funded Deals';
+      color = '#10b981';
+      bgColor = 'rgba(16, 185, 129, 0.1)';
+      yAxisLabel = 'Funded Deals';
+    } else { // fundedAmt
+      data = last6.map(function(m) { return repMonths[m].fundedAmt / 1000; }); // in K
+      label = 'Funded $ (K)';
+      color = '#f59e0b';
+      bgColor = 'rgba(245, 158, 11, 0.1)';
+      yAxisLabel = 'Funded Amount (K)';
+    }
 
     if (rpChart) rpChart.destroy();
 
@@ -5248,35 +5308,15 @@ function updateKpiTile(label, value) {
       type: 'line',
       data: {
         labels: labels,
-        datasets: [
-          {
-            label: 'Applications',
-            data: apps,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderWidth: 2,
-            tension: 0.3,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Funded Deals',
-            data: funded,
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            borderWidth: 2,
-            tension: 0.3,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Funded $ (K)',
-            data: fundedAmt,
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            borderWidth: 2,
-            tension: 0.3,
-            yAxisID: 'y1'
-          }
-        ]
+        datasets: [{
+          label: label,
+          data: data,
+          borderColor: color,
+          backgroundColor: bgColor,
+          borderWidth: 2,
+          tension: 0.3,
+          fill: true
+        }]
       },
       options: {
         responsive: true,
@@ -5284,8 +5324,7 @@ function updateKpiTile(label, value) {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: {
-            position: 'top',
-            labels: { usePointStyle: true, padding: 12 }
+            display: false
           }
         },
         scales: {
@@ -5293,15 +5332,9 @@ function updateKpiTile(label, value) {
             type: 'linear',
             display: true,
             position: 'left',
-            title: { display: true, text: 'Apps / Funded' },
-            grid: { color: '#f1f5f9' }
-          },
-          y1: {
-            type: 'linear',
-            display: true,
-            position: 'right',
-            title: { display: true, text: 'Funded $ (K)' },
-            grid: { drawOnChartArea: false }
+            title: { display: true, text: yAxisLabel },
+            grid: { color: '#f1f5f9' },
+            beginAtZero: true
           }
         }
       }

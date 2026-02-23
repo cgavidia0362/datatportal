@@ -917,7 +917,14 @@ th, td {
 
               <!-- Month-over-Month Chart -->
               <div class="rp-section-card">
-                <h3>📈 Performance Trend – Last 6 Months</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                  <h3 style="margin: 0;">📈 Performance Trend – Last 6 Months</h3>
+                  <select id="rpChartMetric" class="rp-select" style="width: auto; padding: 8px 32px 8px 12px;">
+                    <option value="apps">Applications</option>
+                    <option value="funded">Funded Deals</option>
+                    <option value="fundedAmt">Funded $</option>
+                  </select>
+                </div>
                 <div class="rp-chart-wrap">
                   <canvas id="rpTrendChart"></canvas>
                 </div>
