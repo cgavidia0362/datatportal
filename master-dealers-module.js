@@ -706,6 +706,12 @@ async function initSettingsTab() {
   document.getElementById('btnAddDealer')?.addEventListener('click', () => {
     showDealerModal();
   });
+  
+  // Filter event listeners
+  document.getElementById('masterDealerSearch')?.addEventListener('input', filterMasterDealers);
+  document.getElementById('masterStateFilter')?.addEventListener('change', filterMasterDealers);
+  document.getElementById('masterFIFilter')?.addEventListener('change', filterMasterDealers);
+  document.getElementById('masterNoRepFilter')?.addEventListener('change', filterMasterDealers);
 
 
   // Upload CSV button - SIMPLIFIED VERSION
@@ -807,7 +813,7 @@ if (exportBtn && !window.exportButtonAttached) {
 
       const { data: dealers, error } = await sb
         .from('master_dealers')
-        .select('dealer_name, state, fi')
+        .select('dealer_name, state, fi, rep')
         .order('dealer_name', { ascending: true });
 
       if (error) {
@@ -826,14 +832,16 @@ if (exportBtn && !window.exportButtonAttached) {
       const exportData = dealers.map(d => ({
         'Dealer Name': d.dealer_name || '',
         'State': d.state || '',
-        'FI Type': d.fi || ''
+        'FI Type': d.fi || '',
+        'Rep': d.rep || ''
       }));
 
       const ws = XLSX.utils.json_to_sheet(exportData);
       ws['!cols'] = [
         { wch: 40 }, // Dealer Name
         { wch: 10 }, // State
-        { wch: 15 }  // FI Type
+        { wch: 15 }, // FI Type
+        { wch: 15 }  // Rep
       ];
 
       const wb = XLSX.utils.book_new();
@@ -893,6 +901,7 @@ function filterMasterDealers() {
   const search = (document.getElementById('masterDealerSearch')?.value || '').toLowerCase();
   const stateFilter = document.getElementById('masterStateFilter')?.value || '';
   const fiFilter = document.getElementById('masterFIFilter')?.value || '';
+  const noRepFilter = document.getElementById('masterNoRepFilter')?.checked || false;
   
   let filtered = window.currentMasterDealers;
   
@@ -906,6 +915,10 @@ function filterMasterDealers() {
   
   if (fiFilter) {
     filtered = filtered.filter(d => d.fi === fiFilter);
+  }
+  
+  if (noRepFilter) {
+    filtered = filtered.filter(d => !d.rep || d.rep.trim() === '');
   }
   
   tbody.innerHTML = filtered.map(dealer => `
@@ -932,12 +945,31 @@ function filterMasterDealers() {
   `).join('') || '<tr><td colspan="5" class="px-3 py-6 text-center text-gray-500">No dealers found</td></tr>';
 }
 
+
+function populateRepSuggestions() {
+  const datalist = document.getElementById('repSuggestions');
+  if (!datalist || !window.currentMasterDealers) return;
+  
+  // Get unique rep names from current dealers
+  const uniqueReps = [...new Set(
+    window.currentMasterDealers
+      .map(d => d.rep)
+      .filter(r => r && r.trim() !== '')
+  )].sort();
+  
+  // Update datalist options
+  datalist.innerHTML = uniqueReps.map(rep => `<option value="${rep}">`).join('');
+}
+
 function showDealerModal(dealer = null) {
   const modal = document.getElementById('dealerModal');
   const title = document.getElementById('dealerModalTitle');
   const form = document.getElementById('dealerForm');
   
   if (!modal || !form) return;
+  
+  // Populate rep suggestions from existing dealers
+  populateRepSuggestions();
   
   if (dealer) {
     title.textContent = 'Edit Dealer';

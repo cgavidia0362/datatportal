@@ -1209,6 +1209,14 @@ th, td {
                   <option value="Independent">Independent</option>
                 </select>
               </div>
+              
+              <!-- No Rep Filter -->
+              <div class="mb-4">
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="checkbox" id="masterNoRepFilter" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                  <span class="ml-2 text-sm font-medium text-gray-700">Show only dealers without rep assignments</span>
+                </label>
+              </div>
 
               <!-- Dealers Table -->
               <div class="overflow-x-auto border border-gray-200 rounded-lg">
@@ -1435,17 +1443,23 @@ th, td {
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Rep</label>
-            <select id="dealerFormRep" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <option value="">None</option>
-              <option value="Ana">Ana</option>
-              <option value="Manny">Manny</option>
-              <option value="Pronto">Pronto</option>
-              <option value="Jessica">Jessica</option>
-              <option value="Krystal">Krystal</option>
-              <option value="Diego">Diego</option>
-              <option value="Michelle">Michelle</option>
-              <option value="Fatima">Fatima</option>
-            </select>
+            <input 
+              type="text" 
+              id="dealerFormRep" 
+              list="repSuggestions"
+              placeholder="Type rep name or select from list..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <datalist id="repSuggestions">
+              <option value="Ana">
+              <option value="Manny">
+              <option value="Pronto">
+              <option value="Jessica">
+              <option value="Krystal">
+              <option value="Diego">
+              <option value="Michelle">
+              <option value="Fatima">
+            </datalist>
+            <p class="text-xs text-gray-500 mt-1">💡 You can type a new rep name to add them</p>
           </div>
         </div>
         <div class="flex gap-3 mt-6">
