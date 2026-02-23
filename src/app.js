@@ -5056,18 +5056,34 @@ function updateKpiTile(label, value) {
       const dealersWithRep = rpMasterDealers.filter(d => d.rep);
       console.log('[RepPerformance]', dealersWithRep.length, 'dealers have rep assignments');
 
-      // 2) Load monthly_snapshots to calculate metrics
-      const { data: snapshots, error: snapshotsError } = await window.sb
-        .from('monthly_snapshots')
-        .select('year, month, dealer, state, fi, total_apps, funded, funded_amount')
-        .limit(50000);
+      // 2) Load monthly_snapshots to calculate metrics - PAGINATED
+      let allSnapshots = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data: snapshots, error: snapshotsError } = await window.sb
+          .from('monthly_snapshots')
+          .select('year, month, dealer, state, fi, total_apps, funded, funded_amount')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      if (snapshotsError) {
-        console.error('[RepPerformance] Error loading snapshots:', snapshotsError);
-        return;
+        if (snapshotsError) {
+          console.error('[RepPerformance] Error loading snapshots:', snapshotsError);
+          return;
+        }
+
+        if (snapshots && snapshots.length > 0) {
+          allSnapshots = allSnapshots.concat(snapshots);
+          console.log('[RepPerformance] Loaded page', page + 1, ':', snapshots.length, 'rows (total so far:', allSnapshots.length + ')');
+          page++;
+          hasMore = snapshots.length === pageSize; // If we got a full page, there might be more
+        } else {
+          hasMore = false;
+        }
       }
 
-      console.log('[RepPerformance] Loaded', (snapshots || []).length, 'snapshot rows');
+      console.log('[RepPerformance] Loaded', allSnapshots.length, 'snapshot rows total');
 
       // 3) Build rpData by matching dealers to reps
       rpData = {};
@@ -5085,7 +5101,7 @@ function updateKpiTile(label, value) {
 
       // Aggregate snapshots by rep and month
       let firstSnapLogged = false;
-      (snapshots || []).forEach(function(snap) {
+      allSnapshots.forEach(function(snap) {
         const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi);
         if (!firstSnapLogged) {
           console.log('[RepPerformance] First snapshot dealer key:', dealerKeyVal, '| dealer:', snap.dealer, '| state:', snap.state, '| fi:', snap.fi);
