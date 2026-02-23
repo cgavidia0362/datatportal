@@ -707,116 +707,88 @@ async function initSettingsTab() {
     showDealerModal();
   });
 
-  // Upload CSV button
-  document.getElementById('btnUploadDealersCSV')?.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    console.log('[Upload] CSV file selected:', file.name);
-    
-    try {
+
+  // Upload CSV button - SIMPLIFIED VERSION
+  const uploadInput = document.getElementById('btnUploadDealersCSV');
+  if (uploadInput && !uploadInput.dataset.listenerAttached) {
+    uploadInput.dataset.listenerAttached = 'true';
+    uploadInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      console.log('[Upload] ✓ File selected:', file.name);
+      
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
-        complete: async (results) => {
-          console.log('[Upload] Parsed CSV:', results.data.length, 'rows');
+        complete: function(results) {
+          console.log('[Upload] ✓ Parse complete! Rows:', results.data.length);
+          console.log('[Upload] ✓ First row:', results.data[0]);
           
           if (!window.sb) {
-            alert('Database connection not available');
+            alert('Database not connected');
             return;
           }
           
-          let updated = 0;
-          let added = 0;
-          let errors = 0;
-          
-          for (const row of results.data) {
-            const dealerName = (row['Dealer Name'] || '').trim();
-            const state = (row['State'] || '').trim().toUpperCase();
-            const fiType = (row['FI Type'] || '').trim();
-            const rep = (row['Rep'] || '').trim();
-            
-            if (!dealerName || !state || !fiType) {
-              errors++;
-              continue;
-            }
-            
-            // Check if dealer exists
-            const { data: existing } = await window.sb
-              .from('master_dealers')
-              .select('id')
-              .ilike('dealer_name', dealerName)
-              .eq('state', state)
-              .eq('fi', fiType)
-              .single();
-            
-            if (existing) {
-              // Update existing dealer
-              const { error } = await window.sb
-                .from('master_dealers')
-                .update({ rep: rep || null })
-                .eq('id', existing.id);
-              
-              if (error) {
-                console.error('[Upload] Update error:', dealerName, error);
-                errors++;
-              } else {
-                updated++;
-              }
-            } else {
-              // Add new dealer
-              const { error } = await window.sb
-                .from('master_dealers')
-                .insert({
-                  dealer_name: dealerName,
-                  state: state,
-                  fi: fiType,
-                  rep: rep || null
-                });
-              
-              if (error) {
-                console.error('[Upload] Insert error:', dealerName, error);
-                errors++;
-              } else {
-                added++;
-              }
-            }
-          }
-          
-          alert(`CSV Upload Complete!\n\n✅ Updated: ${updated}\n➕ Added: ${added}\n${errors > 0 ? '❌ Errors: ' + errors : ''}`);
-          
-          // Refresh the table
-          await renderMasterDealersList();
-          
-          // Clear the file input
-          e.target.value = '';
+          console.log('[Upload] ✓ Starting upload...');
+          processUpload(results.data, e.target);
         },
-        error: (error) => {
-          console.error('[Upload] Parse error:', error);
-          alert('Error parsing CSV: ' + error.message);
+        error: function(err) {
+          console.error('[Upload] ✗ Parse error:', err);
+          alert('Parse error: ' + err.message);
         }
       });
-    } catch (error) {
-      console.error('[Upload] Error:', error);
-      alert('Error uploading CSV: ' + error.message);
+    });
+    console.log('[Upload] ✓ Event listener attached');
+  } else {
+    console.error('[Upload] ✗ Upload button not found!');
+  }
+  
+  async function processUpload(rows, inputElement) {
+    let updated = 0;
+    let added = 0;
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const name = (row['Dealer Name'] || '').trim();
+      const state = (row['State'] || '').trim().toUpperCase();
+      const fi = (row['FI Type'] || '').trim();
+      const rep = (row['Rep'] || '').trim();
+      
+      if (!name || !state || !fi) continue;
+      
+      try {
+        const { error: updateErr, count } = await window.sb
+          .from('master_dealers')
+          .update({ rep: rep || null })
+          .ilike('dealer_name', name)
+          .eq('state', state)
+          .eq('fi', fi);
+        
+        if (!updateErr && count > 0) {
+          updated++;
+        } else if (!updateErr && count === 0) {
+          const { error: insertErr } = await window.sb
+            .from('master_dealers')
+            .insert({ dealer_name: name, state: state, fi: fi, rep: rep || null });
+          if (!insertErr) added++;
+        }
+      } catch (err) {
+        console.error('[Upload] Error on row', i, ':', err);
+      }
+      
+      if ((i + 1) % 100 === 0) {
+        console.log(`[Upload] Progress: ${i + 1}/${rows.length}`);
+      }
     }
-  });
-  
-  // Dealer modal form
-  document.getElementById('dealerForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await saveDealerForm();
-  });
-  
-  // Cancel button
-  document.getElementById('btnCancelDealer')?.addEventListener('click', () => {
-    hideDealerModal();
-  });
-  
-  // Search and filters
-  document.getElementById('masterDealerSearch')?.addEventListener('input', filterMasterDealers);
-  document.getElementById('masterStateFilter')?.addEventListener('change', filterMasterDealers);
-  document.getElementById('masterFIFilter')?.addEventListener('change', filterMasterDealers);
+    
+    console.log('[Upload] ✓ Complete! Updated:', updated, 'Added:', added);
+    alert(`Upload Complete!\n\nUpdated: ${updated}\nAdded: ${added}`);
+    
+    await renderMasterDealersList();
+    inputElement.value = '';
+  }
+
 
 // Export Master Dealers to Excel button
 const exportBtn = document.getElementById('btnExportDealers');

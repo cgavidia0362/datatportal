@@ -5035,7 +5035,7 @@ function updateKpiTile(label, value) {
       // 1) Load master_dealers to get rep assignments
       const { data: dealers, error: dealersError } = await window.sb
         .from('master_dealers')
-        .select('dealer, rep, state, fi_type');
+        .select('dealer_name, rep, state, fi');
 
       if (dealersError) {
         console.error('[RepPerformance] Error loading dealers:', dealersError);
@@ -5047,7 +5047,7 @@ function updateKpiTile(label, value) {
       // 2) Load monthly_snapshots to calculate metrics
       const { data: snapshots, error: snapshotsError } = await window.sb
         .from('monthly_snapshots')
-        .select('year, month, dealer, state, fi_type, total_apps, funded, funded_amount');
+        .select('year, month, dealer, state, fi, total_apps, funded, funded_amount');
 
       if (snapshotsError) {
         console.error('[RepPerformance] Error loading snapshots:', snapshotsError);
@@ -5060,13 +5060,13 @@ function updateKpiTile(label, value) {
 
       // Map dealer -> rep
       rpMasterDealers.forEach(function(d) {
-        const key = window.dealerKey(d.dealer, d.state, d.fi_type);
+        const key = window.dealerKey(d.dealer_name, d.state, d.fi);
         if (d.rep) dealerToRep[key] = d.rep.trim();
       });
 
       // Aggregate snapshots by rep and month
       (snapshots || []).forEach(function(snap) {
-        const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi_type);
+        const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi);
         const rep = dealerToRep[dealerKeyVal];
         if (!rep) return; // Skip dealers without rep assignment
 
