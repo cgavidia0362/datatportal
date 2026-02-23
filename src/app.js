@@ -1324,7 +1324,7 @@ const TABS = [
   { id: 'Upload',  label: 'Upload' },
   { id: 'Monthly', label: 'Monthly' },
   { id: 'Yearly',  label: 'Yearly' },
-  { id: 'ILReps',  label: 'IL Reps' },
+  { id: 'ILReps',  label: '📊 Rep Performance' },
   { id: 'BuyingDaily', label: '📊 Buying Daily' },
   { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
 ];
@@ -1359,6 +1359,7 @@ function switchTab(id) {
       }
     });
   }  
+  if (id === 'ILReps') { if (typeof window.initRepPerformance === 'function') window.initRepPerformance(); }
   if (id === 'BuyingDaily') { if (typeof window.initBuyingDaily === 'function') window.initBuyingDaily(); }
   if (id === 'tab-Settings' || id === 'Settings') {
     // CRITICAL FIX: Ensure Settings tab is in the right place before showing
@@ -4981,6 +4982,411 @@ function updateKpiTile(label, value) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * BUYING DAILY MODULE  –  100 % self-contained, no Supabase dependency
  * ═══════════════════════════════════════════════════════════════════════════ */
+// ═══════════════════════════════════════════════════════════════════════════
+// REP PERFORMANCE MODULE
+// ═══════════════════════════════════════════════════════════════════════════
+(function RepPerformanceModule() {
+  'use strict';
+
+  // ── STATE ──────────────────────────────────────────────────────────────────
+  let rpData = {};           // { rep: { 'YYYY-MM': { apps, funded, fundedAmt, dealers:{} } } }
+  let rpMasterDealers = [];  // cached master_dealers with rep assignments
+  let rpCurrentRep = 'ALL';
+  let rpCurrentMonth = null;
+  let rpChart = null;
+  let rpInitDone = false;
+
+  // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
+  window.initRepPerformance = async function () {
+    if (rpInitDone) { await render(); return; }
+    rpInitDone = true;
+
+    // Wire event listeners
+    const repSelect = document.getElementById('rpRepSelect');
+    const monthSelect = document.getElementById('rpMonthSelect');
+
+    if (repSelect) {
+      repSelect.addEventListener('change', async function() {
+        rpCurrentRep = repSelect.value;
+        await render();
+      });
+    }
+
+    if (monthSelect) {
+      monthSelect.addEventListener('change', async function() {
+        rpCurrentMonth = monthSelect.value;
+        await render();
+      });
+    }
+
+    // Load data and render
+    await loadData();
+    console.log('[RepPerformance] Module initialized.');
+  };
+
+  // ── LOAD DATA ──────────────────────────────────────────────────────────────
+  async function loadData() {
+    if (!window.sb) {
+      console.warn('[RepPerformance] Supabase not available');
+      return;
+    }
+
+    try {
+      // 1) Load master_dealers to get rep assignments
+      const { data: dealers, error: dealersError } = await window.sb
+        .from('master_dealers')
+        .select('dealer, rep, state, fi_type');
+
+      if (dealersError) {
+        console.error('[RepPerformance] Error loading dealers:', dealersError);
+        return;
+      }
+
+      rpMasterDealers = dealers || [];
+
+      // 2) Load monthly_snapshots to calculate metrics
+      const { data: snapshots, error: snapshotsError } = await window.sb
+        .from('monthly_snapshots')
+        .select('year, month, dealer, state, fi_type, total_apps, funded, funded_amount');
+
+      if (snapshotsError) {
+        console.error('[RepPerformance] Error loading snapshots:', snapshotsError);
+        return;
+      }
+
+      // 3) Build rpData by matching dealers to reps
+      rpData = {};
+      const dealerToRep = {};
+
+      // Map dealer -> rep
+      rpMasterDealers.forEach(function(d) {
+        const key = window.dealerKey(d.dealer, d.state, d.fi_type);
+        if (d.rep) dealerToRep[key] = d.rep.trim();
+      });
+
+      // Aggregate snapshots by rep and month
+      (snapshots || []).forEach(function(snap) {
+        const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi_type);
+        const rep = dealerToRep[dealerKeyVal];
+        if (!rep) return; // Skip dealers without rep assignment
+
+        const monthKey = String(snap.year) + '-' + String(snap.month).padStart(2, '0');
+
+        if (!rpData[rep]) rpData[rep] = {};
+        if (!rpData[rep][monthKey]) {
+          rpData[rep][monthKey] = { apps: 0, funded: 0, fundedAmt: 0, dealers: {} };
+        }
+
+        rpData[rep][monthKey].apps += Number(snap.total_apps) || 0;
+        rpData[rep][monthKey].funded += Number(snap.funded) || 0;
+        rpData[rep][monthKey].fundedAmt += Number(snap.funded_amount) || 0;
+
+        // Track dealer-level data for detail table
+        const dealerName = snap.dealer;
+        if (!rpData[rep][monthKey].dealers[dealerName]) {
+          rpData[rep][monthKey].dealers[dealerName] = {
+            state: snap.state,
+            apps: 0,
+            funded: 0,
+            fundedAmt: 0
+          };
+        }
+        rpData[rep][monthKey].dealers[dealerName].apps += Number(snap.total_apps) || 0;
+        rpData[rep][monthKey].dealers[dealerName].funded += Number(snap.funded) || 0;
+        rpData[rep][monthKey].dealers[dealerName].fundedAmt += Number(snap.funded_amount) || 0;
+      });
+
+      // 4) Populate rep dropdown
+      populateRepDropdown();
+
+      // 5) Populate month dropdown
+      populateMonthDropdown();
+
+    } catch (e) {
+      console.error('[RepPerformance] Load data failed:', e);
+    }
+  }
+
+  // ── POPULATE DROPDOWNS ─────────────────────────────────────────────────────
+  function populateRepDropdown() {
+    const repSelect = document.getElementById('rpRepSelect');
+    if (!repSelect) return;
+
+    const reps = Object.keys(rpData).sort();
+    repSelect.innerHTML = '<option value="ALL">All Reps (Comparison)</option>';
+    reps.forEach(function(rep) {
+      const opt = document.createElement('option');
+      opt.value = rep;
+      opt.textContent = rep;
+      repSelect.appendChild(opt);
+    });
+
+    if (reps.length > 0 && !rpCurrentRep) rpCurrentRep = 'ALL';
+  }
+
+  function populateMonthDropdown() {
+    const monthSelect = document.getElementById('rpMonthSelect');
+    if (!monthSelect) return;
+
+    // Collect all unique month keys across all reps
+    const monthSet = new Set();
+    Object.values(rpData).forEach(function(repMonths) {
+      Object.keys(repMonths).forEach(function(m) { monthSet.add(m); });
+    });
+
+    const months = Array.from(monthSet).sort().reverse();
+    monthSelect.innerHTML = '';
+    months.forEach(function(m) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      const [y, mo] = m.split('-');
+      const date = new Date(y, mo - 1);
+      opt.textContent = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      monthSelect.appendChild(opt);
+    });
+
+    if (months.length > 0 && !rpCurrentMonth) {
+      rpCurrentMonth = months[0];
+      monthSelect.value = rpCurrentMonth;
+    }
+  }
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  async function render() {
+    if (rpCurrentRep === 'ALL') {
+      document.getElementById('rpSingleView').classList.add('hidden');
+      document.getElementById('rpAllView').classList.remove('hidden');
+      renderAllReps();
+    } else {
+      document.getElementById('rpSingleView').classList.remove('hidden');
+      document.getElementById('rpAllView').classList.add('hidden');
+      renderSingleRep();
+    }
+  }
+
+  // ── RENDER SINGLE REP ──────────────────────────────────────────────────────
+  function renderSingleRep() {
+    const repMonths = rpData[rpCurrentRep] || {};
+    const monthData = repMonths[rpCurrentMonth] || { apps: 0, funded: 0, fundedAmt: 0, dealers: {} };
+
+    // Calculate YTD
+    const [currentYear] = rpCurrentMonth ? rpCurrentMonth.split('-') : [new Date().getFullYear()];
+    let ytdFunded = 0;
+    Object.keys(repMonths).forEach(function(m) {
+      const [y] = m.split('-');
+      if (y === currentYear) ytdFunded += repMonths[m].fundedAmt;
+    });
+
+    // KPIs
+    document.getElementById('rpKpiFundedYTD').textContent = formatMoney(ytdFunded);
+    document.getElementById('rpKpiApps').textContent = monthData.apps.toLocaleString();
+    document.getElementById('rpKpiFunded').textContent = monthData.funded.toLocaleString();
+    document.getElementById('rpKpiFundedMonth').textContent = formatMoney(monthData.fundedAmt);
+    document.getElementById('rpKpiDealers').textContent = Object.keys(monthData.dealers).length;
+    
+    const approvalRate = monthData.apps ? (monthData.funded / monthData.apps * 100).toFixed(1) : '0.0';
+    document.getElementById('rpKpiApproval').textContent = approvalRate + '%';
+
+    // Update labels
+    const [y, m] = rpCurrentMonth ? rpCurrentMonth.split('-') : ['', ''];
+    const monthName = m ? new Date(y, m - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '';
+    document.getElementById('rpKpiAppsSub').textContent = monthName;
+    document.getElementById('rpKpiFundedSub').textContent = monthName;
+
+    // Dealer table
+    renderDealerTable(monthData.dealers);
+
+    // Chart
+    renderChart();
+  }
+
+  function renderDealerTable(dealers) {
+    const tbody = document.getElementById('rpDealerTbody');
+    if (!tbody) return;
+
+    const dealerArray = Object.entries(dealers).map(([name, data]) => ({
+      name,
+      ...data
+    })).sort((a, b) => b.fundedAmt - a.fundedAmt); // Sort by funded amount desc
+
+    document.getElementById('rpDealerBadge').textContent = dealerArray.length + ' dealers';
+
+    tbody.innerHTML = dealerArray.map(function(d) {
+      const approvalRate = d.apps ? (d.funded / d.apps * 100).toFixed(1) : '0.0';
+      return '<tr>' +
+        '<td>' + d.name + '</td>' +
+        '<td><span class="rp-state-badge">' + d.state + '</span></td>' +
+        '<td class="rp-right rp-apps-val">' + d.apps.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + d.funded.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + formatMoney(d.fundedAmt) + '</td>' +
+        '<td class="rp-right">' + approvalRate + '%</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderChart() {
+    const canvas = document.getElementById('rpTrendChart');
+    if (!canvas) return;
+
+    const repMonths = rpData[rpCurrentRep] || {};
+    const allMonths = Object.keys(repMonths).sort();
+    const last6 = allMonths.slice(-6);
+
+    const labels = last6.map(function(m) {
+      const [y, mo] = m.split('-');
+      return new Date(y, mo - 1).toLocaleDateString('en-US', { month: 'short' });
+    });
+
+    const apps = last6.map(function(m) { return repMonths[m].apps; });
+    const funded = last6.map(function(m) { return repMonths[m].funded; });
+    const fundedAmt = last6.map(function(m) { return repMonths[m].fundedAmt / 1000; }); // in K
+
+    if (rpChart) rpChart.destroy();
+
+    const ctx = canvas.getContext('2d');
+    rpChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Applications',
+            data: apps,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Funded Deals',
+            data: funded,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Funded $ (K)',
+            data: fundedAmt,
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { usePointStyle: true, padding: 12 }
+          }
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            title: { display: true, text: 'Apps / Funded' },
+            grid: { color: '#f1f5f9' }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            title: { display: true, text: 'Funded $ (K)' },
+            grid: { drawOnChartArea: false }
+          }
+        }
+      }
+    });
+  }
+
+  // ── RENDER ALL REPS ────────────────────────────────────────────────────────
+  function renderAllReps() {
+    const monthData = rpCurrentMonth ? rpCurrentMonth.split('-')[1] : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    document.getElementById('rpComparisonBadge').textContent = monthData;
+
+    // Comparison table
+    renderComparisonTable();
+
+    // YTD table
+    renderYTDTable();
+  }
+
+  function renderComparisonTable() {
+    const tbody = document.getElementById('rpCompareTbody');
+    if (!tbody) return;
+
+    const reps = Object.keys(rpData).sort();
+    tbody.innerHTML = reps.map(function(rep) {
+      const monthData = rpData[rep][rpCurrentMonth] || { apps: 0, funded: 0, fundedAmt: 0, dealers: {} };
+      const approvalRate = monthData.apps ? (monthData.funded / monthData.apps * 100).toFixed(1) : '0.0';
+      
+      // Get states for this rep
+      const repDealers = rpMasterDealers.filter(function(d) { return d.rep === rep; });
+      const states = [...new Set(repDealers.map(function(d) { return d.state; }))].sort();
+      const stateBadges = states.map(function(s) {
+        return '<span class="rp-state-badge">' + s + '</span>';
+      }).join(' ');
+
+      return '<tr>' +
+        '<td>' + rep + '</td>' +
+        '<td>' + stateBadges + '</td>' +
+        '<td class="rp-right rp-apps-val">' + monthData.apps.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + monthData.funded.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + formatMoney(monthData.fundedAmt) + '</td>' +
+        '<td class="rp-right">' + approvalRate + '%</td>' +
+        '<td class="rp-right">' + Object.keys(monthData.dealers).length + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderYTDTable() {
+    const tbody = document.getElementById('rpYTDTbody');
+    if (!tbody) return;
+
+    const [currentYear] = rpCurrentMonth ? rpCurrentMonth.split('-') : [new Date().getFullYear()];
+    const reps = Object.keys(rpData).sort();
+
+    tbody.innerHTML = reps.map(function(rep) {
+      const repMonths = rpData[rep] || {};
+      let ytdApps = 0, ytdFunded = 0, ytdFundedAmt = 0;
+
+      Object.keys(repMonths).forEach(function(m) {
+        const [y] = m.split('-');
+        if (y === currentYear) {
+          ytdApps += repMonths[m].apps;
+          ytdFunded += repMonths[m].funded;
+          ytdFundedAmt += repMonths[m].fundedAmt;
+        }
+      });
+
+      const ytdApproval = ytdApps ? (ytdFunded / ytdApps * 100).toFixed(1) : '0.0';
+
+      return '<tr>' +
+        '<td>' + rep + '</td>' +
+        '<td class="rp-right rp-apps-val">' + ytdApps.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + ytdFunded.toLocaleString() + '</td>' +
+        '<td class="rp-right rp-funded-val">' + formatMoney(ytdFundedAmt) + '</td>' +
+        '<td class="rp-right">' + ytdApproval + '%</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+  function formatMoney(val) {
+    return '$' + Number(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+})(); /* end RepPerformanceModule IIFE */
+
 (function BuyingDailyModule() {
   'use strict';
 

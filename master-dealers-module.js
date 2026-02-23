@@ -40,7 +40,7 @@ async function fetchMasterDealers() {
   }
 }
 
-async function addMasterDealer(name, state, fi) {
+async function addMasterDealer(name, state, fi, rep) {
   if (!window.sb) return { success: false, error: 'No database connection' };
   
   try {
@@ -49,7 +49,8 @@ async function addMasterDealer(name, state, fi) {
       .insert([{
         dealer_name: name.trim(),
         state: state.trim().toUpperCase(),
-        fi: fi.trim()
+        fi: fi.trim(),
+        rep: rep ? rep.trim() : null
       }])
       .select();
     
@@ -64,7 +65,7 @@ async function addMasterDealer(name, state, fi) {
   }
 }
 
-async function updateMasterDealer(id, name, state, fi) {
+async function updateMasterDealer(id, name, state, fi, rep) {
   if (!window.sb) return { success: false, error: 'No database connection' };
   
   try {
@@ -73,7 +74,8 @@ async function updateMasterDealer(id, name, state, fi) {
       .update({
         dealer_name: name.trim(),
         state: state.trim().toUpperCase(),
-        fi: fi.trim()
+        fi: fi.trim(),
+        rep: rep ? rep.trim() : null
       })
       .eq('id', id)
       .select();
@@ -854,12 +856,13 @@ function filterMasterDealers() {
           ${dealer.fi}
         </span>
       </td>
+      <td class="px-3 py-2">${dealer.rep || '—'}</td>
       <td class="px-3 py-2 text-right">
         <button class="text-sm text-blue-600 hover:underline mr-2" onclick="editDealer(${dealer.id})">Edit</button>
         <button class="text-sm text-red-600 hover:underline" onclick="confirmDeleteDealer(${dealer.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">No dealers found</td></tr>';
+  `).join('') || '<tr><td colspan="5" class="px-3 py-6 text-center text-gray-500">No dealers found</td></tr>';
 }
 
 function showDealerModal(dealer = null) {
@@ -874,6 +877,7 @@ function showDealerModal(dealer = null) {
     document.getElementById('dealerFormName').value = dealer.dealer_name;
     document.getElementById('dealerFormState').value = dealer.state;
     document.getElementById('dealerFormFI').value = dealer.fi;
+    document.getElementById('dealerFormRep').value = dealer.rep || '';
     form.dataset.dealerId = dealer.id;
   } else {
     title.textContent = 'Add Dealer';
@@ -894,6 +898,7 @@ async function saveDealerForm() {
   const name = document.getElementById('dealerFormName').value;
   const state = document.getElementById('dealerFormState').value;
   const fi = document.getElementById('dealerFormFI').value;
+  const rep = document.getElementById('dealerFormRep').value;
   
   if (!name || !state || !fi) {
     alert('All fields are required');
@@ -902,9 +907,9 @@ async function saveDealerForm() {
   
   let result;
   if (form.dataset.dealerId) {
-    result = await updateMasterDealer(form.dataset.dealerId, name, state, fi);
+    result = await updateMasterDealer(form.dataset.dealerId, name, state, fi, rep);
   } else {
-    result = await addMasterDealer(name, state, fi);
+    result = await addMasterDealer(name, state, fi, rep);
   }
   
   if (result.success) {
@@ -985,4 +990,3 @@ if (settingsTab) {
 });
 
 console.log('[Master Dealers Module] Loaded successfully');
-

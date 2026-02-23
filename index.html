@@ -300,6 +300,152 @@ th, td {
 }
 /* ═══════════ END BUYING DAILY STYLES ═══════════ */
 
+/* ═══════════ REP PERFORMANCE STYLES (rp- prefix) ═══════════ */
+.rp-controls-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.rp-label {
+  display: block;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 6px;
+}
+.rp-select {
+  padding: 10px 36px 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: .88rem;
+  background: #fff url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22%3E%3Cpath d=%22M1 1l5 5 5-5%22 stroke=%22%23666%22 fill=%22none%22 stroke-width=%221.5%22/%3E%3C/svg%3E') no-repeat right 12px center;
+  color: #1e293b;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  font-weight: 600;
+}
+.rp-select:focus { border-color: #3b82f6; }
+.rp-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.rp-kpi-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 20px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.rp-kpi-card.rp-highlight {
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+.rp-kpi-label {
+  font-size: .74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.rp-kpi-card.rp-highlight .rp-kpi-label { color: rgba(255,255,255,.75); }
+.rp-kpi-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1;
+}
+.rp-kpi-card.rp-highlight .rp-kpi-value { color: #fff; }
+.rp-kpi-sub {
+  font-size: .78rem;
+  color: #94a3b8;
+  margin-top: 6px;
+}
+.rp-kpi-card.rp-highlight .rp-kpi-sub { color: rgba(255,255,255,.65); }
+.rp-section-card {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.rp-section-card h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rp-badge {
+  font-size: .72rem;
+  font-weight: 600;
+  background: #eff6ff;
+  color: #3b82f6;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.rp-table-wrap { overflow-x: auto; }
+.rp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+}
+.rp-table thead th {
+  background: #f1f5f9;
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #475569;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+.rp-table thead th.rp-right { text-align: right; }
+.rp-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background .15s;
+}
+.rp-table tbody tr:hover { background: #f8fafc; }
+.rp-table tbody td {
+  padding: 10px 14px;
+  color: #475569;
+}
+.rp-table tbody td.rp-right { text-align: right; }
+.rp-table tbody td:first-child {
+  font-weight: 600;
+  color: #0f172a;
+}
+.rp-table .rp-state-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 600;
+  border-radius: 12px;
+  margin-right: 4px;
+}
+.rp-table .rp-funded-val { color: #0891b2; font-weight: 600; }
+.rp-table .rp-apps-val { color: #3b82f6; font-weight: 600; }
+.rp-chart-wrap { position: relative; width: 100%; height: 280px; }
+@media (max-width: 700px) {
+  .rp-kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+/* ═══════════ END REP PERFORMANCE STYLES ═══════════ */
+
     </style>
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased">
@@ -716,9 +862,133 @@ th, td {
 
           <!-- IL Reps (placeholder) -->
           <div id="tab-ILReps" class="tab-panel hidden">
-            <div class="bg-white rounded-2xl shadow-sm border p-6 text-sm text-gray-600">
-              IL Reps view coming soon.
+            
+            <!-- Controls -->
+            <div class="rp-controls-bar">
+              <div>
+                <label class="rp-label">Rep</label>
+                <select id="rpRepSelect" class="rp-select">
+                  <option value="ALL">All Reps (Comparison)</option>
+                </select>
+              </div>
+              <div>
+                <label class="rp-label">Month</label>
+                <select id="rpMonthSelect" class="rp-select">
+                </select>
+              </div>
             </div>
+
+            <!-- INDIVIDUAL REP VIEW -->
+            <div id="rpSingleView">
+              
+              <!-- KPI Tiles -->
+              <div class="rp-kpi-row">
+                <div class="rp-kpi-card rp-highlight">
+                  <div class="rp-kpi-label">Funded Amount (YTD)</div>
+                  <div class="rp-kpi-value" id="rpKpiFundedYTD">–</div>
+                  <div class="rp-kpi-sub">Year-to-date total</div>
+                </div>
+                <div class="rp-kpi-card">
+                  <div class="rp-kpi-label">Applications</div>
+                  <div class="rp-kpi-value" id="rpKpiApps">–</div>
+                  <div class="rp-kpi-sub" id="rpKpiAppsSub">Selected month</div>
+                </div>
+                <div class="rp-kpi-card">
+                  <div class="rp-kpi-label">Funded Deals</div>
+                  <div class="rp-kpi-value" id="rpKpiFunded">–</div>
+                  <div class="rp-kpi-sub" id="rpKpiFundedSub">Selected month</div>
+                </div>
+                <div class="rp-kpi-card">
+                  <div class="rp-kpi-label">Funded $ (Month)</div>
+                  <div class="rp-kpi-value" id="rpKpiFundedMonth">–</div>
+                  <div class="rp-kpi-sub">This month</div>
+                </div>
+                <div class="rp-kpi-card">
+                  <div class="rp-kpi-label">Active Dealers</div>
+                  <div class="rp-kpi-value" id="rpKpiDealers">–</div>
+                  <div class="rp-kpi-sub">Assigned dealers</div>
+                </div>
+                <div class="rp-kpi-card">
+                  <div class="rp-kpi-label">Approval Rate</div>
+                  <div class="rp-kpi-value" id="rpKpiApproval">–</div>
+                  <div class="rp-kpi-sub">Selected month</div>
+                </div>
+              </div>
+
+              <!-- Month-over-Month Chart -->
+              <div class="rp-section-card">
+                <h3>📈 Performance Trend – Last 6 Months</h3>
+                <div class="rp-chart-wrap">
+                  <canvas id="rpTrendChart"></canvas>
+                </div>
+              </div>
+
+              <!-- Dealer Performance Table -->
+              <div class="rp-section-card">
+                <h3>🏢 Dealer Performance <span class="rp-badge" id="rpDealerBadge">–</span></h3>
+                <div class="rp-table-wrap">
+                  <table class="rp-table">
+                    <thead>
+                      <tr>
+                        <th>Dealer Name</th>
+                        <th>State</th>
+                        <th class="rp-right">Applications</th>
+                        <th class="rp-right">Funded Deals</th>
+                        <th class="rp-right">Funded Amount</th>
+                        <th class="rp-right">Approval Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rpDealerTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- ALL REPS COMPARISON VIEW -->
+            <div id="rpAllView" class="hidden">
+              
+              <div class="rp-section-card">
+                <h3>📊 Rep Comparison <span class="rp-badge" id="rpComparisonBadge">–</span></h3>
+                <div class="rp-table-wrap">
+                  <table class="rp-table">
+                    <thead>
+                      <tr>
+                        <th>Rep Name</th>
+                        <th>States</th>
+                        <th class="rp-right">Applications</th>
+                        <th class="rp-right">Funded Deals</th>
+                        <th class="rp-right">Funded Amount</th>
+                        <th class="rp-right">Approval Rate</th>
+                        <th class="rp-right">Active Dealers</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rpCompareTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- YTD Totals for All Reps -->
+              <div class="rp-section-card">
+                <h3>📅 Year-to-Date Totals</h3>
+                <div class="rp-table-wrap">
+                  <table class="rp-table">
+                    <thead>
+                      <tr>
+                        <th>Rep Name</th>
+                        <th class="rp-right">YTD Applications</th>
+                        <th class="rp-right">YTD Funded</th>
+                        <th class="rp-right">YTD Funded $</th>
+                        <th class="rp-right">YTD Approval %</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rpYTDTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
           </div>
 
           <!-- ═══════════ BUYING DAILY TAB ═══════════ -->
@@ -937,6 +1207,7 @@ th, td {
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dealer Name</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FI Type</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rep</th>
                       <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -1149,6 +1420,20 @@ th, td {
               <option value="">Select...</option>
               <option value="Franchise">Franchise</option>
               <option value="Independent">Independent</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Rep</label>
+            <select id="dealerFormRep" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">None</option>
+              <option value="Ana">Ana</option>
+              <option value="Manny">Manny</option>
+              <option value="Pronto">Pronto</option>
+              <option value="Jessica">Jessica</option>
+              <option value="Krystal">Krystal</option>
+              <option value="Diego">Diego</option>
+              <option value="Michelle">Michelle</option>
+              <option value="Fatima">Fatima</option>
             </select>
           </div>
         </div>
