@@ -5093,7 +5093,8 @@ function updateKpiTile(label, value) {
 
       // Map dealer -> rep
       rpMasterDealers.forEach(function(d) {
-        const key = window.dealerKey(d.dealer_name, d.state, d.fi);
+        // Simplified key: only dealer_name + state (ignore FI type for more forgiving matching)
+        const key = (d.dealer_name || '').toLowerCase().trim() + '|' + (d.state || '').toUpperCase().trim();
         if (d.rep) dealerToRep[key] = d.rep.trim();
       });
       console.log('[RepPerformance] First 5 dealer keys:', Object.keys(dealerToRep).slice(0, 5));
@@ -5102,9 +5103,10 @@ function updateKpiTile(label, value) {
       // Aggregate snapshots by rep and month
       let firstSnapLogged = false;
       allSnapshots.forEach(function(snap) {
-        const dealerKeyVal = window.dealerKey(snap.dealer, snap.state, snap.fi);
+        // Simplified key: only dealer + state (ignore FI type for more forgiving matching)
+        const dealerKeyVal = (snap.dealer || '').toLowerCase().trim() + '|' + (snap.state || '').toUpperCase().trim();
         if (!firstSnapLogged) {
-          console.log('[RepPerformance] First snapshot dealer key:', dealerKeyVal, '| dealer:', snap.dealer, '| state:', snap.state, '| fi:', snap.fi);
+          console.log('[RepPerformance] First snapshot dealer key:', dealerKeyVal, '| dealer:', snap.dealer, '| state:', snap.state);
           console.log('[RepPerformance] Key exists in map?', dealerKeyVal in dealerToRep);
           firstSnapLogged = true;
         }
