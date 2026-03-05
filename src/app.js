@@ -1,3 +1,4 @@
+console.log('[VERSION CHECK] app.js loaded at:', new Date().toISOString(), '| VERSION: FIXED-2026-03-05-V2');
 console.log('[BUILD] src/app.js loaded at', new Date().toISOString());
 Chart.register(ChartDataLabels);
 /* ======================================================================
