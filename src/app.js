@@ -2710,6 +2710,20 @@ document.getElementById('btnApplyReview')?.addEventListener('click', async () =>
   // Continue with the normal analyze flow
   const s = window.lastBuiltSnapshot;
   if (s) {
+    // *** FIX: Actually merge the funded data! ***
+    console.log('[DEBUG] Merging funded data...');
+    mergeFundedData(s, /*overrides*/ null);
+    recomputeAggregatesFromDealers(s);
+    recomputeKpisFromFunded(s);
+    
+    // Ensure KPI fallbacks
+    s.kpis = s.kpis || {};
+    if (s.kpis.avgAPR == null && s.kpis.avgAPRFunded != null) s.kpis.avgAPR = s.kpis.avgAPRFunded;
+    if (s.kpis.avgDiscountPct == null && s.kpis.avgDiscountPctFunded != null) s.kpis.avgDiscountPct = s.kpis.avgDiscountPctFunded;
+    if (s.kpis.avgAPRFunded == null && s.kpis.avgAPR != null) s.kpis.avgAPRFunded = s.kpis.avgAPR;
+    if (s.kpis.avgDiscountPctFunded == null && s.kpis.avgDiscountPct != null) s.kpis.avgDiscountPctFunded = s.kpis.avgDiscountPct;
+    console.log('[DEBUG] Merge complete!');
+    
     const res = document.getElementById('resultsArea');
     if (res) {
       res.innerHTML = `
