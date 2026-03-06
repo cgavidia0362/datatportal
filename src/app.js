@@ -2575,18 +2575,13 @@ try {
     const mergeResult = matchAndMergeFundedIntoSnapshot(lastBuiltSnapshot);
     console.log('[DEBUG] Auto-merge complete:', mergeResult);
     
-    // Recompute aggregates
+    // Recompute aggregates and KPIs - this updates the Results display
     recomputeAggregatesFromDealers(lastBuiltSnapshot);
     recomputeKpisFromFunded(lastBuiltSnapshot);
-    
-    // Display results
-    displayResults(lastBuiltSnapshot);
-  } else {
-    // No funded data - just display application results
-    displayResults(lastBuiltSnapshot);
   }
   
-  return; // Done - don't continue to old merge code below
+  // Results are now displaying - exit without showing modal
+  return;
   
 } catch (validationError) {
   console.error('[Validation] Error during validation:', validationError);
