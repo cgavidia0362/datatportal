@@ -2565,6 +2565,29 @@ try {
   
   console.log('[Validation] ✅ No issues found - proceeding with upload');
   
+  // No issues - save snapshot and merge funded data automatically
+  window.lastBuiltSnapshot = lastBuiltSnapshot;
+  console.log('[DEBUG] Set window.lastBuiltSnapshot automatically (no issues)');
+  
+  // Merge funded data if present
+  if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
+    console.log('[DEBUG] Merging funded data automatically...');
+    const mergeResult = matchAndMergeFundedIntoSnapshot(lastBuiltSnapshot);
+    console.log('[DEBUG] Auto-merge complete:', mergeResult);
+    
+    // Recompute aggregates
+    recomputeAggregatesFromDealers(lastBuiltSnapshot);
+    recomputeKpisFromFunded(lastBuiltSnapshot);
+    
+    // Display results
+    displayResults(lastBuiltSnapshot);
+  } else {
+    // No funded data - just display application results
+    displayResults(lastBuiltSnapshot);
+  }
+  
+  return; // Done - don't continue to old merge code below
+  
 } catch (validationError) {
   console.error('[Validation] Error during validation:', validationError);
   // Continue anyway if validation fails (don't block the user)
