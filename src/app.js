@@ -2427,24 +2427,24 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
 lastBuiltSnapshot = snap;
 // ===== DETECT FUNDED-ONLY DEALERS =====
-// Find dealers who funded deals but had NO applications this month
+// Find dealers who funded deals but had NO applications OR 0 funded apps this month
 let orphansForModal = [];
 
 if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   console.log('[Funded-Only] Checking for dealers who funded but did not apply...');
   
-  // Build a set of all dealers from the APPLICATION CSV (normalized)
-  const appDealerSet = new Set();
+  // Build a map of dealers from APPLICATION CSV with their funded counts
+  const appDealerMap = new Map();
   (snap.dealerRows || []).forEach(function(r) {
     const key = normalizeDealerName(r.dealer).trim() + '|' + normalizeState(r.state).trim();
-    console.log('[Debug] Adding app dealer to set:', key);
-    appDealerSet.add(key);
+    appDealerMap.set(key, {
+      funded: r.funded || 0,
+      totalApps: r.totalApps || 0
+    });
   });
   
-  console.log('[Debug] Total app dealers in set:', appDealerSet.size);
-  console.log('[Debug] First 5 app dealer keys:', Array.from(appDealerSet).slice(0, 5));
-  
-  console.log('[Funded-Only] Found', appDealerSet.size, 'dealers in application CSV');
+  console.log('[Debug] Total app dealers in map:', appDealerMap.size);
+  console.log('[Funded-Only] Found', appDealerMap.size, 'dealers in application CSV');
   
   // Build a map of funded deals by dealer
   const fundedByDealer = new Map();
@@ -2458,8 +2458,6 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
     
     const dealer = normalizeDealerName(String(row[dealerCol] || '').trim());
     const state = normalizeState(String(row[stateCol] || '').trim());
-    console.log('[Debug] Funded dealer BEFORE norm:', String(row[dealerCol] || '').trim(), '→ AFTER norm:', dealer);  // ADD THIS
-    console.log('[Debug] CHAR CODES:', dealer.split('').map(c => c.charCodeAt(0)).join(','));
     const amount = parseFloat(String(row[loanCol] || '0').replace(/[^0-9.-]/g, '')) || 0;
     
     if (!dealer || !state || amount <= 0) return;
@@ -2482,16 +2480,23 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   
   console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
   
-  // Find dealers who are in FUNDED but NOT in APPLICATION
+  // Find dealers who funded deals but had 0 funded apps OR aren't in app CSV at all
   fundedByDealer.forEach(function(entry, key) {
-    console.log('[Debug] Checking funded dealer:', key, 'in app set?', appDealerSet.has(key));
-    if (!appDealerSet.has(key)) {
+    const appData = appDealerMap.get(key);
+    
+    // Case 1: Not in application CSV at all
+    // Case 2: In application CSV but funded count = 0
+    if (!appData || appData.funded === 0) {
+      console.log('[Debug] Funded-only dealer found:', key, 
+                  appData ? `(in app CSV with ${appData.funded} funded, ${appData.totalApps} total apps)` : '(not in app CSV)');
       orphansForModal.push({
         dealer: entry.dealerName,
         state: entry.state,
         fi: 'Independent',
         count: entry.fundedCount,
         amount: entry.fundedAmount,
+        inAppCSV: !!appData,
+        appCount: appData ? appData.totalApps : 0,
         action: 'create-row'
       });
     }
@@ -2544,43 +2549,183 @@ try {
     validationIssues.newDealers.length > 0 ||
     orphansForModal.length > 0;
   
-  if (hasIssues) {
-    console.log('[Validation] Issues found:', {
-      mismatches: validationIssues.mismatches.length,
-      newDealers: validationIssues.newDealers.length,
-      unmatchedFunded: unmatchedFundedDealers.length
-    });
-    
-    // Show the review modal  
-    showUploadReviewModal(
-      validationIssues, 
-      orphansForModal, // Pass the funded-only dealers we detected
-      lastBuiltSnapshot,
-      fundedParsed?.rows || null
-    );
-    
-    // STOP HERE - user will proceed after review
-    return;
-  }
+  // Always show the review modal (even with 0 issues) so user can review matches
+  console.log('[Validation] Showing review modal - Issues:', hasIssues ? 'YES' : 'NO');
   
-  console.log('[Validation] ✅ No issues found - proceeding with upload');
-  
-  // No issues - save snapshot and merge funded data automatically
+  // Set window.lastBuiltSnapshot so Apply button can use it
   window.lastBuiltSnapshot = lastBuiltSnapshot;
-  console.log('[DEBUG] Set window.lastBuiltSnapshot automatically (no issues)');
+  console.log('[DEBUG] Set window.lastBuiltSnapshot for Apply button');
   
-  // Merge funded data if present
-  if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
-    console.log('[DEBUG] Merging funded data automatically...');
-    const mergeResult = matchAndMergeFundedIntoSnapshot(lastBuiltSnapshot);
-    console.log('[DEBUG] Auto-merge complete:', mergeResult);
+  // Build modal content
+  const modalContent = document.getElementById('uploadReviewContent');
+  if (modalContent) {
+    let html = '<div class="p-4 space-y-4">';
     
-    // Recompute aggregates and KPIs - this updates the Results display
-    recomputeAggregatesFromDealers(lastBuiltSnapshot);
-    recomputeKpisFromFunded(lastBuiltSnapshot);
+    // Show summary
+    html += '<div class="text-sm font-semibold mb-2">';
+    if (!hasIssues) {
+      html += '✅ All dealers matched successfully!';
+    } else {
+      html += '⚠️ Please review the following issues:';
+    }
+    html += '</div>';
+    
+    // New Dealers
+    if (validationIssues.newDealers.length > 0) {
+      html += '<div class="border-l-4 border-blue-500 pl-3 mb-3">';
+      html += '<div class="font-semibold text-blue-700 mb-1">New Dealers (will be added to master list)</div>';
+      html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">State</th><th class="p-1">Action</th></tr></thead><tbody>';
+      validationIssues.newDealers.forEach(d => {
+        html += `<tr class="border-t"><td class="p-1">${d.dealer}</td><td class="p-1">${d.state}</td><td class="p-1"><select class="text-xs"><option value="add">Add to Master</option><option value="skip">Skip</option></select></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+    
+    // Mismatched Dealers
+    if (validationIssues.mismatches.length > 0) {
+      html += '<div class="border-l-4 border-yellow-500 pl-3 mb-3">';
+      html += '<div class="font-semibold text-yellow-700 mb-1">Mismatched Dealers</div>';
+      html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">Issue</th><th class="p-1">Action</th></tr></thead><tbody>';
+      validationIssues.mismatches.forEach(d => {
+        html += `<tr class="border-t"><td class="p-1">${d.dealer}</td><td class="p-1">${d.reason}</td><td class="p-1"><select class="text-xs"><option value="fix">Fix</option><option value="skip">Skip</option></select></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+    
+    // Funded-Only Dealers (funded but no apps)
+    if (orphansForModal.length > 0) {
+      html += '<div class="border-l-4 border-red-500 pl-3 mb-3">';
+      html += '<div class="font-semibold text-red-700 mb-1">Funded Without Applications</div>';
+      html += '<div class="text-xs text-gray-600 mb-2">These dealers funded deals but had 0 funded applications this month</div>';
+      html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">State</th><th class="p-1">Funded Deals</th><th class="p-1">In App CSV?</th></tr></thead><tbody>';
+      orphansForModal.forEach(d => {
+        const inAppStatus = d.inAppCSV ? `Yes (${d.appCount} apps)` : 'No';
+        html += `<tr class="border-t"><td class="p-1">${d.dealer}</td><td class="p-1">${d.state}</td><td class="p-1">${d.count} ($${d.amount.toLocaleString()})</td><td class="p-1">${inAppStatus}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+    
+    // Merge summary
+    if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
+      html += '<div class="border-t pt-3 mt-3 text-sm">';
+      html += `<div><strong>Ready to merge:</strong> ${fundedParsed.rows.length} funded deals</div>`;
+      html += '</div>';
+    }
+    
+    html += '</div>';
+    modalContent.innerHTML = html;
   }
   
-  // Results are now displaying - exit without showing modal
+  // Attach Apply button listener
+  const applyBtn = document.getElementById('btnApplyReview');
+  if (applyBtn) {
+    // Clone to remove old listeners
+    const newApplyBtn = applyBtn.cloneNode(true);
+    applyBtn.parentNode.replaceChild(newApplyBtn, applyBtn);
+    
+    // Add new listener
+    document.getElementById('btnApplyReview').addEventListener('click', async () => {
+      console.log('[Review Modal] Apply button clicked');
+      
+      const s = window.lastBuiltSnapshot;
+      if (!s) {
+        alert('Error: Snapshot not found. Please try Analyze again.');
+        return;
+      }
+      
+      // Hide modal
+      document.getElementById('uploadReviewModal')?.classList.add('hidden');
+      
+      // Merge funded data
+      console.log('[Review] Merging funded data BEFORE applying corrections...');
+      mergeFundedData(s, null);
+      recomputeAggregatesFromDealers(s);
+      recomputeKpisFromFunded(s);
+      
+      // Ensure KPI fallbacks
+      s.kpis = s.kpis || {};
+      if (s.kpis.avgAPR == null && s.kpis.avgAPRFunded != null) s.kpis.avgAPR = s.kpis.avgAPRFunded;
+      if (s.kpis.avgDiscountPct == null && s.kpis.avgDiscountPctFunded != null) s.kpis.avgDiscountPct = s.kpis.avgDiscountPctFunded;
+      console.log('[Review] Applying dealer corrections AFTER merge...');
+      
+      // Update Results panel
+      const res = document.getElementById('resultsArea');
+      if (res && s.totals && s.kpis) {
+        res.innerHTML = `
+          <div class="text-sm">
+            <div class="font-semibold mb-1">Analyzed: ${monthName(s.month)} ${s.year}</div>
+            <ul class="list-disc ml-5 space-y-0.5">
+              <li>Total apps: <b>${s.totals.totalApps || 0}</b></li>
+              <li>Approved: <b>${s.totals.approved || 0}</b></li>
+              <li>Funded: <b>${s.totals.funded || 0}</b></li>
+              <li>Total Funded: <b>${formatMoney(s.kpis.totalFunded || 0)}</b></li>
+              <li>Dealers: <b>${s.dealerRows?.length || 0}</b>, States: <b>${s.stateRows?.length || 0}</b></li>
+            </ul>
+          </div>
+        `;
+      }
+      
+      // Enable save buttons
+      ['#btnSaveMonth','#btnExportRawAll','#btnExportFunded','#btnDeleteMonth'].forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) el.disabled = false;
+      });
+      
+      // Auto-save to database
+      console.log('[Review] Auto-saving to database...');
+      try {
+        initSupabase();
+        clearSaveStatus();
+        setSaveStatus(`Saving ${s.year}-${String(s.month).padStart(2,'0')}...`);
+        
+        // Save to local storage
+        const snaps = getSnaps();
+        const id = s.id;
+        const idx = snaps.findIndex(snap => snap.id === id);
+        if (idx >= 0) snaps[idx] = s;
+        else snaps.push(s);
+        snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+        setSnaps(snaps);
+        
+        // Save to Supabase
+        if (window.sb && Array.isArray(s.dealerRows)) {
+          const ok = await saveMonthlySnapshotSB(s);
+          if (ok) {
+            setSaveStatus('✅ Saved to database!');
+            try { buildSidebar(); } catch {}
+            try { await refreshMonthlyGrid(); } catch {}
+            try { switchTab('Monthly'); } catch {}
+            await rebuildYearlyAggregatesSB(s.year);
+          } else {
+            setSaveStatus('❌ Save failed');
+          }
+        }
+      } catch (err) {
+        console.error('[Auto-save error]', err);
+        setSaveStatus('Error: ' + err.message);
+      }
+    });
+  }
+  
+  // Attach Cancel button listener
+  const cancelBtn = document.getElementById('btnCancelReview');
+  if (cancelBtn) {
+    const newCancelBtn = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+    
+    document.getElementById('btnCancelReview').addEventListener('click', () => {
+      document.getElementById('uploadReviewModal')?.classList.add('hidden');
+      window.lastBuiltSnapshot = null;
+    });
+  }
+  
+  // Show the modal  
+  document.getElementById('uploadReviewModal')?.classList.remove('hidden');
+  
+  // Set flag to prevent old modal code from running
+  window._validationModalShown = true;
+  
+  // STOP HERE - user will proceed after review
   return;
   
 } catch (validationError) {
@@ -2596,6 +2741,13 @@ try {
   }
 // ===== Pre-merge funded file review =====
 try {
+  // Skip old modal if new validation modal already shown
+  if (window._validationModalShown) {
+    console.log('[DEBUG] Skipping old modal - validation modal already shown');
+    delete window._validationModalShown;
+    return;
+  }
+  
   // If there's no funded sheet, skip preflight
   if ((fundedParsed?.rows || []).length) {
     const snap = lastBuiltSnapshot;
@@ -2761,6 +2913,50 @@ document.getElementById('btnApplyReview')?.addEventListener('click', async () =>
     });
     
     console.log('[DEBUG] Results shown, buttons enabled');
+    
+    // *** AUTO-SAVE TO DATABASE ***
+    console.log('[DEBUG] Auto-saving to database...');
+    (async () => {
+      try {
+        initSupabase();
+        clearSaveStatus();
+        setSaveStatus(`Saving ${s.year}-${String(s.month).padStart(2,'0')} with ${s.dealerRows?.length || 0} dealer rows...`);
+        
+        // Save to local storage
+        const snaps = getSnaps();
+        const id = s.id;
+        const idx = snaps.findIndex(snap => snap.id === id);
+        if (idx >= 0) {
+          snaps[idx] = s;
+        } else {
+          snaps.push(s);
+        }
+        snaps.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+        setSnaps(snaps);
+        
+        // Save to Supabase
+        if (window.sb && Array.isArray(s.dealerRows)) {
+          const ok = await saveMonthlySnapshotSB(s);
+          if (ok) {
+            setSaveStatus('Save to Supabase: OK');
+            try { buildSidebar(); } catch {}
+            try { await refreshMonthlyGrid(); } catch {}
+            try { switchTab('Monthly'); } catch {}
+            const y = s.year;
+            await rebuildYearlyAggregatesSB(y);
+            setSaveStatus('Save complete! Yearly data updated.');
+          } else {
+            setSaveStatus('Save to Supabase: FAILED');
+          }
+        } else {
+          setSaveStatus('Saved to local storage.');
+          try { buildSidebar(); } catch {}
+        }
+      } catch (err) {
+        console.error('[Auto-save error]', err);
+        setSaveStatus('Auto-save error: ' + err.message);
+      }
+    })();
   }
 });
 
