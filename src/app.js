@@ -2168,19 +2168,14 @@ if (best.cand && best.sim >= HIGH && (firstWordMatch || best.sim >= 0.85)) {
     }
   });
 
-  // Warn the user before merging anything
-  const msg = [
-    `Funded rows: ${fundedParsed.rows.length}`,
-    `  Exact matches: ${accepted.filter(x=>x.match==='exact').length}`,
-    `  High-confidence: ${accepted.filter(x=>x.match==='high').length}`,
-    `  Needs review: ${needsReview.length}`,
-    `  Unmatched: ${unmatched.length}`,
-    ``,
-    `Proceed to merge only Exact + High-confidence matches?`,
-  ].join('\n');
-
-  const proceed = window.confirm(msg);
-  if (!proceed) return { merged: 0, exact:0, high:0, review:needsReview.length, unmatched:unmatched.length };
+  // Log merge statistics (removed confirmation dialog - this is just preliminary analysis)
+  console.log('[Merge Statistics]', {
+    total: fundedParsed.rows.length,
+    exact: accepted.filter(x=>x.match==='exact').length,
+    highConfidence: accepted.filter(x=>x.match==='high').length,
+    needsReview: needsReview.length,
+    unmatched: unmatched.length
+  });
 
   // Merge accepted rows into snapshot
   snap.fundedRawRows = (snap.fundedRawRows || []).concat(
