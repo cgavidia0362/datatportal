@@ -645,6 +645,7 @@ setSaveStatus?.(`Preparing to save ${y}-${String(m).padStart(2,'0')}...`);
         dealer: (r.dealer || '').trim(),
         state:  (r.state  || '').trim(),
         fi:     (r.fi     || '').trim(),
+        dealer_id: r.dealer_id || null,  // PHASE 1: Include dealer_id
         total_apps: total,
         approved,
         counter,
