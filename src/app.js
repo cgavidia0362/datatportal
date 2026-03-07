@@ -1087,21 +1087,13 @@ function _looksLikeBranchOrNumbered(name) {
 // Normalize dealer names for matching (strip punctuation, company suffixes, collapse whitespace)
 function normalizeDealerName(s) {
   if (!s) return '';
-  let t = String(s).toLowerCase();  // ← CHANGED: toLowerCase instead of toUpperCase
-  console.log('[NORM] Step 1 - lowercase:', t); // ← ADD THIS LINE
-  
-  // FORCE remove ALL punctuation first
-  t = t.replace(/[^a-z0-9\s]/g, '');  // ← CHANGED: a-z instead of A-Z
-  console.log('[NORM] Step 2 - after punctuation removal:', t); // ← ADD THIS LINE
-  
-  // Then remove company suffixes
-  t = t.replace(/\b(llc|inc|co|company|corp|corporation|ltd|the|auto|group)\b/g, '');  // ← CHANGED: lowercase patterns
-  console.log('[NORM] Step 3 - after suffix removal:', t); // ← ADD THIS LINE
-  
+  let t = String(s).toLowerCase();
+  // Remove all punctuation
+  t = t.replace(/[^a-z0-9\s]/g, '');
+  // Remove common company suffixes
+  t = t.replace(/\b(llc|inc|co|company|corp|corporation|ltd|the|auto|group)\b/g, '');
   // Collapse whitespace
   t = t.replace(/\s+/g, ' ').trim();
-  console.log('[NORM] Step 4 - final:', t); // ← ADD THIS LINE
-  
   return t;
 }
 function normalizeState(s) {
@@ -2506,6 +2498,9 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
   }
 
   try {
+    // Ensure Supabase client is ready (same pattern as Apply handler)
+    initSupabase();
+
     // PHASE 1: Fetch master dealers FIRST so we can add dealer_ids while building snapshot
     console.log('[Phase 1] Fetching master dealers with IDs before building snapshot...');
     try {
