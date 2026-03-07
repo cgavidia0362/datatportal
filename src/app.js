@@ -2506,6 +2506,33 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
   }
 
   try {
+    // PHASE 1: Fetch master dealers FIRST so we can add dealer_ids while building snapshot
+    console.log('[Phase 1] Fetching master dealers with IDs before building snapshot...');
+    try {
+      if (window.sb) {
+        const { data: masterDealers, error } = await window.sb
+          .from('master_dealers')
+          .select('dealer_id, dealer_name, state, fi_type, rep_name');
+        
+        if (!error && masterDealers) {
+          window.masterDealersWithIds = masterDealers;
+          window.masterDealerIdMap = new Map();
+          masterDealers.forEach(d => {
+            const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
+            window.masterDealerIdMap.set(key, {
+              dealer_id: d.dealer_id,
+              fi_type: d.fi_type,
+              rep_name: d.rep_name
+            });
+          });
+          console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
+          console.log('[Phase 1] Built dealer ID map with', window.masterDealerIdMap.size, 'entries');
+        }
+      }
+    } catch (err) {
+      console.error('[Phase 1] Error fetching master dealers:', err);
+    }
+    
     const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
 lastBuiltSnapshot = snap;
 // ===== DETECT FUNDED-ONLY DEALERS =====
