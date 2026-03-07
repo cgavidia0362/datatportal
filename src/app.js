@@ -1243,6 +1243,22 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
     ltb: d.total ? d.funded / d.total : 0,                   // LTB = Funded/Total
   }));
 
+  // PHASE 1: Add dealer_id to each dealer row (if available from master list)
+  if (window.masterDealerIdMap) {
+    dealerRows.forEach(dealerRow => {
+      const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
+      const masterData = window.masterDealerIdMap.get(key);
+      if (masterData && masterData.dealer_id) {
+        dealerRow.dealer_id = masterData.dealer_id;
+        // Also store rep_name if available
+        if (masterData.rep_name) {
+          dealerRow.rep_name = masterData.rep_name;
+        }
+        console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
+      }
+    });
+  }
+
   // FI rows array
   const fiRows = [
     { type:'Independent', ...fiTallies.Independent },
@@ -2400,6 +2416,71 @@ function recomputeAggregatesFromDealers(snap) {
 }
 
 const mergeFundedData = matchAndMergeFundedIntoSnapshot;
+
+// ===== PHASE 1: Validate snapshot and fetch dealer IDs =====
+async function validateSnapshot(snapshot) {
+  const validationIssues = {
+    mismatches: [],
+    newDealers: []
+  };
+  
+  // Fetch master dealers with their IDs
+  try {
+    if (!window.sb) {
+      console.warn('[Validation] Supabase not initialized');
+      return validationIssues;
+    }
+    
+    const { data: masterDealers, error } = await window.sb
+      .from('master_dealers')
+      .select('dealer_id, dealer_name, state, fi_type, rep_name');
+    
+    if (error) {
+      console.error('[Validation] Error fetching master dealers:', error);
+      return validationIssues;
+    }
+    
+    // Store master dealers globally for later use
+    window.masterDealersWithIds = masterDealers || [];
+    console.log('[Validation] Loaded', masterDealers?.length || 0, 'master dealers with IDs');
+    
+    // Build a map for fast lookup: "dealer_name|state" -> dealer_id
+    window.masterDealerIdMap = new Map();
+    (masterDealers || []).forEach(d => {
+      const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
+      window.masterDealerIdMap.set(key, {
+        dealer_id: d.dealer_id,
+        fi_type: d.fi_type,
+        rep_name: d.rep_name
+      });
+    });
+    
+    console.log('[Validation] Built dealer ID map with', window.masterDealerIdMap.size, 'entries');
+    
+    // Check snapshot dealers against master list
+    (snapshot.dealerRows || []).forEach(dealerRow => {
+      const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
+      
+      // Check if dealer exists in master list
+      if (!window.masterDealerIdMap.has(key)) {
+        validationIssues.newDealers.push({
+          dealer: dealerRow.dealer,
+          state: dealerRow.state,
+          fi_type: dealerRow.fi || 'Independent'
+        });
+      }
+    });
+    
+    console.log('[Validation] Found', validationIssues.newDealers.length, 'new dealers not in master list');
+    
+    return validationIssues;
+    
+  } catch (err) {
+    console.error('[Validation] Error:', err);
+    return validationIssues;
+  }
+}
+// ===== END PHASE 1 =====
 
 $('#btnAnalyze')?.addEventListener('click', async () => {
   const y = num($('#inpYear')?.value);
