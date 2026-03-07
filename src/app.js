@@ -1244,8 +1244,8 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
       if (masterData && masterData.dealer_id) {
         dealerRow.dealer_id = masterData.dealer_id;
         // Also store rep_name if available
-        if (masterData.rep_name) {
-          dealerRow.rep_name = masterData.rep_name;
+        if (masterData.rep_name || masterData.rep) {
+          dealerRow.rep_name = masterData.rep_name || masterData.rep;
         }
         console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
       }
@@ -2426,7 +2426,7 @@ async function validateSnapshot(snapshot) {
     
     const { data: masterDealers, error } = await window.sb
       .from('master_dealers')
-      .select('dealer_id, dealer_name, state, fi_type, rep_name');
+      .select('dealer_id, dealer_name, state, fi, rep');
     
     if (error) {
       console.error('[Validation] Error fetching master dealers:', error);
@@ -2443,8 +2443,8 @@ async function validateSnapshot(snapshot) {
       const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
       window.masterDealerIdMap.set(key, {
         dealer_id: d.dealer_id,
-        fi_type: d.fi_type,
-        rep_name: d.rep_name
+        fi_type: d.fi,
+        rep_name: d.rep
       });
     });
     
@@ -2507,7 +2507,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
       if (window.sb) {
         const { data: masterDealers, error } = await window.sb
           .from('master_dealers')
-          .select('dealer_id, dealer_name, state, fi_type, rep_name');
+          .select('dealer_id, dealer_name, state, fi, rep');
         
         if (!error && masterDealers) {
           window.masterDealersWithIds = masterDealers;
@@ -2516,8 +2516,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, {
               dealer_id: d.dealer_id,
-              fi_type: d.fi_type,
-              rep_name: d.rep_name
+              fi_type: d.fi,
+              rep_name: d.rep
             });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
