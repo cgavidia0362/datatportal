@@ -1244,8 +1244,8 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
       if (masterData && masterData.dealer_id) {
         dealerRow.dealer_id = masterData.dealer_id;
         // Also store rep_name if available
-        if (masterData.rep_name) {
-          dealerRow.rep_name = masterData.rep_name;
+        if (masterData.rep) {
+          dealerRow.rep_name = masterData.rep;
         }
         console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
       }
@@ -2426,7 +2426,7 @@ async function validateSnapshot(snapshot) {
     
     const { data: masterDealers, error } = await window.sb
       .from('master_dealers')
-      .select('dealer_id, dealer_name, state, fi_type, rep_name');
+      .select('dealer_id, dealer_name, state, fi, rep');
     
     if (error) {
       console.error('[Validation] Error fetching master dealers:', error);
@@ -2443,8 +2443,8 @@ async function validateSnapshot(snapshot) {
       const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
       window.masterDealerIdMap.set(key, {
         dealer_id: d.dealer_id,
-        fi_type: d.fi_type,
-        rep_name: d.rep_name
+        fi_type: d.fi,
+        rep_name: d.rep
       });
     });
     
@@ -2507,7 +2507,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
       if (window.sb) {
         const { data: masterDealers, error } = await window.sb
           .from('master_dealers')
-          .select('dealer_id, dealer_name, state, fi_type, rep_name');
+          .select('dealer_id, dealer_name, state, fi, rep');
         
         if (!error && masterDealers) {
           window.masterDealersWithIds = masterDealers;
@@ -2516,8 +2516,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, {
               dealer_id: d.dealer_id,
-              fi_type: d.fi_type,
-              rep_name: d.rep_name
+              fi_type: d.fi,
+              rep_name: d.rep
             });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
@@ -2676,39 +2676,13 @@ try {
     
     // New Dealers
     if (validationIssues.newDealers.length > 0) {
-      // Store new dealers globally so Apply handler can access them
-      window._pendingNewDealers = validationIssues.newDealers.map((d, i) => ({ ...d, idx: i }));
-      
       html += '<div class="border-l-4 border-blue-500 pl-3 mb-3">';
-      html += '<div class="font-semibold text-blue-700 mb-1">New Dealers</div>';
-      html += '<div class="text-xs text-gray-500 mb-2">Choose to add each dealer to the master list, link to an existing dealer, or skip.</div>';
-      html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1 text-left">Dealer Name</th><th class="p-1">State</th><th class="p-1">Action</th></tr></thead><tbody>';
-      validationIssues.newDealers.forEach((d, i) => {
-        html += `<tr class="border-t" id="nd-row-${i}">
-          <td class="p-1">${d.dealer}</td>
-          <td class="p-1">${d.state}</td>
-          <td class="p-1">
-            <select class="text-xs border rounded px-1 py-0.5 nd-action-select" data-idx="${i}"
-              onchange="window._onNewDealerActionChange(${i}, this.value)">
-              <option value="add">Add to Master</option>
-              <option value="link">Link to Existing</option>
-              <option value="skip">Skip</option>
-            </select>
-            <div id="nd-link-${i}" style="display:none" class="mt-1">
-              <input type="text" placeholder="Search master dealers..."
-                class="text-xs border rounded px-1 py-0.5 w-full nd-link-search"
-                data-idx="${i}"
-                oninput="window._onNewDealerSearch(${i}, this.value)" />
-              <div id="nd-results-${i}" class="border rounded bg-white max-h-24 overflow-y-auto text-xs mt-0.5"></div>
-              <input type="hidden" id="nd-selected-id-${i}" value="" />
-              <div id="nd-selected-label-${i}" class="text-green-700 font-medium mt-0.5 text-xs"></div>
-            </div>
-          </td>
-        </tr>`;
+      html += '<div class="font-semibold text-blue-700 mb-1">New Dealers (will be added to master list)</div>';
+      html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">State</th><th class="p-1">Action</th></tr></thead><tbody>';
+      validationIssues.newDealers.forEach(d => {
+        html += `<tr class="border-t"><td class="p-1">${d.dealer}</td><td class="p-1">${d.state}</td><td class="p-1"><select class="text-xs"><option value="add">Add to Master</option><option value="skip">Skip</option></select></td></tr>`;
       });
       html += '</tbody></table></div>';
-    } else {
-      window._pendingNewDealers = [];
     }
     
     // Mismatched Dealers
@@ -2717,7 +2691,12 @@ try {
       html += '<div class="font-semibold text-yellow-700 mb-1">Mismatched Dealers</div>';
       html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">Issue</th><th class="p-1">Action</th></tr></thead><tbody>';
       validationIssues.mismatches.forEach(d => {
-        html += `<tr class="border-t"><td class="p-1">${d.dealer}</td><td class="p-1">${d.reason}</td><td class="p-1"><select class="text-xs"><option value="fix">Fix</option><option value="skip">Skip</option></select></td></tr>`;
+        const dealerLabel = d.dealer || d.name || '(unknown)';
+        const reasonLabel = d.reason || 
+          (d.csvState !== d.masterState ? `State: CSV=${d.csvState} vs Master=${d.masterState}` : '') ||
+          (d.csvFI !== d.masterFI ? `FI: CSV=${d.csvFI} vs Master=${d.masterFI}` : '') ||
+          'Mismatch';
+        html += `<tr class="border-t"><td class="p-1">${dealerLabel}</td><td class="p-1">${reasonLabel}</td><td class="p-1"><select class="text-xs"><option value="fix">Fix</option><option value="skip">Skip</option></select></td></tr>`;
       });
       html += '</tbody></table></div>';
     }
@@ -2744,54 +2723,6 @@ try {
     
     html += '</div>';
     modalContent.innerHTML = html;
-
-    // ---- Link-to-existing helpers ----
-    window._onNewDealerActionChange = function(idx, value) {
-      const linkDiv = document.getElementById('nd-link-' + idx);
-      if (linkDiv) linkDiv.style.display = (value === 'link') ? 'block' : 'none';
-      // Clear any previous selection if switching away
-      if (value !== 'link') {
-        const hiddenInput = document.getElementById('nd-selected-id-' + idx);
-        const label = document.getElementById('nd-selected-label-' + idx);
-        if (hiddenInput) hiddenInput.value = '';
-        if (label) label.textContent = '';
-      }
-    };
-
-    window._onNewDealerSearch = function(idx, query) {
-      const resultsDiv = document.getElementById('nd-results-' + idx);
-      if (!resultsDiv) return;
-      const q = query.toLowerCase().trim();
-      if (!q) { resultsDiv.innerHTML = ''; return; }
-
-      const dealers = window.currentMasterDealers || [];
-      const matches = dealers
-        .filter(d => d.dealer_name.toLowerCase().includes(q))
-        .slice(0, 8);
-
-      if (!matches.length) {
-        resultsDiv.innerHTML = '<div class="px-2 py-1 text-gray-400">No matches</div>';
-        return;
-      }
-
-      resultsDiv.innerHTML = matches.map(d =>
-        `<div class="px-2 py-1 hover:bg-blue-50 cursor-pointer border-b last:border-0"
-          onclick="window._selectLinkedDealer(${idx}, '${d.dealer_id}', '${d.dealer_name.replace(/'/g,"\'")} (${d.state})')">
-          ${d.dealer_name} <span class="text-gray-400">${d.state}</span>
-        </div>`
-      ).join('');
-    };
-
-    window._selectLinkedDealer = function(idx, dealerId, label) {
-      const hiddenInput = document.getElementById('nd-selected-id-' + idx);
-      const labelDiv = document.getElementById('nd-selected-label-' + idx);
-      const resultsDiv = document.getElementById('nd-results-' + idx);
-      const searchInput = document.querySelector('.nd-link-search[data-idx="' + idx + '"]');
-      if (hiddenInput) hiddenInput.value = dealerId;
-      if (labelDiv) labelDiv.textContent = '✓ Linked to: ' + label;
-      if (resultsDiv) resultsDiv.innerHTML = '';
-      if (searchInput) searchInput.value = '';
-    };
   }
   
   // Attach Apply button listener
@@ -2809,43 +2740,6 @@ try {
       if (!s) {
         alert('Error: Snapshot not found. Please try Analyze again.');
         return;
-      }
-
-      // ---- Process new dealer selections (add / link / skip) ----
-      const pendingNewDealers = window._pendingNewDealers || [];
-      if (pendingNewDealers.length > 0) {
-        for (const d of pendingNewDealers) {
-          const actionEl = document.querySelector(`.nd-action-select[data-idx="${d.idx}"]`);
-          const action = actionEl ? actionEl.value : 'add';
-
-          // Find the matching dealer row in the snapshot
-          const dealerRow = (s.dealerRows || []).find(r =>
-            r.dealer.trim().toLowerCase() === d.dealer.trim().toLowerCase() &&
-            r.state.trim().toUpperCase() === d.state.trim().toUpperCase()
-          );
-
-          if (action === 'add') {
-            // Create new dealer in master_dealers and assign its UUID
-            console.log('[Review] Adding new dealer to master:', d.dealer, d.state);
-            const result = await addMasterDealer(d.dealer, d.state, d.fi_type || 'Independent', '');
-            if (result.success && result.data?.dealer_id && dealerRow) {
-              dealerRow.dealer_id = result.data.dealer_id;
-              console.log('[Review] Assigned new dealer_id:', result.data.dealer_id, 'to', d.dealer);
-            }
-          } else if (action === 'link') {
-            // Use the selected existing dealer's UUID
-            const selectedId = document.getElementById('nd-selected-id-' + d.idx)?.value;
-            if (selectedId && dealerRow) {
-              dealerRow.dealer_id = selectedId;
-              console.log('[Review] Linked', d.dealer, 'to existing dealer_id:', selectedId);
-            } else if (!selectedId) {
-              console.warn('[Review] Link selected but no dealer chosen for:', d.dealer, '— skipping');
-            }
-          } else {
-            // skip — leave dealer_id as null
-            console.log('[Review] Skipping new dealer:', d.dealer);
-          }
-        }
       }
       
       // Hide modal
