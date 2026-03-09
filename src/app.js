@@ -1244,8 +1244,8 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
       if (masterData && masterData.dealer_id) {
         dealerRow.dealer_id = masterData.dealer_id;
         // Also store rep_name if available
-        if (masterData.rep_name || masterData.rep) {
-          dealerRow.rep_name = masterData.rep_name || masterData.rep;
+        if (masterData.rep_name) {
+          dealerRow.rep_name = masterData.rep_name;
         }
         console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
       }
@@ -2111,16 +2111,20 @@ appRows.forEach(r => {
   const HIGH = 0.70;  // Lowered to catch more matches
   const LOW  = 0.60;  // Lowered threshold
 
+  // PHASE 2: Build a dealer_id index from snapshot rows for ID-first matching
+  const byDealerId = new Map(); // dealer_id -> snapshot row
+  appRows.forEach(r => {
+    if (r.dealer_id) byDealerId.set(r.dealer_id, r);
+  });
+  console.log('[Phase 2] Built dealer_id index with', byDealerId.size, 'entries');
+
   fundedParsed.rows.forEach((r) => {
     const dealer = normalizeDealerName(pickFunded(r,'dealer'));
     const state  = normalizeState(pickFunded(r,'state'));
     const amt    = parseNumber(pickFunded(r,'loan'));
     const apr    = parseNumber(pickFunded(r,'apr'));
     let fee      = pickFunded(r,'fee');
-// Debug logging for Cardinal Buick GMC
-if (dealer.includes('cardinal')) {
-  console.log('[CARDINAL DEBUG] Processing funded row:', dealer, state);
-}
+
     if (!dealer || !state || !isFinite(amt)) {
       unmatched.push({ r, reason:'missing fields' });
       return;
@@ -2135,16 +2139,26 @@ if (dealer.includes('cardinal')) {
       else if (isFinite(amt) && amt>0) feePct = asNum/amt;
     }
 
+    // PHASE 2: Try ID-based match first
+    // Look up dealer_id from masterDealerIdMap using funded row's name+state
+    const masterKey = dealer + '|' + state;
+    const masterData = window.masterDealerIdMap?.get(masterKey);
+    if (masterData?.dealer_id) {
+      const idMatch = byDealerId.get(masterData.dealer_id);
+      if (idMatch) {
+        console.log('[Phase 2] ID match:', dealer, '→', idMatch.dealer);
+        accepted.push({ r, dealer: idMatch.dealer, state, amt, apr, feePct, match:'id', row: idMatch });
+        return;
+      }
+    }
+
+    // FALLBACK: Text-based matching (exact then fuzzy)
     const key = dealer + '|' + state;
     const candidates = byState.get(state) || [];
 
     const exact = candidates.find(c => c.key === key);
     if (exact) {
       accepted.push({ r, dealer: exact.row.dealer, state, amt, apr, feePct, match:'exact', row: exact.row });
-     // Debug for Cardinal
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] EXACT MATCH found! Matched to:', exact.row.dealer);
-  } 
       return;
     }
 
@@ -2154,32 +2168,23 @@ if (dealer.includes('cardinal')) {
       if (sim > best.sim) best = { sim, cand: c };
     });
 
-   // Extract first word from each dealer name
-const dealerFirstWord = dealer.split(/\s+/)[0];
-const candFirstWord = best.cand.row.dealer.toLowerCase().split(/\s+/)[0];
-const firstWordMatch = dealerFirstWord === candFirstWord;
+    const dealerFirstWord = dealer.split(/\s+/)[0];
+    const candFirstWord = best.cand?.row.dealer.toLowerCase().split(/\s+/)[0];
+    const firstWordMatch = dealerFirstWord === candFirstWord;
 
-// Only accept high-confidence match if first words match OR similarity is very high (>85%)
-if (best.cand && best.sim >= HIGH && (firstWordMatch || best.sim >= 0.85)) {
+    if (best.cand && best.sim >= HIGH && (firstWordMatch || best.sim >= 0.85)) {
       accepted.push({ r, dealer: best.cand.row.dealer, state, amt, apr, feePct, match:'high', row: best.cand.row });
-    // Debug for Cardinal  
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] HIGH CONFIDENCE MATCH! Matched to:', best.cand.row.dealer, 'Similarity:', best.sim);
-  }  
     } else if (best.cand && best.sim >= LOW) {
       needsReview.push({ r, suggestion: best.cand.row.dealer, sim: best.sim, state, amt });
     } else {
       unmatched.push({ r, reason:'no good candidate' });
-      // Debug for Cardinal
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] NO MATCH FOUND - Added to unmatched array');
-  }
     }
   });
 
   // Log merge statistics (removed confirmation dialog - this is just preliminary analysis)
   console.log('[Merge Statistics]', {
     total: fundedParsed.rows.length,
+    idMatch: accepted.filter(x=>x.match==='id').length,
     exact: accepted.filter(x=>x.match==='exact').length,
     highConfidence: accepted.filter(x=>x.match==='high').length,
     needsReview: needsReview.length,
@@ -2426,7 +2431,7 @@ async function validateSnapshot(snapshot) {
     
     const { data: masterDealers, error } = await window.sb
       .from('master_dealers')
-      .select('dealer_id, dealer_name, state, fi, rep');
+      .select('dealer_id, dealer_name, state, fi_type, rep_name');
     
     if (error) {
       console.error('[Validation] Error fetching master dealers:', error);
@@ -2443,8 +2448,8 @@ async function validateSnapshot(snapshot) {
       const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
       window.masterDealerIdMap.set(key, {
         dealer_id: d.dealer_id,
-        fi_type: d.fi,
-        rep_name: d.rep
+        fi_type: d.fi_type,
+        rep_name: d.rep_name
       });
     });
     
@@ -2507,7 +2512,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
       if (window.sb) {
         const { data: masterDealers, error } = await window.sb
           .from('master_dealers')
-          .select('dealer_id, dealer_name, state, fi, rep');
+          .select('dealer_id, dealer_name, state, fi_type, rep_name');
         
         if (!error && masterDealers) {
           window.masterDealersWithIds = masterDealers;
@@ -2516,8 +2521,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, {
               dealer_id: d.dealer_id,
-              fi_type: d.fi,
-              rep_name: d.rep
+              fi_type: d.fi_type,
+              rep_name: d.rep_name
             });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
