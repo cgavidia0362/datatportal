@@ -1,4 +1,4 @@
-console.log('[VERSION CHECK] app.js loaded at:', new Date().toISOString(), '| VERSION: FIXED-2026-03-05-V2');
+console.log('[VERSION CHECK] app.js loaded at:', new Date().toISOString(), '| VERSION: PHASE4-2026-03-09');
 console.log('[BUILD] src/app.js loaded at', new Date().toISOString());
 Chart.register(ChartDataLabels);
 /* ======================================================================
@@ -1247,7 +1247,6 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
         if (masterData.rep) {
           dealerRow.rep = masterData.rep;
         }
-        console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
       }
     });
   }

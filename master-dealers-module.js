@@ -735,7 +735,51 @@ async function initSettingsTab() {
   document.getElementById('masterDealerSearch')?.addEventListener('input', filterMasterDealers);
   document.getElementById('masterStateFilter')?.addEventListener('change', filterMasterDealers);
   document.getElementById('masterFIFilter')?.addEventListener('change', filterMasterDealers);
+  document.getElementById('masterRepFilter')?.addEventListener('change', filterMasterDealers);
   document.getElementById('masterNoRepFilter')?.addEventListener('change', filterMasterDealers);
+
+  // Rep management
+  document.getElementById('btnAddRep')?.addEventListener('click', async () => {
+    const name = prompt('Enter new rep name:')?.trim();
+    if (!name) return;
+    // Check for duplicate
+    const existing = (window.currentMasterDealers || []).map(d => (d.rep || '').toLowerCase());
+    if (existing.includes(name.toLowerCase())) {
+      alert(`Rep "${name}" already exists.`);
+      return;
+    }
+    window._repList = window._repList || [];
+    if (!window._repList.map(r => r.toLowerCase()).includes(name.toLowerCase())) {
+      window._repList.push(name);
+    }
+    alert(`Rep "${name}" added. Assign dealers to this rep by editing them.`);
+    await renderMasterDealersList();
+  });
+
+  document.getElementById('btnDeleteRep')?.addEventListener('click', async () => {
+    const repFilter = document.getElementById('masterRepFilter');
+    const selected = repFilter?.value;
+    if (!selected) {
+      alert('Select a rep from the Rep filter first, then click Delete Rep.');
+      return;
+    }
+    const count = (window.currentMasterDealers || []).filter(d => d.rep === selected).length;
+    const ok = confirm(`Delete rep "${selected}"? This will clear the rep assignment from ${count} dealer(s). This cannot be undone.`);
+    if (!ok) return;
+
+    try {
+      const sb = window.sb;
+      const { error } = await sb
+        .from('master_dealers')
+        .update({ rep: '' })
+        .eq('rep', selected);
+      if (error) throw error;
+      alert(`Rep "${selected}" removed from ${count} dealer(s).`);
+      await renderMasterDealersList();
+    } catch (err) {
+      alert('Error deleting rep: ' + err.message);
+    }
+  });
   
   // Dealer modal form submit
   document.getElementById('dealerForm')?.addEventListener('submit', async (e) => {
@@ -848,7 +892,7 @@ if (exportBtn && !window.exportButtonAttached) {
 
       const { data: dealers, error } = await sb
         .from('master_dealers')
-        .select('dealer_name, state, fi, rep')
+        .select('dealer_id, dealer_name, state, fi, rep')
         .order('dealer_name', { ascending: true });
 
       if (error) {
@@ -865,18 +909,31 @@ if (exportBtn && !window.exportButtonAttached) {
       }
 
       const exportData = dealers.map(d => ({
+        'Dealer ID': d.dealer_id || '',
         'Dealer Name': d.dealer_name || '',
         'State': d.state || '',
         'FI Type': d.fi || '',
         'Rep': d.rep || ''
       }));
 
+      // Load XLSX if not already available
+      if (typeof XLSX === 'undefined') {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
       const ws = XLSX.utils.json_to_sheet(exportData);
       ws['!cols'] = [
+        { wch: 38 }, // Dealer ID
         { wch: 40 }, // Dealer Name
         { wch: 10 }, // State
         { wch: 15 }, // FI Type
-        { wch: 15 }  // Rep
+        { wch: 20 }  // Rep
       ];
 
       const wb = XLSX.utils.book_new();
@@ -924,6 +981,21 @@ async function renderMasterDealersList() {
       stateFilter.appendChild(opt);
     });
   }
+
+  // Populate rep filter
+  const repFilter = document.getElementById('masterRepFilter');
+  if (repFilter) {
+    const currentRepVal = repFilter.value;
+    repFilter.innerHTML = '<option value="">All Reps</option>';
+    const reps = [...new Set(dealers.map(d => d.rep).filter(r => r && r.trim()))].sort();
+    reps.forEach(rep => {
+      const opt = document.createElement('option');
+      opt.value = rep;
+      opt.textContent = rep;
+      repFilter.appendChild(opt);
+    });
+    repFilter.value = currentRepVal; // restore selection if still valid
+  }
   
   window.currentMasterDealers = dealers;
   filterMasterDealers();
@@ -936,6 +1008,7 @@ function filterMasterDealers() {
   const search = (document.getElementById('masterDealerSearch')?.value || '').toLowerCase();
   const stateFilter = document.getElementById('masterStateFilter')?.value || '';
   const fiFilter = document.getElementById('masterFIFilter')?.value || '';
+  const repFilter = document.getElementById('masterRepFilter')?.value || '';
   const noRepFilter = document.getElementById('masterNoRepFilter')?.checked || false;
   
   let filtered = window.currentMasterDealers;
@@ -950,6 +1023,10 @@ function filterMasterDealers() {
   
   if (fiFilter) {
     filtered = filtered.filter(d => d.fi === fiFilter);
+  }
+
+  if (repFilter) {
+    filtered = filtered.filter(d => d.rep === repFilter);
   }
   
   if (noRepFilter) {

@@ -1197,7 +1197,7 @@ th, td {
               </p>
 
               <!-- Search and Filter -->
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <input type="text" id="masterDealerSearch" placeholder="Search dealers..." 
                        class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 <select id="masterStateFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
@@ -1208,14 +1208,25 @@ th, td {
                   <option value="Franchise">Franchise</option>
                   <option value="Independent">Independent</option>
                 </select>
+                <select id="masterRepFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="">All Reps</option>
+                </select>
               </div>
-              
-              <!-- No Rep Filter -->
-              <div class="mb-4">
+
+              <!-- Rep Management + No Rep Filter row -->
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <label class="inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="masterNoRepFilter" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                  <span class="ml-2 text-sm font-medium text-gray-700">Show only dealers without rep assignments</span>
+                  <span class="ml-2 text-sm font-medium text-gray-700">Show only dealers without rep</span>
                 </label>
+                <div class="flex gap-2">
+                  <button id="btnAddRep" class="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 text-sm font-medium transition">
+                    + Add Rep
+                  </button>
+                  <button id="btnDeleteRep" class="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 text-sm font-medium transition">
+                    🗑 Delete Rep
+                  </button>
+                </div>
               </div>
 
               <!-- Dealers Table -->
