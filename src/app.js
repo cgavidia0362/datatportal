@@ -1243,9 +1243,9 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
       const masterData = window.masterDealerIdMap.get(key);
       if (masterData && masterData.dealer_id) {
         dealerRow.dealer_id = masterData.dealer_id;
-        // Also store rep_name if available
-        if (masterData.rep_name) {
-          dealerRow.rep_name = masterData.rep_name;
+        // Also store rep if available
+        if (masterData.rep) {
+          dealerRow.rep = masterData.rep;
         }
         console.log('[Phase 1] Added dealer_id for', dealerRow.dealer, ':', dealerRow.dealer_id);
       }
@@ -2081,35 +2081,20 @@ function pickFunded(r, key) {
 function matchAndMergeFundedIntoSnapshot(snap) {
   if (!fundedParsed.rows?.length) return { merged: 0, exact:0, high:0, review:0, unmatched:0 };
 
-// Build an index of dealers from the snapshot
-const appRows = snap.dealerRows || [];
-const byState = new Map(); // state -> [{dealer, key, row}]
-const dealerCorrections = snap._dealerCorrections || new Map();
+  // PHASE 4: ID-first matching — no more fuzzy/dice similarity
+  // Build byDealerId index from snapshot rows that have a dealer_id
+  const byDealerId = new Map(); // dealer_id -> snap dealer row
+  const byNameState = new Map(); // "normalizedName|STATE" -> snap dealer row (fallback for new dealers without IDs)
 
-appRows.forEach(r => {
-  const st = normalizeState(r.state);
-  const nm = normalizeDealerName(r.dealer);
-  const key = `${nm}|${st}`;
-  if (!byState.has(st)) byState.set(st, []);
-  byState.get(st).push({ dealer:r.dealer, key, row:r });
-  
-  // Also index by corrected values if this dealer was corrected
-  const correction = dealerCorrections.get(nm);
-  if (correction) {
-    const correctedState = normalizeState(correction.state);
-    const correctedKey = `${nm}|${correctedState}`;
-    if (!byState.has(correctedState)) byState.set(correctedState, []);
-    byState.get(correctedState).push({ dealer:r.dealer, key: correctedKey, row:r, isCorrected: true });
-    console.log('[Merge] Added correction mapping:', correctedKey, '→', r.dealer);
-  }
-});
+  (snap.dealerRows || []).forEach(r => {
+    if (r.dealer_id) byDealerId.set(r.dealer_id, r);
+    const key = normalizeDealerName(r.dealer) + '|' + normalizeState(r.state);
+    byNameState.set(key, r);
+  });
 
-  const accepted = [];      // funded rows we will merge
-  const needsReview = [];   // low-confidence candidates
-  const unmatched = [];     // no candidates
-
-  const HIGH = 0.70;  // Lowered to catch more matches
-  const LOW  = 0.60;  // Lowered threshold
+  const accepted = [];
+  const needsReview = []; // kept for return shape compatibility, no longer populated
+  const unmatched = [];
 
   fundedParsed.rows.forEach((r) => {
     const dealer = normalizeDealerName(pickFunded(r,'dealer'));
@@ -2117,10 +2102,7 @@ appRows.forEach(r => {
     const amt    = parseNumber(pickFunded(r,'loan'));
     const apr    = parseNumber(pickFunded(r,'apr'));
     let fee      = pickFunded(r,'fee');
-// Debug logging for Cardinal Buick GMC
-if (dealer.includes('cardinal')) {
-  console.log('[CARDINAL DEBUG] Processing funded row:', dealer, state);
-}
+
     if (!dealer || !state || !isFinite(amt)) {
       unmatched.push({ r, reason:'missing fields' });
       return;
@@ -2135,54 +2117,33 @@ if (dealer.includes('cardinal')) {
       else if (isFinite(amt) && amt>0) feePct = asNum/amt;
     }
 
-    const key = dealer + '|' + state;
-    const candidates = byState.get(state) || [];
+    const mapKey = dealer + '|' + state;
 
-    const exact = candidates.find(c => c.key === key);
-    if (exact) {
-      accepted.push({ r, dealer: exact.row.dealer, state, amt, apr, feePct, match:'exact', row: exact.row });
-     // Debug for Cardinal
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] EXACT MATCH found! Matched to:', exact.row.dealer);
-  } 
+    // 1) ID-based match: look up dealer_id from master map, then find snap row
+    const masterData = window.masterDealerIdMap?.get(mapKey);
+    if (masterData?.dealer_id) {
+      const snapRow = byDealerId.get(masterData.dealer_id);
+      if (snapRow) {
+        accepted.push({ r, dealer: snapRow.dealer, state, amt, apr, feePct, match:'id', row: snapRow });
+        return;
+      }
+    }
+
+    // 2) Exact text fallback: for new dealers not yet in master list
+    const textRow = byNameState.get(mapKey);
+    if (textRow) {
+      accepted.push({ r, dealer: textRow.dealer, state, amt, apr, feePct, match:'exact', row: textRow });
       return;
     }
 
-    let best = { sim: 0, cand: null };
-    candidates.forEach(c => {
-      const sim = diceSimilarity(dealer, c.dealer);
-      if (sim > best.sim) best = { sim, cand: c };
-    });
-
-   // Extract first word from each dealer name
-const dealerFirstWord = dealer.split(/\s+/)[0];
-const candFirstWord = best.cand.row.dealer.toLowerCase().split(/\s+/)[0];
-const firstWordMatch = dealerFirstWord === candFirstWord;
-
-// Only accept high-confidence match if first words match OR similarity is very high (>85%)
-if (best.cand && best.sim >= HIGH && (firstWordMatch || best.sim >= 0.85)) {
-      accepted.push({ r, dealer: best.cand.row.dealer, state, amt, apr, feePct, match:'high', row: best.cand.row });
-    // Debug for Cardinal  
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] HIGH CONFIDENCE MATCH! Matched to:', best.cand.row.dealer, 'Similarity:', best.sim);
-  }  
-    } else if (best.cand && best.sim >= LOW) {
-      needsReview.push({ r, suggestion: best.cand.row.dealer, sim: best.sim, state, amt });
-    } else {
-      unmatched.push({ r, reason:'no good candidate' });
-      // Debug for Cardinal
-  if (dealer.includes('cardinal')) {
-    console.log('[CARDINAL DEBUG] NO MATCH FOUND - Added to unmatched array');
-  }
-    }
+    unmatched.push({ r, reason:'no match' });
   });
 
-  // Log merge statistics (removed confirmation dialog - this is just preliminary analysis)
-  console.log('[Merge Statistics]', {
+  // Log merge statistics
+  console.log('[Merge Statistics - Phase 4]', {
     total: fundedParsed.rows.length,
-    exact: accepted.filter(x=>x.match==='exact').length,
-    highConfidence: accepted.filter(x=>x.match==='high').length,
-    needsReview: needsReview.length,
+    idMatch: accepted.filter(x=>x.match==='id').length,
+    textFallback: accepted.filter(x=>x.match==='exact').length,
     unmatched: unmatched.length
   });
 
@@ -2443,8 +2404,8 @@ async function validateSnapshot(snapshot) {
       const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
       window.masterDealerIdMap.set(key, {
         dealer_id: d.dealer_id,
-        fi_type: d.fi_type,
-        rep_name: d.rep_name
+        fi: d.fi,
+        rep: d.rep
       });
     });
     
@@ -2516,8 +2477,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, {
               dealer_id: d.dealer_id,
-              fi_type: d.fi_type,
-              rep_name: d.rep_name
+              fi: d.fi,
+              rep: d.rep
             });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
@@ -2847,7 +2808,7 @@ try {
           );
           if (action === 'add') {
             console.log('[Review] Adding new dealer to master:', d.dealer, d.state);
-            const result = await addMasterDealer(d.dealer, d.state, d.fi_type || 'Independent', '');
+            const result = await addMasterDealer(d.dealer, d.state, d.fi || 'Independent', '');
             if (result.success && result.data?.dealer_id && dealerRow) {
               dealerRow.dealer_id = result.data.dealer_id;
               console.log('[Review] Assigned new dealer_id:', result.data.dealer_id, 'to', d.dealer);
@@ -3309,6 +3270,17 @@ $('#btnSaveMonth')?.addEventListener('click', async () => {
     // --- show on-screen status (no DevTools needed)
     clearSaveStatus();
     setSaveStatus(`Saving ${lastBuiltSnapshot.year}-${String(lastBuiltSnapshot.month).padStart(2,'0')} with ${lastBuiltSnapshot.dealerRows?.length || 0} dealer rows...`);
+
+    // PHASE 4: Warn if any dealer rows are missing dealer_id
+    const missingIdRows = (lastBuiltSnapshot.dealerRows || []).filter(r => !r.dealer_id);
+    if (missingIdRows.length > 0) {
+      const names = missingIdRows.slice(0,5).map(r => `${r.dealer} (${r.state})`).join('\n  ');
+      const more = missingIdRows.length > 5 ? `\n  ...and ${missingIdRows.length - 5} more` : '';
+      const proceed = confirm(
+        `⚠️ ${missingIdRows.length} dealer(s) have no master list ID and won't appear in Rep Performance:\n\n  ${names}${more}\n\nSave anyway?`
+      );
+      if (!proceed) { setSaveStatus('Save cancelled.'); return; }
+    }
 
     // 1) Read current list (same key used everywhere else)
     const snaps = getSnaps();
