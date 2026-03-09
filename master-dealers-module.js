@@ -69,6 +69,10 @@ async function updateMasterDealer(id, name, state, fi, rep) {
   if (!window.sb) return { success: false, error: 'No database connection' };
   
   try {
+    // Get the current dealer record so we have the dealer_id for cascade
+    const currentDealer = window.currentMasterDealers?.find(d => d.id == id);
+
+    // Step 1: Update master_dealers
     const { data, error } = await window.sb
       .from('master_dealers')
       .update({
@@ -84,6 +88,26 @@ async function updateMasterDealer(id, name, state, fi, rep) {
       console.error('[master] update error:', error);
       return { success: false, error: error.message };
     }
+
+    // Step 2: Cascade name change to monthly_snapshots by dealer_id
+    if (currentDealer?.dealer_id) {
+      const newName = name.trim();
+      const oldName = currentDealer.dealer_name;
+
+      if (newName !== oldName) {
+        const { error: cascadeErr, count } = await window.sb
+          .from('monthly_snapshots')
+          .update({ dealer: newName })
+          .eq('dealer_id', currentDealer.dealer_id);
+
+        if (cascadeErr) {
+          console.warn('[master] cascade rename warning:', cascadeErr.message);
+        } else {
+          console.log('[master] Cascaded rename to monthly_snapshots for dealer_id:', currentDealer.dealer_id);
+        }
+      }
+    }
+
     return { success: true, data: data[0] };
   } catch (e) {
     console.error('[master] update exception:', e);
@@ -1017,6 +1041,19 @@ async function saveDealerForm() {
   
   let result;
   if (form.dataset.dealerId) {
+    // Warn user if they're renaming a dealer (cascade will update all historical data)
+    const currentDealer = window.currentMasterDealers?.find(d => d.id == form.dataset.dealerId);
+    const isRename = currentDealer && currentDealer.dealer_name.trim() !== name.trim();
+    
+    if (isRename) {
+      const confirmed = confirm(
+        `You are renaming "${currentDealer.dealer_name}" to "${name}".\n\n` +
+        `This will update the dealer name across ALL historical monthly data.\n\n` +
+        `Continue?`
+      );
+      if (!confirmed) return;
+    }
+    
     result = await updateMasterDealer(form.dataset.dealerId, name, state, fi, rep);
   } else {
     result = await addMasterDealer(name, state, fi, rep);
@@ -1025,6 +1062,9 @@ async function saveDealerForm() {
   if (result.success) {
     hideDealerModal();
     await renderMasterDealersList();
+    if (result.data) {
+      console.log('[master] Saved dealer:', result.data.dealer_name);
+    }
   } else {
     alert('Error: ' + result.error);
   }
