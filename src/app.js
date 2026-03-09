@@ -2432,7 +2432,7 @@ async function validateSnapshot(snapshot) {
     
     const { data: masterDealers, error } = await window.sb
       .from('master_dealers')
-      .select('dealer_id, dealer_name, state, fi_type, rep_name');
+      .select('dealer_id, dealer_name, state, fi, rep');
     
     if (error) {
       console.error('[Validation] Error fetching master dealers:', error);
@@ -2513,7 +2513,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
       if (window.sb) {
         const { data: masterDealers, error } = await window.sb
           .from('master_dealers')
-          .select('dealer_id, dealer_name, state, fi_type, rep_name');
+          .select('dealer_id, dealer_name, state, fi, rep');
         
         if (!error && masterDealers) {
           window.masterDealersWithIds = masterDealers;
