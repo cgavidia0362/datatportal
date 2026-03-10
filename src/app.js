@@ -5896,6 +5896,10 @@ function updateKpiTile(label, value) {
   let bdCharts = {};           // chart.js instances keyed by canvas id
   let bdInitDone = false;      // guard: only wire events once
 
+  // ── REPS DAILY STATE ───────────────────────────────────────────────────────
+  let bdDealerApps = new Map(); // "dealer|STATE" → app count (from apps CSV)
+  let rdFundedRows = [];        // [{dealer, state, amount, date}] from funded CSV
+
   // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
   window.initBuyingDaily = function () {
     if (bdInitDone) { render(); return; }
@@ -5947,6 +5951,14 @@ function updateKpiTile(label, value) {
       csvInput.addEventListener('change', function(e) {
         if (e.target.files[0]) parseCSV(e.target.files[0]);
       });
+
+      // funded CSV input for Reps Daily
+      var rdFundedInput = document.getElementById('rdFundedCsvInput');
+      if (rdFundedInput) {
+        rdFundedInput.addEventListener('change', function(e) {
+          if (e.target.files[0]) parseRdFundedCSV(e.target.files[0]);
+        });
+      }
 
       // drag & drop on upload strip
       strip.addEventListener('dragover',  function(e) { e.preventDefault(); strip.classList.add('dragover'); });
@@ -6056,6 +6068,16 @@ function updateKpiTile(label, value) {
 
         bdData = newData;
         bdStates = Array.from(stateSet).sort();
+
+        // Also build dealer-level app counts for Reps Daily
+        bdDealerApps = new Map();
+        results.data.forEach(row => {
+          const dealer = (row['Dealer'] || '').trim();
+          const state  = (row['State']  || '').trim().toUpperCase();
+          if (!dealer || !state) return;
+          const key = normalizeDealerName(dealer) + '|' + state;
+          bdDealerApps.set(key, (bdDealerApps.get(key) || 0) + 1);
+        });
 
         // Populate state dropdown
         const stateFilter = document.getElementById('bdStateFilter');
@@ -6381,10 +6403,255 @@ function updateKpiTile(label, value) {
 
   // ── VIEW SWITCHER ──────────────────────────────────────────────────────────
   function showPanel(view) {
-    ['daily','weekly','monthly'].forEach(function(v) {
+    ['daily','weekly','monthly','reps'].forEach(function(v) {
       const el = document.getElementById('bd-panel-' + v);
       if (el) el.classList.toggle('active', v === view);
     });
+    if (view === 'reps') renderRepsDaily();
+  }
+
+  // ── REPS DAILY: FUNDED CSV PARSER ─────────────────────────────────────────
+  function parseRdFundedCSV(file) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete(results) {
+        rdFundedRows = [];
+        results.data.forEach(row => {
+          // Support "Input Date" or "Date"
+          const dateRaw = (row['Input Date'] || row['Date'] || '').trim();
+          const dealer  = (row['Dealer'] || '').trim();
+          const state   = (row['Dealer State'] || row['State'] || '').trim().toUpperCase();
+          const amtRaw  = (row['Loan Amount'] || row['Amount'] || '').trim();
+          if (!dealer || !state) return;
+          const amount = parseFloat(amtRaw.replace(/[$,\s]/g, '')) || 0;
+          rdFundedRows.push({ dealer, state, amount, date: dateRaw });
+        });
+
+        // Update upload card
+        const card  = document.getElementById('rdFundedCard');
+        const sub   = document.getElementById('rdFundedCardSub');
+        const badge = document.getElementById('rdFundedBadge');
+        if (card)  card.classList.add('loaded');
+        if (sub)   sub.textContent = file.name + ' — ' + rdFundedRows.length + ' rows';
+        if (badge) badge.style.display = '';
+
+        renderRepsDaily();
+      },
+      error(err) { alert('Error parsing funded CSV:\n' + err.message); }
+    });
+  }
+
+  // ── REPS DAILY: MAIN RENDER ───────────────────────────────────────────────
+  function renderRepsDaily() {
+    const grid = document.getElementById('rdRepsGrid');
+    if (!grid) return;
+
+    // Update apps card status
+    const appsSub = document.getElementById('rdAppsCardSub');
+    if (appsSub && bdDealerApps.size > 0) {
+      const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
+      appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
+    }
+
+    const masterMap = window.masterDealerIdMap;
+    if (!masterMap || masterMap.size === 0) {
+      grid.innerHTML = '<div class="rd-no-data">⚠️ Master dealer list not loaded. Visit Settings tab first.</div>';
+      return;
+    }
+
+    if (bdDealerApps.size === 0 && rdFundedRows.length === 0) {
+      grid.innerHTML = '<div class="rd-no-data">Upload both CSVs above to see rep performance</div>';
+      return;
+    }
+
+    // ── Build rep map from apps ──
+    const repMap = new Map(); // repName → { apps:0, funded:0, amt:0, dealers: Map<key, {name,state,apps,funded,amt}> }
+
+    const getOrCreateRep = (repName) => {
+      if (!repMap.has(repName)) {
+        repMap.set(repName, { apps: 0, funded: 0, amt: 0, dealers: new Map() });
+      }
+      return repMap.get(repName);
+    };
+
+    const getOrCreateDealer = (rep, key, name, state) => {
+      if (!rep.dealers.has(key)) {
+        rep.dealers.set(key, { name, state, apps: 0, funded: 0, amt: 0 });
+      }
+      return rep.dealers.get(key);
+    };
+
+    // Add app counts per dealer → lookup rep
+    bdDealerApps.forEach((count, key) => {
+      const masterData = masterMap.get(key);
+      const repName = masterData?.rep || 'Unassigned';
+      // Recover display name from key (best-effort — use master data name if available)
+      const [normName, state] = key.split('|');
+      const masterDealer = window.currentMasterDealers?.find(d =>
+        normalizeDealerName(d.dealer_name) === normName && d.state === state
+      );
+      const displayName = masterDealer?.dealer_name || normName;
+
+      const rep = getOrCreateRep(repName);
+      rep.apps += count;
+      const d = getOrCreateDealer(rep, key, displayName, state);
+      d.apps += count;
+    });
+
+    // Add funded data per dealer → lookup rep
+    rdFundedRows.forEach(row => {
+      const key = normalizeDealerName(row.dealer) + '|' + row.state;
+      const masterData = masterMap.get(key);
+      const repName = masterData?.rep || 'Unassigned';
+
+      const masterDealer = window.currentMasterDealers?.find(d =>
+        normalizeDealerName(d.dealer_name) === normalizeDealerName(row.dealer) && d.state === row.state
+      );
+      const displayName = masterDealer?.dealer_name || row.dealer;
+
+      const rep = getOrCreateRep(repName);
+      rep.funded += 1;
+      rep.amt    += row.amount;
+      const d = getOrCreateDealer(rep, key, displayName, row.state);
+      d.funded += 1;
+      d.amt    += row.amount;
+    });
+
+    // ── KPI totals ──
+    let totalApps = 0, totalFunded = 0, totalAmt = 0;
+    repMap.forEach(r => { totalApps += r.apps; totalFunded += r.funded; totalAmt += r.amt; });
+
+    const kpiApps   = document.getElementById('rdKpiApps');
+    const kpiF      = document.getElementById('rdKpiFunded');
+    const kpiAmt    = document.getElementById('rdKpiAmt');
+    const kpiLtb    = document.getElementById('rdKpiLtb');
+    const kpiAppSub = document.getElementById('rdKpiAppsSub');
+
+    if (kpiApps) kpiApps.textContent = totalApps.toLocaleString();
+    if (kpiF)    kpiF.textContent    = totalFunded.toLocaleString();
+    if (kpiAmt)  kpiAmt.textContent  = fmtAmt(totalAmt);
+    if (kpiLtb)  kpiLtb.textContent  = totalApps ? (totalFunded / totalApps * 100).toFixed(1) + '%' : '—';
+    if (kpiAppSub) kpiAppSub.textContent = repMap.size + ' rep' + (repMap.size !== 1 ? 's' : '');
+
+    // ── Rep avatar colors ──
+    const AVATAR_COLORS = ['#2563eb','#7c3aed','#0891b2','#d97706','#dc2626','#16a34a','#db2777','#ea580c'];
+
+    // Sort reps: assigned first, then by funded desc
+    const repEntries = Array.from(repMap.entries())
+      .sort((a, b) => {
+        if (a[0] === 'Unassigned') return 1;
+        if (b[0] === 'Unassigned') return -1;
+        return b[1].funded - a[1].funded;
+      });
+
+    grid.innerHTML = '';
+
+    repEntries.forEach(([repName, data], idx) => {
+      const ltb = data.apps ? (data.funded / data.apps * 100).toFixed(1) : 0;
+      const barColor = ltb >= 15 ? '#16a34a' : ltb >= 8 ? '#2563eb' : '#f59e0b';
+      const avatarColor = repName === 'Unassigned' ? '#94a3b8' : AVATAR_COLORS[idx % AVATAR_COLORS.length];
+      const initials = repName === 'Unassigned' ? '?' :
+        repName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+      // Sort dealers by funded desc then apps desc
+      const dealers = Array.from(data.dealers.values())
+        .sort((a, b) => b.funded - a.funded || b.apps - a.apps);
+
+      const SHOW_INIT = 5;
+      const topDealers = dealers.slice(0, SHOW_INIT);
+      const extraCount = dealers.length - SHOW_INIT;
+
+      const dealerRowsHTML = topDealers.map(d => `
+        <div class="rd-dealer-row">
+          <span class="rd-dealer-name" title="${d.name}">${d.name}</span>
+          <span class="rd-dealer-apps">${d.apps} apps</span>
+          <span class="rd-dealer-badge ${d.funded > 0 ? 'has-funded' : ''}">${d.funded} funded${d.amt > 0 ? ' · ' + fmtAmt(d.amt) : ''}</span>
+        </div>
+      `).join('');
+
+      const card = document.createElement('div');
+      card.className = 'rd-rep-card';
+      card.innerHTML = `
+        <div class="rd-rep-header">
+          <div class="rd-rep-avatar" style="background:${avatarColor}">${initials}</div>
+          <div>
+            <div class="rd-rep-name">${repName}</div>
+            <div class="rd-rep-meta">${dealers.length} dealer${dealers.length !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div class="rd-rep-stats">
+          <div class="rd-stat-box">
+            <div class="rd-stat-val">${data.apps.toLocaleString()}</div>
+            <div class="rd-stat-lbl">Total Apps</div>
+          </div>
+          <div class="rd-stat-box">
+            <div class="rd-stat-val">${data.funded}</div>
+            <div class="rd-stat-lbl">Funded</div>
+            <div class="rd-stat-amt">${fmtAmt(data.amt)}</div>
+          </div>
+          <div class="rd-stat-box">
+            <div class="rd-stat-val">${ltb}%</div>
+            <div class="rd-stat-lbl">LTB</div>
+          </div>
+        </div>
+        <div class="rd-ltb-row">
+          <span class="rd-ltb-label">LTB rate</span>
+          <div class="rd-ltb-bg">
+            <div class="rd-ltb-fill" style="width:${Math.min(parseFloat(ltb) * 4, 100)}%;background:${barColor}"></div>
+          </div>
+          <span class="rd-ltb-pct">${ltb}%</span>
+        </div>
+        <div class="rd-dealer-list">
+          <div class="rd-dealer-header">
+            <span>Dealer Breakdown</span><span>${dealers.length} dealers</span>
+          </div>
+          ${dealerRowsHTML}
+          ${extraCount > 0 ? `<div class="rd-show-more" data-rep-idx="${idx}">+ ${extraCount} more dealers</div>` : ''}
+        </div>
+      `;
+
+      // Wire show-more toggle
+      const showMore = card.querySelector('.rd-show-more');
+      if (showMore) {
+        showMore.addEventListener('click', function() {
+          const list = card.querySelector('.rd-dealer-list');
+          const header = list.querySelector('.rd-dealer-header');
+          const isExpanded = this.dataset.expanded === '1';
+          // Remove existing dealer rows
+          list.querySelectorAll('.rd-dealer-row').forEach(r => r.remove());
+          const toShow = isExpanded ? topDealers : dealers;
+          let insertBefore = this;
+          toShow.forEach(d => {
+            const row = document.createElement('div');
+            row.className = 'rd-dealer-row';
+            row.innerHTML = `
+              <span class="rd-dealer-name" title="${d.name}">${d.name}</span>
+              <span class="rd-dealer-apps">${d.apps} apps</span>
+              <span class="rd-dealer-badge ${d.funded > 0 ? 'has-funded' : ''}">${d.funded} funded${d.amt > 0 ? ' · ' + fmtAmt(d.amt) : ''}</span>
+            `;
+            list.insertBefore(row, insertBefore);
+          });
+          if (isExpanded) {
+            this.textContent = '+ ' + extraCount + ' more dealers';
+            this.dataset.expanded = '0';
+          } else {
+            this.textContent = '▲ Show less';
+            this.dataset.expanded = '1';
+          }
+        });
+      }
+
+      grid.appendChild(card);
+    });
+  }
+
+  // ── REPS DAILY: AMOUNT FORMATTER ──────────────────────────────────────────
+  function fmtAmt(n) {
+    if (!n) return '$0';
+    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000)    return '$' + Math.round(n / 1000) + 'K';
+    return '$' + Math.round(n).toLocaleString();
   }
 
 })(); /* end BuyingDailyModule IIFE */
