@@ -5897,8 +5897,9 @@ function updateKpiTile(label, value) {
   let bdInitDone = false;      // guard: only wire events once
 
   // ── REPS DAILY STATE ───────────────────────────────────────────────────────
-  let bdDealerApps = new Map(); // "dealer|STATE" → app count (from apps CSV)
+  let bdDealerApps = new Map(); // dealer_id → app count
   let rdFundedRows = [];        // [{dealer, state, amount, date}] from funded CSV
+  let rdLastFetchedRange = null; // tracks last fetched date range to avoid duplicate fetches
 
   // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
   window.initBuyingDaily = function () {
@@ -5935,8 +5936,28 @@ function updateKpiTile(label, value) {
       });
 
       // date range inputs
-      dateFrom.addEventListener('change', render);
-      dateTo.addEventListener('change', render);
+      let rdDateChangeTimer = null;
+      let bdSuppressDateChange = false;
+
+      const onDateChange = function() {
+        render();
+        if (bdSuppressDateChange) return;
+        clearTimeout(rdDateChangeTimer);
+        rdDateChangeTimer = setTimeout(function() {
+          const fromVal = document.getElementById('bdDateFrom')?.value || '';
+          const toVal   = document.getElementById('bdDateTo')?.value   || '';
+          const newRange = fromVal + '|' + toVal;
+          if (newRange === rdLastFetchedRange) return; // same range, no need to re-fetch
+          // Range changed — clear and re-fetch
+          bdDealerApps = new Map();
+          rdLastFetchedRange = null;
+          renderRepsDaily._loading = false;
+          const repsPanel = document.getElementById('bd-panel-reps');
+          if (repsPanel?.classList.contains('active')) renderRepsDaily();
+        }, 400);
+      };
+      dateFrom.addEventListener('change', onDateChange);
+      dateTo.addEventListener('change', onDateChange);
 
       // state filter dropdown
       var stateFilter = document.getElementById('bdStateFilter');
@@ -5999,8 +6020,10 @@ function updateKpiTile(label, value) {
           // restore date range
           var isoKeys = Object.keys(bdData).map(function(d) { return toISO(d); }).sort();
           if (isoKeys.length) {
+            bdSuppressDateChange = true;
             dateFrom.value = isoKeys[0];
             dateTo.value   = isoKeys[isoKeys.length - 1];
+            bdSuppressDateChange = false;
           }
 
           // restore status badge
@@ -6017,16 +6040,16 @@ function updateKpiTile(label, value) {
           try {
             const { data: fData, error: fErr } = await window.sb
               .from('buying_daily_data')
-              .select('file_name, data')
-              .eq('id', 2)
+              .select('funded_data, funded_file_name')
+              .eq('id', 1)
               .single();
-            if (!fErr && fData?.data) {
-              rdFundedRows = fData.data;
+            if (!fErr && fData?.funded_data) {
+              rdFundedRows = fData.funded_data;
               const card  = document.getElementById('rdFundedCard');
               const sub   = document.getElementById('rdFundedCardSub');
               const badge = document.getElementById('rdFundedBadge');
               if (card)  card.classList.add('loaded');
-              if (sub)   sub.textContent = (fData.file_name || 'funded CSV') + ' — ' + rdFundedRows.length + ' rows';
+              if (sub)   sub.textContent = (fData.funded_file_name || 'funded CSV') + ' — ' + rdFundedRows.length + ' rows';
               if (badge) badge.style.display = '';
               console.log('[RepsDaily] Restored', rdFundedRows.length, 'funded rows from Supabase.');
             }
@@ -6144,8 +6167,10 @@ function updateKpiTile(label, value) {
         // auto-set date range
         const isoKeys = Object.keys(bdData).map(d => toISO(d)).sort();
         if (isoKeys.length) {
+          bdSuppressDateChange = true;
           document.getElementById('bdDateFrom').value = isoKeys[0];
           document.getElementById('bdDateTo').value   = isoKeys[isoKeys.length - 1];
+          bdSuppressDateChange = false;
         }
 
         // update status badge
@@ -6480,13 +6505,13 @@ function updateKpiTile(label, value) {
         if (sub)   sub.textContent = file.name + ' — ' + rdFundedRows.length + ' rows';
         if (badge) badge.style.display = '';
 
-        // Persist to Supabase
+        // Persist to Supabase (add to existing id=1 row)
         (async () => {
           try {
             if (!window.sb) return;
             const { error } = await window.sb
               .from('buying_daily_data')
-              .upsert({ id: 2, file_name: file.name, data: rdFundedRows });
+              .upsert({ id: 1, funded_data: rdFundedRows, funded_file_name: file.name });
             if (error) console.warn('[RepsDaily] Supabase save error:', error);
             else console.log('[RepsDaily] Funded rows saved to Supabase.');
           } catch(e) { console.warn('[RepsDaily] Supabase save failed:', e); }
@@ -6567,22 +6592,49 @@ function updateKpiTile(label, value) {
           }
           console.log('[RepsDaily] Fetching months from DB:', months);
 
-          for (const { year, month } of months) {
+          const fetchSnapshotMonth = async (year, month) => {
             const { data, error } = await window.sb
               .from('monthly_snapshots')
-              .select('dealer_id, dealer, state, total_apps')
+              .select('dealer_id, total_apps')
               .eq('year', year)
               .eq('month', month);
-            if (error) { console.warn('[RepsDaily] DB error for', year, month, error.message); continue; }
-            if (data) {
-              data.forEach(r => {
-                if (!r.dealer_id) return; // skip rows without ID
+            if (error) { console.warn('[RepsDaily] DB error for', year, month, error.message); return []; }
+            return data || [];
+          };
+
+          for (const { year, month } of months) {
+            const rows = await fetchSnapshotMonth(year, month);
+            rows.forEach(r => {
+              if (!r.dealer_id) return;
+              bdDealerApps.set(r.dealer_id, (bdDealerApps.get(r.dealer_id) || 0) + (r.total_apps || 0));
+            });
+          }
+
+          // If still empty (e.g. current month not uploaded yet), fall back to most recent available month
+          if (bdDealerApps.size === 0) {
+            console.log('[RepsDaily] No snapshots in range, falling back to most recent month...');
+            const { data: latest } = await window.sb
+              .from('monthly_snapshots')
+              .select('year, month')
+              .order('year', { ascending: false })
+              .order('month', { ascending: false })
+              .limit(1);
+            if (latest?.[0]) {
+              const rows = await fetchSnapshotMonth(latest[0].year, latest[0].month);
+              rows.forEach(r => {
+                if (!r.dealer_id) return;
                 bdDealerApps.set(r.dealer_id, (bdDealerApps.get(r.dealer_id) || 0) + (r.total_apps || 0));
               });
+              console.log('[RepsDaily] Using', latest[0].year + '/' + latest[0].month, '—', bdDealerApps.size, 'dealers');
             }
           }
           console.log('[RepsDaily] Loaded apps from DB:', bdDealerApps.size, 'dealers,',
             Array.from(bdDealerApps.values()).reduce((a,b)=>a+b,0), 'total');
+
+          // Record the range we just fetched so duplicate triggers are ignored
+          const fromVal = document.getElementById('bdDateFrom')?.value || '';
+          const toVal   = document.getElementById('bdDateTo')?.value   || '';
+          rdLastFetchedRange = fromVal + '|' + toVal;
 
           const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
           const appsCard = document.getElementById('rdAppsCard');
@@ -6591,6 +6643,9 @@ function updateKpiTile(label, value) {
           if (appsSub)  appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
 
           renderRepsDaily._loading = false;
+          if (bdDealerApps.size === 0) {
+            console.warn('[RepsDaily] No app data found in DB for date range. Proceeding with funded-only view.');
+          }
           renderRepsDaily();
         } catch(e) {
           console.error('[RepsDaily] Failed to load apps from DB:', e);
