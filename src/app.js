@@ -6012,6 +6012,25 @@ function updateKpiTile(label, value) {
 
           render();
           console.log('[BuyingDaily] Restored data from Supabase.');
+
+          // Also restore funded rows for Reps Daily
+          try {
+            const { data: fData, error: fErr } = await window.sb
+              .from('buying_daily_data')
+              .select('file_name, data')
+              .eq('id', 2)
+              .single();
+            if (!fErr && fData?.data) {
+              rdFundedRows = fData.data;
+              const card  = document.getElementById('rdFundedCard');
+              const sub   = document.getElementById('rdFundedCardSub');
+              const badge = document.getElementById('rdFundedBadge');
+              if (card)  card.classList.add('loaded');
+              if (sub)   sub.textContent = (fData.file_name || 'funded CSV') + ' — ' + rdFundedRows.length + ' rows';
+              if (badge) badge.style.display = '';
+              console.log('[RepsDaily] Restored', rdFundedRows.length, 'funded rows from Supabase.');
+            }
+          } catch(e) { console.warn('[RepsDaily] Could not restore funded rows:', e); }
         } catch(e) { console.warn('[BuyingDaily] Supabase load failed:', e); }
       })();
 
@@ -6069,15 +6088,28 @@ function updateKpiTile(label, value) {
         bdData = newData;
         bdStates = Array.from(stateSet).sort();
 
-        // Also build dealer-level app counts for Reps Daily
+        // Also build dealer-level app counts for Reps Daily (keyed by dealer_id)
         bdDealerApps = new Map();
         results.data.forEach(row => {
-          const dealer = (row['Dealer'] || '').trim();
+          const dealer = (row['Dealer Name'] || row['Dealer'] || '').trim();
           const state  = (row['State']  || '').trim().toUpperCase();
           if (!dealer || !state) return;
-          const key = normalizeDealerName(dealer) + '|' + state;
+          const normKey = normalizeDealerName(dealer) + '|' + state;
+          const masterData = window.masterDealerIdMap?.get(normKey);
+          const key = masterData?.dealer_id || normKey; // prefer dealer_id
           bdDealerApps.set(key, (bdDealerApps.get(key) || 0) + 1);
         });
+        console.log('[RepsDaily] bdDealerApps built:', bdDealerApps.size, 'dealers,',
+          Array.from(bdDealerApps.values()).reduce((a,b)=>a+b,0), 'total apps');
+
+        // Update apps card if Reps Daily is visible
+        const appsCard = document.getElementById('rdAppsCard');
+        const appsSub  = document.getElementById('rdAppsCardSub');
+        if (appsCard && bdDealerApps.size > 0) {
+          appsCard.classList.add('loaded');
+          const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
+          if (appsSub) appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
+        }
 
         // Populate state dropdown
         const stateFilter = document.getElementById('bdStateFilter');
@@ -6407,7 +6439,19 @@ function updateKpiTile(label, value) {
       const el = document.getElementById('bd-panel-' + v);
       if (el) el.classList.toggle('active', v === view);
     });
-    if (view === 'reps') renderRepsDaily();
+    if (view === 'reps') {
+      // Update apps card status when switching to Reps Daily
+      const appsSub = document.getElementById('rdAppsCardSub');
+      const appsCard = document.getElementById('rdAppsCard');
+      if (bdDealerApps.size > 0) {
+        const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
+        if (appsSub) appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
+        if (appsCard) appsCard.classList.add('loaded');
+      } else if (appsSub) {
+        appsSub.textContent = 'Upload the daily apps CSV above first';
+      }
+      renderRepsDaily();
+    }
   }
 
   // ── REPS DAILY: FUNDED CSV PARSER ─────────────────────────────────────────
@@ -6436,6 +6480,18 @@ function updateKpiTile(label, value) {
         if (sub)   sub.textContent = file.name + ' — ' + rdFundedRows.length + ' rows';
         if (badge) badge.style.display = '';
 
+        // Persist to Supabase
+        (async () => {
+          try {
+            if (!window.sb) return;
+            const { error } = await window.sb
+              .from('buying_daily_data')
+              .upsert({ id: 2, file_name: file.name, data: rdFundedRows });
+            if (error) console.warn('[RepsDaily] Supabase save error:', error);
+            else console.log('[RepsDaily] Funded rows saved to Supabase.');
+          } catch(e) { console.warn('[RepsDaily] Supabase save failed:', e); }
+        })();
+
         renderRepsDaily();
       },
       error(err) { alert('Error parsing funded CSV:\n' + err.message); }
@@ -6447,73 +6503,147 @@ function updateKpiTile(label, value) {
     const grid = document.getElementById('rdRepsGrid');
     if (!grid) return;
 
-    // Update apps card status
-    const appsSub = document.getElementById('rdAppsCardSub');
-    if (appsSub && bdDealerApps.size > 0) {
-      const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
-      appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
-    }
-
     const masterMap = window.masterDealerIdMap;
+
+    // Auto-load master dealers if not yet available
     if (!masterMap || masterMap.size === 0) {
-      grid.innerHTML = '<div class="rd-no-data">⚠️ Master dealer list not loaded. Visit Settings tab first.</div>';
+      grid.innerHTML = '<div class="rd-no-data">⏳ Loading master dealer list…</div>';
+      (async () => {
+        try {
+          if (!window.sb) return;
+          const { data, error } = await window.sb
+            .from('master_dealers')
+            .select('dealer_id, dealer_name, state, fi, rep');
+          if (error || !data) throw error;
+          window.currentMasterDealers = data;
+          window.masterDealerIdMap = new Map();
+          data.forEach(d => {
+            const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
+            window.masterDealerIdMap.set(key, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
+          });
+          console.log('[RepsDaily] Loaded', data.length, 'master dealers');
+          renderRepsDaily();
+        } catch(e) {
+          console.error('[RepsDaily] Failed to load master dealers:', e);
+          grid.innerHTML = '<div class="rd-no-data">⚠️ Could not load master dealer list. Check console.</div>';
+        }
+      })();
       return;
     }
 
-    if (bdDealerApps.size === 0 && rdFundedRows.length === 0) {
+    if (rdFundedRows.length === 0 && bdDealerApps.size === 0) {
       grid.innerHTML = '<div class="rd-no-data">Upload both CSVs above to see rep performance</div>';
       return;
     }
+    console.log('[RepsDaily] renderRepsDaily — bdDealerApps:', bdDealerApps.size, 'rdFundedRows:', rdFundedRows.length);
 
-    // ── Build rep map from apps ──
-    const repMap = new Map(); // repName → { apps:0, funded:0, amt:0, dealers: Map<key, {name,state,apps,funded,amt}> }
+    // If apps map is empty (page reloaded), load from monthly_snapshots
+    if (bdDealerApps.size === 0 && rdFundedRows.length > 0) {
+      if (renderRepsDaily._loading) return; // prevent infinite loop
+      renderRepsDaily._loading = true;
+      grid.innerHTML = '<div class="rd-no-data">⏳ Loading app counts from database…</div>';
+      (async () => {
+        try {
+          // Use the date range from the pickers to determine which months to fetch
+          const fromEl = document.getElementById('bdDateFrom');
+          const toEl   = document.getElementById('bdDateTo');
+          // Date inputs return YYYY-MM-DD strings; parse carefully
+          const parsePickerDate = (val, fallback) => {
+            if (!val) return fallback;
+            const d = new Date(val + 'T00:00:00');
+            return isNaN(d) ? fallback : d;
+          };
+          const now = new Date();
+          const fromDate = parsePickerDate(fromEl?.value, new Date(now.getFullYear(), now.getMonth(), 1));
+          const toDate   = parsePickerDate(toEl?.value,   now);
 
+          // Build list of year+month combos in range
+          const months = [];
+          const cur = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+          const end = new Date(toDate.getFullYear(), toDate.getMonth(), 1);
+          while (cur <= end) {
+            months.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
+            cur.setMonth(cur.getMonth() + 1);
+          }
+          console.log('[RepsDaily] Fetching months from DB:', months);
+
+          for (const { year, month } of months) {
+            const { data, error } = await window.sb
+              .from('monthly_snapshots')
+              .select('dealer_id, dealer, state, total_apps')
+              .eq('year', year)
+              .eq('month', month);
+            if (error) { console.warn('[RepsDaily] DB error for', year, month, error.message); continue; }
+            if (data) {
+              data.forEach(r => {
+                if (!r.dealer_id) return; // skip rows without ID
+                bdDealerApps.set(r.dealer_id, (bdDealerApps.get(r.dealer_id) || 0) + (r.total_apps || 0));
+              });
+            }
+          }
+          console.log('[RepsDaily] Loaded apps from DB:', bdDealerApps.size, 'dealers,',
+            Array.from(bdDealerApps.values()).reduce((a,b)=>a+b,0), 'total');
+
+          const totalApps = Array.from(bdDealerApps.values()).reduce((a, b) => a + b, 0);
+          const appsCard = document.getElementById('rdAppsCard');
+          const appsSub  = document.getElementById('rdAppsCardSub');
+          if (appsCard) appsCard.classList.add('loaded');
+          if (appsSub)  appsSub.textContent = totalApps.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
+
+          renderRepsDaily._loading = false;
+          renderRepsDaily();
+        } catch(e) {
+          console.error('[RepsDaily] Failed to load apps from DB:', e);
+          renderRepsDaily._loading = false;
+          grid.innerHTML = '<div class="rd-no-data">⚠️ Could not load app data. Try re-uploading the apps CSV.</div>';
+        }
+      })();
+      return;
+    }
+
+    // ── Build rep map ──
+    const repMap = new Map();
     const getOrCreateRep = (repName) => {
-      if (!repMap.has(repName)) {
-        repMap.set(repName, { apps: 0, funded: 0, amt: 0, dealers: new Map() });
-      }
+      if (!repMap.has(repName)) repMap.set(repName, { apps: 0, funded: 0, amt: 0, dealers: new Map() });
       return repMap.get(repName);
     };
-
     const getOrCreateDealer = (rep, key, name, state) => {
-      if (!rep.dealers.has(key)) {
-        rep.dealers.set(key, { name, state, apps: 0, funded: 0, amt: 0 });
-      }
+      if (!rep.dealers.has(key)) rep.dealers.set(key, { name, state, apps: 0, funded: 0, amt: 0 });
       return rep.dealers.get(key);
     };
 
-    // Add app counts per dealer → lookup rep
+    const masterById = new Map();
+    (window.currentMasterDealers || []).forEach(d => masterById.set(d.dealer_id, d));
+
+    // Add app counts — bdDealerApps is keyed by dealer_id (from DB) or normKey (from CSV upload)
     bdDealerApps.forEach((count, key) => {
-      const masterData = masterMap.get(key);
-      const repName = masterData?.rep || 'Unassigned';
-      // Recover display name from key (best-effort — use master data name if available)
-      const [normName, state] = key.split('|');
-      const masterDealer = window.currentMasterDealers?.find(d =>
-        normalizeDealerName(d.dealer_name) === normName && d.state === state
-      );
-      const displayName = masterDealer?.dealer_name || normName;
+      // Try dealer_id lookup first (UUID format), fallback to name-based
+      const master = masterById.get(key);
+      const masterData = master ? { rep: master.rep, dealer_id: master.dealer_id } : masterMap.get(key);
+      const repName = master?.rep || masterData?.rep || 'Unassigned';
+      const displayName = master?.dealer_name || key;
+      const state = master?.state || key.split('|')[1] || '';
+      const dealerKey = master?.dealer_id || key;
 
       const rep = getOrCreateRep(repName);
       rep.apps += count;
-      const d = getOrCreateDealer(rep, key, displayName, state);
+      const d = getOrCreateDealer(rep, dealerKey, displayName, state);
       d.apps += count;
     });
 
-    // Add funded data per dealer → lookup rep
+    // Add funded data from funded CSV
     rdFundedRows.forEach(row => {
-      const key = normalizeDealerName(row.dealer) + '|' + row.state;
-      const masterData = masterMap.get(key);
+      const normKey = normalizeDealerName(row.dealer) + '|' + row.state;
+      const masterData = masterMap.get(normKey);
       const repName = masterData?.rep || 'Unassigned';
-
-      const masterDealer = window.currentMasterDealers?.find(d =>
-        normalizeDealerName(d.dealer_name) === normalizeDealerName(row.dealer) && d.state === row.state
-      );
-      const displayName = masterDealer?.dealer_name || row.dealer;
+      const master = masterData ? masterById.get(masterData.dealer_id) : null;
+      const displayName = master?.dealer_name || row.dealer;
+      const dealerKey = masterData?.dealer_id || normKey;
 
       const rep = getOrCreateRep(repName);
       rep.funded += 1;
       rep.amt    += row.amount;
-      const d = getOrCreateDealer(rep, key, displayName, row.state);
+      const d = getOrCreateDealer(rep, dealerKey, displayName, row.state);
       d.funded += 1;
       d.amt    += row.amount;
     });
@@ -6528,16 +6658,14 @@ function updateKpiTile(label, value) {
     const kpiLtb    = document.getElementById('rdKpiLtb');
     const kpiAppSub = document.getElementById('rdKpiAppsSub');
 
-    if (kpiApps) kpiApps.textContent = totalApps.toLocaleString();
-    if (kpiF)    kpiF.textContent    = totalFunded.toLocaleString();
-    if (kpiAmt)  kpiAmt.textContent  = fmtAmt(totalAmt);
-    if (kpiLtb)  kpiLtb.textContent  = totalApps ? (totalFunded / totalApps * 100).toFixed(1) + '%' : '—';
-    if (kpiAppSub) kpiAppSub.textContent = repMap.size + ' rep' + (repMap.size !== 1 ? 's' : '');
+    if (kpiApps)   kpiApps.textContent   = totalApps.toLocaleString();
+    if (kpiF)      kpiF.textContent       = totalFunded.toLocaleString();
+    if (kpiAmt)    kpiAmt.textContent     = fmtAmt(totalAmt);
+    if (kpiLtb)    kpiLtb.textContent     = totalApps ? (totalFunded / totalApps * 100).toFixed(1) + '%' : '—';
+    if (kpiAppSub) kpiAppSub.textContent  = repMap.size + ' rep' + (repMap.size !== 1 ? 's' : '');
 
-    // ── Rep avatar colors ──
+    // ── Build cards ──
     const AVATAR_COLORS = ['#2563eb','#7c3aed','#0891b2','#d97706','#dc2626','#16a34a','#db2777','#ea580c'];
-
-    // Sort reps: assigned first, then by funded desc
     const repEntries = Array.from(repMap.entries())
       .sort((a, b) => {
         if (a[0] === 'Unassigned') return 1;
@@ -6554,7 +6682,6 @@ function updateKpiTile(label, value) {
       const initials = repName === 'Unassigned' ? '?' :
         repName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-      // Sort dealers by funded desc then apps desc
       const dealers = Array.from(data.dealers.values())
         .sort((a, b) => b.funded - a.funded || b.apps - a.apps);
 
@@ -6607,21 +6734,17 @@ function updateKpiTile(label, value) {
             <span>Dealer Breakdown</span><span>${dealers.length} dealers</span>
           </div>
           ${dealerRowsHTML}
-          ${extraCount > 0 ? `<div class="rd-show-more" data-rep-idx="${idx}">+ ${extraCount} more dealers</div>` : ''}
+          ${extraCount > 0 ? `<div class="rd-show-more" data-expanded="0">+ ${extraCount} more dealers</div>` : ''}
         </div>
       `;
 
-      // Wire show-more toggle
       const showMore = card.querySelector('.rd-show-more');
       if (showMore) {
         showMore.addEventListener('click', function() {
           const list = card.querySelector('.rd-dealer-list');
-          const header = list.querySelector('.rd-dealer-header');
           const isExpanded = this.dataset.expanded === '1';
-          // Remove existing dealer rows
           list.querySelectorAll('.rd-dealer-row').forEach(r => r.remove());
           const toShow = isExpanded ? topDealers : dealers;
-          let insertBefore = this;
           toShow.forEach(d => {
             const row = document.createElement('div');
             row.className = 'rd-dealer-row';
@@ -6630,28 +6753,20 @@ function updateKpiTile(label, value) {
               <span class="rd-dealer-apps">${d.apps} apps</span>
               <span class="rd-dealer-badge ${d.funded > 0 ? 'has-funded' : ''}">${d.funded} funded${d.amt > 0 ? ' · ' + fmtAmt(d.amt) : ''}</span>
             `;
-            list.insertBefore(row, insertBefore);
+            list.insertBefore(row, this);
           });
-          if (isExpanded) {
-            this.textContent = '+ ' + extraCount + ' more dealers';
-            this.dataset.expanded = '0';
-          } else {
-            this.textContent = '▲ Show less';
-            this.dataset.expanded = '1';
-          }
+          this.textContent = isExpanded ? '+ ' + extraCount + ' more dealers' : '▲ Show less';
+          this.dataset.expanded = isExpanded ? '0' : '1';
         });
       }
 
       grid.appendChild(card);
     });
   }
-
   // ── REPS DAILY: AMOUNT FORMATTER ──────────────────────────────────────────
   function fmtAmt(n) {
     if (!n) return '$0';
-    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000)    return '$' + Math.round(n / 1000) + 'K';
-    return '$' + Math.round(n).toLocaleString();
+    return '$' + Math.round(n).toLocaleString('en-US');
   }
 
 })(); /* end BuyingDailyModule IIFE */

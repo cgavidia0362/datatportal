@@ -1150,8 +1150,7 @@ th, td {
                 <input type="date" id="bdDateTo"/>
               </div>
             </div>
-            <!-- Hidden funded CSV input for Reps Daily -->
-            <input type="file" id="rdFundedCsvInput" accept=".csv" style="display:none;"/>
+
 
             <!-- KPI Tiles -->
             <div class="bd-kpi-row">
@@ -1722,5 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(fixSettings, 2000);
 });
 </script>
+<!-- Hidden file inputs (must be outside panels so display:none containers don't block programmatic .click()) -->
+<input type="file" id="rdFundedCsvInput" accept=".csv" style="display:none;"/>
 </body>
 </html>
