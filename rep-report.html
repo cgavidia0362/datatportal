@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Rep Performance Report</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --blue:#1d4ed8;--blue-light:#eff6ff;
+    --green:#15803d;--green-light:#dcfce7;
+    --amber:#b45309;--red:#b91c1c;--red-light:#fee2e2;
+    --border:#e2e8f0;--bg:#f8fafc;--card:#ffffff;
+    --text:#0f172a;--muted:#64748b;
+  }
+  html,body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:16px}
+
+  .page{max-width:680px;margin:0 auto;padding:16px 12px 48px}
+
+  /* Header */
+  .header-card{background:var(--blue);border-radius:16px;padding:24px 20px;margin-bottom:14px}
+  .brand{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:16px;font-family:'DM Mono',monospace}
+  .rep-row{display:flex;align-items:center;gap:14px}
+  .avatar{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.3)}
+  .rep-name{font-size:24px;font-weight:600;color:#fff;line-height:1.2}
+  .rep-period{font-size:13px;color:rgba(255,255,255,.7);margin-top:4px}
+
+  /* KPI row */
+  .kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .kpi-card{background:var(--card);border-radius:14px;border:1px solid var(--border);padding:18px 16px}
+  .kpi-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:8px;font-family:'DM Mono',monospace}
+  .kpi-val{font-size:32px;font-weight:600;line-height:1;margin-bottom:6px}
+  .kpi-delta{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+
+  /* Cards */
+  .card{background:var(--card);border-radius:14px;border:1px solid var(--border);padding:20px 16px;margin-bottom:14px}
+  .card-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:14px;font-family:'DM Mono',monospace}
+
+  /* Goal */
+  .goal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px}
+  .goal-big{font-size:30px;font-weight:600;line-height:1}
+  .goal-muted{font-size:15px;font-weight:400;color:var(--muted)}
+  .goal-remaining{font-size:13px;font-weight:500;text-align:right;flex-shrink:0}
+  .progress-track{height:12px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-bottom:8px}
+  .progress-bar{height:100%;border-radius:99px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .progress-bar.on-track{background:var(--blue)}
+  .progress-bar.great{background:#16a34a}
+  .progress-bar.behind{background:#f59e0b}
+  .progress-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
+
+  /* Compare */
+  .compare-wrap{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .compare-col{padding:14px}
+  .compare-col:first-child{border-right:1px solid var(--border)}
+  .compare-col-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px}
+  .compare-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)}
+  .compare-row:last-child{border-bottom:none}
+  .compare-key{font-size:13px;color:var(--muted)}
+  .compare-val{font-size:13px;font-weight:500;display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end}
+  .badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:99px;font-family:'DM Mono',monospace;white-space:nowrap}
+  .badge-up{background:var(--green-light);color:var(--green)}
+  .badge-down{background:var(--red-light);color:var(--red)}
+
+  /* Dealer dropdowns */
+  .dealer-section{margin-bottom:2px}
+  .dealer-section:last-child{margin-bottom:0}
+  .dealer-toggle{
+    width:100%;display:flex;justify-content:space-between;align-items:center;
+    padding:14px 0;border:none;background:none;cursor:pointer;
+    border-bottom:1px solid var(--border);text-align:left;
+    min-height:48px; /* touch target */
+  }
+  .dealer-toggle-label{font-size:14px;font-weight:500;color:var(--text)}
+  .dealer-toggle-meta{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .count-pill{font-size:11px;padding:3px 10px;border-radius:99px;font-weight:500;white-space:nowrap}
+  .pill-green{background:var(--green-light);color:var(--green)}
+  .pill-blue{background:var(--blue-light);color:var(--blue)}
+  .chevron{font-size:11px;color:#94a3b8;transition:transform .25s;display:inline-block}
+  .chevron.open{transform:rotate(180deg)}
+  .dealer-body{overflow:hidden;transition:max-height .35s ease;max-height:0}
+  .dealer-body.open{max-height:5000px}
+  .dealer-row-item{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #f1f5f9}
+  .dealer-row-item:last-child{border-bottom:none}
+  .d-name{font-size:14px;line-height:1.3;padding-right:8px}
+  .d-state{font-size:11px;color:#94a3b8;margin-left:3px}
+  .funded-pill{font-size:11px;font-weight:500;padding:4px 10px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+  .funded-pill.cur{background:var(--green-light);color:var(--green)}
+  .funded-pill.prev{background:var(--blue-light);color:var(--blue)}
+
+  /* Loading / error */
+  .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .footer{text-align:center;font-size:11px;color:var(--muted);padding:8px 0 4px;font-family:'DM Mono',monospace}
+
+  /* Mobile tweaks */
+  @media(max-width:400px){
+    .kpi-val{font-size:28px}
+    .goal-big{font-size:26px}
+    .compare-col{padding:10px}
+    .compare-col-label{font-size:9px}
+    .compare-key,.compare-val{font-size:12px}
+  }
+  @media(max-width:340px){
+    .compare-wrap{grid-template-columns:1fr}
+    .compare-col:first-child{border-right:none;border-bottom:1px solid var(--border)}
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <div class="spinner"></div>
+  <div style="font-size:14px;color:var(--muted)">Loading your report…</div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="page">
+    <div class="header-card">
+      <div class="brand">Buying Analysis Portal · Rep Report</div>
+      <div class="rep-row">
+        <div class="avatar" id="repAvatar">?</div>
+        <div>
+          <div class="rep-name" id="repName">—</div>
+          <div class="rep-period" id="repPeriod">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Total apps</div>
+        <div class="kpi-val" id="kpiApps">—</div>
+        <div class="kpi-delta" id="kpiAppsDelta"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Funded deals</div>
+        <div class="kpi-val" id="kpiFunded">—</div>
+        <div class="kpi-delta" id="kpiFundedDelta"></div>
+      </div>
+    </div>
+
+    <div class="card" id="goalCard" style="display:none">
+      <div class="card-label">Monthly goal</div>
+      <div class="goal-header">
+        <div class="goal-big"><span id="goalCurrent">0</span><span class="goal-muted"> / <span id="goalTarget">0</span></span></div>
+        <div class="goal-remaining" id="goalRemaining"></div>
+      </div>
+      <div class="progress-track"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+      <div class="progress-meta"><span id="progressPct">0%</span><span id="progressStatus"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Month over month</div>
+      <div class="compare-wrap">
+        <div class="compare-col">
+          <div class="compare-col-label" id="prevMonthLabel">Previous</div>
+          <div class="compare-row"><span class="compare-key">Apps</span><span class="compare-val" id="prevApps">—</span></div>
+          <div class="compare-row"><span class="compare-key">Funded</span><span class="compare-val" id="prevFunded">—</span></div>
+          <div class="compare-row"><span class="compare-key">Dealers</span><span class="compare-val" id="prevDealers">—</span></div>
+        </div>
+        <div class="compare-col">
+          <div class="compare-col-label" id="curMonthLabel">Current</div>
+          <div class="compare-row"><span class="compare-key">Apps</span><span class="compare-val" id="curApps">—</span></div>
+          <div class="compare-row"><span class="compare-key">Funded</span><span class="compare-val" id="curFunded">—</span></div>
+          <div class="compare-row"><span class="compare-key">Dealers</span><span class="compare-val" id="curDealers">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Funded dealers</div>
+      <div id="dealerList"><div style="color:var(--muted);font-size:14px;text-align:center;padding:24px 0">No funded deals yet.</div></div>
+    </div>
+
+    <div class="footer">Live data · datatportal.vercel.app</div>
+  </div>
+</div>
+
+<div id="error-screen" style="display:none;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center">
+  <div style="font-size:32px">⚠️</div>
+  <div style="font-size:16px;font-weight:500" id="errorTitle">Rep not found</div>
+  <div style="font-size:14px;color:var(--muted)" id="errorMsg">Check the link and try again.</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false } });
+
+function el(id){ return document.getElementById(id); }
+
+// Normalize dealer name the same way app.js does
+function normName(s){
+  if (!s) return '';
+  let t = String(s).toLowerCase();
+  t = t.replace(/[^a-z0-9\s]/g, '');
+  t = t.replace(/\b(llc|inc|co|company|corp|corporation|ltd|the|auto|group)\b/g, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
+function normState(s){ return String(s||'').toUpperCase().trim(); }
+function normKey(name, state){ return normName(name) + '|' + normState(state); }
+
+function badge(cur, prev){
+  if (prev == null) return '';
+  const d = cur - prev;
+  if (d === 0) return '<span class="badge" style="background:#f1f5f9;color:#64748b">—</span>';
+  return `<span class="badge ${d>0?'badge-up':'badge-down'}">${d>0?'+':''}${d}</span>`;
+}
+
+function toggle(btn){
+  const body = btn.nextElementSibling;
+  const chev = btn.querySelector('.chevron');
+  const open = !body.classList.contains('open');
+  body.classList.toggle('open', open);
+  chev.classList.toggle('open', open);
+}
+
+function dealerSection(label, list, pillCls, countCls, defaultOpen){
+  if (!list.length) return '';
+  list.sort((a,b) => b.funded - a.funded);
+  const rows = list.map(d =>
+    `<div class="dealer-row-item">
+       <span class="d-name">${d.name}<span class="d-state">${d.state}</span></span>
+       <span class="funded-pill ${pillCls}">${d.funded} funded</span>
+     </div>`).join('');
+  return `<div class="dealer-section">
+    <button class="dealer-toggle" onclick="toggle(this)">
+      <span class="dealer-toggle-label">${label}</span>
+      <span class="dealer-toggle-meta">
+        <span class="count-pill ${countCls}">${list.length} dealer${list.length!==1?'s':''}</span>
+        <span class="chevron ${defaultOpen?'open':''}">▼</span>
+      </span>
+    </button>
+    <div class="dealer-body ${defaultOpen?'open':''}">${rows}</div>
+  </div>`;
+}
+
+async function load(){
+  const repParam = (new URLSearchParams(window.location.search).get('rep') || '').trim().toLowerCase();
+
+  if (!repParam){
+    el('loading-screen').style.display = 'none';
+    el('errorTitle').textContent = 'No rep specified';
+    el('errorMsg').textContent   = 'The link is missing a ?rep= parameter.';
+    el('error-screen').style.display = 'flex';
+    return;
+  }
+
+  try {
+    // 1. Get all dealers for this rep from master_dealers
+    const { data: dealers, error: dErr } = await sb
+      .from('master_dealers')
+      .select('dealer_id, dealer_name, state, rep')
+      .ilike('rep', repParam);
+
+    if (dErr) throw dErr;
+    if (!dealers || !dealers.length){
+      el('loading-screen').style.display = 'none';
+      el('errorTitle').textContent = 'Rep not found';
+      el('errorMsg').textContent   = `No rep matching "${repParam}" found.`;
+      el('error-screen').style.display = 'flex';
+      return;
+    }
+
+    const repName   = dealers[0].rep;
+    const dealerIds = new Set(dealers.map(d => d.dealer_id).filter(Boolean));
+
+    // Build lookup maps for this rep's dealers
+    // dealer_id → {name, state}
+    const idMap = new Map();
+    // normKey → {dealer_id, name, state}
+    const keyMap = new Map();
+    dealers.forEach(d => {
+      if (d.dealer_id) idMap.set(d.dealer_id, { name: d.dealer_name, state: d.state });
+      keyMap.set(normKey(d.dealer_name, d.state), { dealer_id: d.dealer_id, name: d.dealer_name, state: d.state });
+    });
+
+    // 2. Fetch buying_daily_data (current month live data) + previous month snapshots + goal in parallel
+    //    Also get most recent month from snapshots to use as "previous month"
+    const [{ data: bdRow }, { data: mm }] = await Promise.all([
+      sb.from('buying_daily_data').select('app_rows, funded_data').eq('id', 1).single(),
+      sb.from('monthly_snapshots').select('year,month').order('year',{ascending:false}).order('month',{ascending:false}).limit(1)
+    ]);
+
+    // Determine current month label from today's date
+    const today = new Date();
+    const curYear  = today.getFullYear();
+    const curMonth = today.getMonth() + 1;
+
+    // Previous month = most recent snapshot month
+    const prevYear  = mm ? mm[0].year  : (curMonth === 1 ? curYear - 1 : curYear);
+    const prevMonth = mm ? mm[0].month : (curMonth === 1 ? 12 : curMonth - 1);
+
+    // Fetch previous month snapshots + goal
+    const [{ data: prevRows }, { data: goalRows }] = await Promise.all([
+      sb.from('monthly_snapshots')
+        .select('dealer_id, dealer, state, total_apps, funded')
+        .in('dealer_id', [...dealerIds])
+        .eq('year', prevYear).eq('month', prevMonth),
+      sb.from('rep_goals').select('goal')
+        .eq('rep', repName).eq('year', curYear).eq('month', curMonth).limit(1)
+    ]);
+
+    const goalVal = (goalRows && goalRows.length) ? goalRows[0].goal : null;
+
+    // 3. Aggregate CURRENT month from buying_daily_data
+    //    app_rows: [{dealer, state, ts}]
+    //    funded_data: [{dealer, state, amount, date}]
+    const cur = { apps:0, funded:0, dealers:0 };
+    const curFundedMap = new Map(); // dealer key → {name, state, funded count}
+
+    const appRows    = (bdRow && bdRow.app_rows)    ? bdRow.app_rows    : [];
+    const fundedRows = (bdRow && bdRow.funded_data) ? bdRow.funded_data : [];
+
+    // Count apps per dealer for this rep
+    appRows.forEach(r => {
+      const k = normKey(r.dealer || r['Dealer Name'] || '', r.state || r['State'] || '');
+      if (keyMap.has(k)) cur.apps++;
+    });
+
+    // Count funded deals per dealer for this rep
+    fundedRows.forEach(r => {
+      const dealerName = r.dealer || r['Dealer'] || '';
+      const dealerState = r.state || r['Dealer State'] || '';
+      const k = normKey(dealerName, dealerState);
+      if (keyMap.has(k)){
+        const info = keyMap.get(k);
+        if (!curFundedMap.has(k)) curFundedMap.set(k, { name: info.name, state: info.state, funded: 0 });
+        curFundedMap.get(k).funded++;
+        cur.funded++;
+      }
+    });
+
+    const curFundedDealers = [...curFundedMap.values()];
+    cur.dealers = curFundedDealers.length;
+
+    // 4. Aggregate PREVIOUS month from monthly_snapshots
+    const prev = { apps:0, funded:0, dealers:0 };
+    const prevFundedDealers = [];
+
+    (prevRows || []).forEach(r => {
+      prev.apps   += r.total_apps || 0;
+      prev.funded += r.funded     || 0;
+      if ((r.funded || 0) > 0){
+        prev.dealers++;
+        prevFundedDealers.push({ name: r.dealer, state: r.state, funded: r.funded });
+      }
+    });
+
+    // ── Render ──
+    const initials = repName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const COLORS = ['#1d4ed8','#7c3aed','#0891b2','#d97706','#dc2626','#16a34a','#db2777'];
+    el('repAvatar').textContent = initials;
+    el('repAvatar').style.background = COLORS[repName.charCodeAt(0) % COLORS.length];
+    el('repName').textContent   = repName;
+    el('repPeriod').textContent = `${MONTHS[curMonth-1]} ${curYear} · ${dealers.length} dealer${dealers.length!==1?'s':''}`;
+
+    el('kpiApps').textContent    = cur.apps.toLocaleString();
+    el('kpiFunded').textContent  = cur.funded;
+    el('kpiAppsDelta').innerHTML   = `vs last month ${badge(cur.apps, prev.apps)}`;
+    el('kpiFundedDelta').innerHTML = `vs last month ${badge(cur.funded, prev.funded)}`;
+
+    // Goal card
+    if (goalVal != null && goalVal > 0){
+      const pct    = Math.min(Math.round(cur.funded / goalVal * 100), 100);
+      const rem    = goalVal - cur.funded;
+      const barCls = pct >= 100 ? 'great' : pct >= 60 ? 'on-track' : 'behind';
+      el('goalCard').style.display     = 'block';
+      el('goalCurrent').textContent    = cur.funded;
+      el('goalTarget').textContent     = goalVal;
+      el('goalRemaining').textContent  = rem > 0 ? `${rem} to go` : '🎯 Goal reached!';
+      el('goalRemaining').style.color  = rem > 0 ? 'var(--amber)' : 'var(--green)';
+      el('progressBar').style.width    = pct + '%';
+      el('progressBar').className      = 'progress-bar ' + barCls;
+      el('progressPct').textContent    = pct + '%';
+      el('progressStatus').textContent = pct >= 100 ? 'Goal reached!' : pct >= 60 ? 'On track' : 'Needs attention';
+    }
+
+    // Month over month (no LTB)
+    el('prevMonthLabel').textContent = `${MONTHS[prevMonth-1]} ${prevYear}`;
+    el('curMonthLabel').textContent  = `${MONTHS[curMonth-1]} ${curYear}`;
+    el('prevApps').textContent    = prev.apps.toLocaleString();
+    el('prevFunded').textContent  = prev.funded;
+    el('prevDealers').textContent = prev.dealers;
+    el('curApps').innerHTML    = cur.apps.toLocaleString() + badge(cur.apps, prev.apps);
+    el('curFunded').innerHTML  = cur.funded                + badge(cur.funded, prev.funded);
+    el('curDealers').innerHTML = cur.dealers               + badge(cur.dealers, prev.dealers);
+
+    // Funded dealers — two dropdowns
+    if (curFundedDealers.length || prevFundedDealers.length){
+      el('dealerList').innerHTML =
+        dealerSection(`${MONTHS[curMonth-1]} ${curYear} (current)`,   curFundedDealers,  'cur',  'pill-green', true) +
+        dealerSection(`${MONTHS[prevMonth-1]} ${prevYear} (previous)`, prevFundedDealers, 'prev', 'pill-blue',  false);
+    }
+
+    el('loading-screen').style.display = 'none';
+    el('app').style.display = 'block';
+
+  } catch(e){
+    console.error(e);
+    el('loading-screen').style.display = 'none';
+    el('errorTitle').textContent = 'Something went wrong';
+    el('errorMsg').textContent   = e.message || 'Could not load report.';
+    el('error-screen').style.display = 'flex';
+  }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -5897,9 +5897,10 @@ function updateKpiTile(label, value) {
   let bdInitDone = false;      // guard: only wire events once
 
   // ── REPS DAILY STATE ───────────────────────────────────────────────────────
-  let bdDealerApps = new Map(); // dealer_id → app count
+  let bdDealerApps = new Map(); // dealer_id → app count (filtered by date range)
+  let bdAllAppRows = [];        // all raw CSV app rows for date filtering
   let rdFundedRows = [];        // [{dealer, state, amount, date}] from funded CSV
-  let rdLastFetchedRange = null; // tracks last fetched date range to avoid duplicate fetches
+  let rdLastFetchedRange = null; // tracks last built date range
 
   // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
   window.initBuyingDaily = function () {
@@ -5944,12 +5945,7 @@ function updateKpiTile(label, value) {
         if (bdSuppressDateChange) return;
         clearTimeout(rdDateChangeTimer);
         rdDateChangeTimer = setTimeout(function() {
-          const fromVal = document.getElementById('bdDateFrom')?.value || '';
-          const toVal   = document.getElementById('bdDateTo')?.value   || '';
-          const newRange = fromVal + '|' + toVal;
-          if (newRange === rdLastFetchedRange) return; // same range, no need to re-fetch
-          // Range changed — clear and re-fetch
-          bdDealerApps = new Map();
+          // Reset range tracker so renderRepsDaily knows to rebuild
           rdLastFetchedRange = null;
           renderRepsDaily._loading = false;
           const repsPanel = document.getElementById('bd-panel-reps');
@@ -6036,6 +6032,12 @@ function updateKpiTile(label, value) {
           render();
           console.log('[BuyingDaily] Restored data from Supabase.');
 
+          // Restore app rows for Reps Daily date filtering
+          if (data.app_rows && Array.isArray(data.app_rows)) {
+            bdAllAppRows = data.app_rows;
+            console.log('[RepsDaily] Restored', bdAllAppRows.length, 'app rows from Supabase.');
+          }
+
           // Also restore funded rows for Reps Daily
           try {
             const { data: fData, error: fErr } = await window.sb
@@ -6111,19 +6113,31 @@ function updateKpiTile(label, value) {
         bdData = newData;
         bdStates = Array.from(stateSet).sort();
 
-        // Also build dealer-level app counts for Reps Daily (keyed by dealer_id)
-        bdDealerApps = new Map();
-        results.data.forEach(row => {
+        // Store all raw rows for Reps Daily date filtering
+        bdAllAppRows = results.data.filter(row => {
           const dealer = (row['Dealer Name'] || row['Dealer'] || '').trim();
-          const state  = (row['State']  || '').trim().toUpperCase();
-          if (!dealer || !state) return;
-          const normKey = normalizeDealerName(dealer) + '|' + state;
-          const masterData = window.masterDealerIdMap?.get(normKey);
-          const key = masterData?.dealer_id || normKey; // prefer dealer_id
-          bdDealerApps.set(key, (bdDealerApps.get(key) || 0) + 1);
-        });
-        console.log('[RepsDaily] bdDealerApps built:', bdDealerApps.size, 'dealers,',
-          Array.from(bdDealerApps.values()).reduce((a,b)=>a+b,0), 'total apps');
+          const state  = (row['State'] || '').trim().toUpperCase();
+          return dealer && state;
+        }).map(row => ({
+          dealer: (row['Dealer Name'] || row['Dealer'] || '').trim(),
+          state:  (row['State'] || '').trim().toUpperCase(),
+          ts:     (row['Timestamp Submit'] || '').trim()
+        }));
+
+        // Persist to Supabase alongside bdData
+        (async () => {
+          try {
+            if (!window.sb) return;
+            const { error } = await window.sb
+              .from('buying_daily_data')
+              .upsert({ id: 1, app_rows: bdAllAppRows });
+            if (error) console.warn('[RepsDaily] app_rows save error:', error);
+            else console.log('[RepsDaily] app_rows saved:', bdAllAppRows.length);
+          } catch(e) { console.warn('[RepsDaily] app_rows save failed:', e); }
+        })();
+
+        // Build dealer app counts for current date range
+        buildDealerAppsForRange();
 
         // Update apps card if Reps Daily is visible
         const appsCard = document.getElementById('rdAppsCard');
@@ -6524,7 +6538,50 @@ function updateKpiTile(label, value) {
   }
 
   // ── REPS DAILY: MAIN RENDER ───────────────────────────────────────────────
-  function renderRepsDaily() {
+  // Rebuild bdDealerApps from raw CSV rows filtered by current date range
+  function buildDealerAppsForRange() {
+    const fromVal = document.getElementById('bdDateFrom')?.value || '';
+    const toVal   = document.getElementById('bdDateTo')?.value   || '';
+    const fromDate = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+    const toDate   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+    bdDealerApps = new Map();
+    bdAllAppRows.forEach(row => {
+      const dealer = (row['Dealer Name'] || row['dealer'] || '').trim();
+      const state  = (row['State'] || row['state'] || '').trim().toUpperCase();
+      const tsRaw  = (row['Timestamp Submit'] || row['ts'] || '').trim();
+      if (!dealer || !state) return;
+
+      // Filter by date range if set
+      if (fromDate || toDate) {
+        const parts = tsRaw.split(' ')[0].split('/'); // MM/DD/YYYY
+        if (parts.length === 3) {
+          const rowDate = new Date(parts[2] + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0') + 'T00:00:00');
+          if (fromDate && rowDate < fromDate) return;
+          if (toDate   && rowDate > toDate)   return;
+        }
+      }
+
+      const normKey = normalizeDealerName(dealer) + '|' + state;
+      const masterData = window.masterDealerIdMap?.get(normKey);
+      const key = masterData?.dealer_id || normKey;
+      bdDealerApps.set(key, (bdDealerApps.get(key) || 0) + 1);
+    });
+
+    const total = Array.from(bdDealerApps.values()).reduce((a,b)=>a+b,0);
+    console.log('[RepsDaily] buildDealerAppsForRange:', bdDealerApps.size, 'dealers,', total, 'apps for range', fromVal, '→', toVal);
+
+    // Update apps card
+    const appsCard = document.getElementById('rdAppsCard');
+    const appsSub  = document.getElementById('rdAppsCardSub');
+    if (appsCard && bdAllAppRows.length > 0) appsCard.classList.add('loaded');
+    if (appsSub && bdAllAppRows.length > 0)  appsSub.textContent = total.toLocaleString() + ' apps across ' + bdDealerApps.size + ' dealers';
+
+    rdLastFetchedRange = fromVal + '|' + toVal;
+    return bdDealerApps;
+  }
+
+  async function renderRepsDaily() {
     const grid = document.getElementById('rdRepsGrid');
     if (!grid) return;
 
@@ -6562,10 +6619,23 @@ function updateKpiTile(label, value) {
     }
     console.log('[RepsDaily] renderRepsDaily — bdDealerApps:', bdDealerApps.size, 'rdFundedRows:', rdFundedRows.length);
 
-    // If apps map is empty (page reloaded), load from monthly_snapshots
-    if (bdDealerApps.size === 0 && rdFundedRows.length > 0) {
-      if (renderRepsDaily._loading) return; // prevent infinite loop
+    // Check if we need to re-fetch apps (range changed or map empty)
+    const fromVal = document.getElementById('bdDateFrom')?.value || '';
+    const toVal   = document.getElementById('bdDateTo')?.value   || '';
+    const currentRange = fromVal + '|' + toVal;
+    const needsRebuild = rdLastFetchedRange !== currentRange || bdDealerApps.size === 0;
+
+    // If CSV is loaded, filter it by date range (fast, no DB needed)
+    if (bdAllAppRows.length > 0 && needsRebuild) {
+      buildDealerAppsForRange();
+    }
+
+    // If no CSV and apps map empty OR range changed, fall back to DB
+    const rangeChanged = rdLastFetchedRange !== currentRange;
+    if (bdAllAppRows.length === 0 && (bdDealerApps.size === 0 || rangeChanged) && rdFundedRows.length > 0) {
+      if (renderRepsDaily._loading) return;
       renderRepsDaily._loading = true;
+      bdDealerApps = new Map();
       grid.innerHTML = '<div class="rd-no-data">⏳ Loading app counts from database…</div>';
       (async () => {
         try {
@@ -6669,6 +6739,14 @@ function updateKpiTile(label, value) {
 
     const masterById = new Map();
     (window.currentMasterDealers || []).forEach(d => masterById.set(d.dealer_id, d));
+    console.log('[RepsDaily] masterById size:', masterById.size, 'bdDealerApps size:', bdDealerApps.size);
+
+    // Sample check - first 3 keys in bdDealerApps vs masterById
+    let matchCount = 0, missCount = 0;
+    bdDealerApps.forEach((count, key) => {
+      if (masterById.get(key)) matchCount++; else missCount++;
+    });
+    console.log('[RepsDaily] dealer_id matches:', matchCount, 'misses:', missCount);
 
     // Add app counts — bdDealerApps is keyed by dealer_id (from DB) or normKey (from CSV upload)
     bdDealerApps.forEach((count, key) => {
@@ -6719,7 +6797,7 @@ function updateKpiTile(label, value) {
     if (kpiLtb)    kpiLtb.textContent     = totalApps ? (totalFunded / totalApps * 100).toFixed(1) + '%' : '—';
     if (kpiAppSub) kpiAppSub.textContent  = repMap.size + ' rep' + (repMap.size !== 1 ? 's' : '');
 
-    // ── Build cards ──
+    // ── Load goals then build cards ──
     const AVATAR_COLORS = ['#2563eb','#7c3aed','#0891b2','#d97706','#dc2626','#16a34a','#db2777','#ea580c'];
     const repEntries = Array.from(repMap.entries())
       .sort((a, b) => {
@@ -6727,6 +6805,28 @@ function updateKpiTile(label, value) {
         if (b[0] === 'Unassigned') return -1;
         return b[1].funded - a[1].funded;
       });
+
+    // Fetch current month goals for all reps
+    const now = new Date();
+    const goalYear = now.getFullYear(), goalMonth = now.getMonth() + 1;
+    let goalsMap = new Map();
+    try {
+      const repNames = repEntries.map(([r]) => r).filter(r => r !== 'Unassigned');
+      if (repNames.length > 0 && window.sb) {
+        const { data: goalsData } = await window.sb
+          .from('rep_goals')
+          .select('rep, goal')
+          .in('rep', repNames)
+          .eq('year', goalYear)
+          .eq('month', goalMonth);
+        (goalsData || []).forEach(g => goalsMap.set(g.rep, g.goal));
+      }
+    } catch(e) { console.warn('[RepsDaily] Could not load goals:', e); }
+
+    // Attach goals to repMap data
+    repEntries.forEach(([repName, data]) => {
+      data._goal = goalsMap.get(repName) || null;
+    });
 
     grid.innerHTML = '';
 
@@ -6757,10 +6857,19 @@ function updateKpiTile(label, value) {
       card.innerHTML = `
         <div class="rd-rep-header">
           <div class="rd-rep-avatar" style="background:${avatarColor}">${initials}</div>
-          <div>
+          <div style="flex:1">
             <div class="rd-rep-name">${repName}</div>
             <div class="rd-rep-meta">${dealers.length} dealer${dealers.length !== 1 ? 's' : ''}</div>
           </div>
+          ${repName !== 'Unassigned' ? `
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="rd-goal-btn" data-rep="${repName}" title="Set monthly goal" style="font-size:11px;padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;cursor:pointer;color:#374151">
+              🎯 Goal${data._goal ? ': ' + data._goal : ''}
+            </button>
+            <a href="/rep-report.html?rep=${encodeURIComponent(repName.toLowerCase())}" target="_blank" title="Share report" style="font-size:11px;padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;cursor:pointer;color:#374151;text-decoration:none">
+              🔗 Share
+            </a>
+          </div>` : ''}
         </div>
         <div class="rd-rep-stats">
           <div class="rd-stat-box">
@@ -6812,6 +6921,27 @@ function updateKpiTile(label, value) {
           });
           this.textContent = isExpanded ? '+ ' + extraCount + ' more dealers' : '▲ Show less';
           this.dataset.expanded = isExpanded ? '0' : '1';
+        });
+      }
+
+      // Goal button handler
+      const goalBtn = card.querySelector('.rd-goal-btn');
+      if (goalBtn) {
+        goalBtn.addEventListener('click', async function() {
+          const rep = this.dataset.rep;
+          const current = goalsMap.get(rep) || '';
+          const input = prompt(`Set monthly funded goal for ${rep}:`, current);
+          if (input === null) return;
+          const goal = parseInt(input);
+          if (isNaN(goal) || goal < 0) { alert('Please enter a valid number.'); return; }
+          try {
+            const { error } = await window.sb.from('rep_goals').upsert({
+              rep, year: goalYear, month: goalMonth, goal
+            }, { onConflict: 'rep,year,month' });
+            if (error) throw error;
+            goalsMap.set(rep, goal);
+            this.textContent = `🎯 Goal: ${goal}`;
+          } catch(e) { alert('Could not save goal: ' + e.message); }
         });
       }
 
