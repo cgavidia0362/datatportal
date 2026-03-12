@@ -6581,7 +6581,7 @@ function updateKpiTile(label, value) {
     return bdDealerApps;
   }
 
-  async function renderRepsDaily() {
+  function renderRepsDaily() {
     const grid = document.getElementById('rdRepsGrid');
     if (!grid) return;
 
@@ -6797,8 +6797,10 @@ function updateKpiTile(label, value) {
     if (kpiLtb)    kpiLtb.textContent     = totalApps ? (totalFunded / totalApps * 100).toFixed(1) + '%' : '—';
     if (kpiAppSub) kpiAppSub.textContent  = repMap.size + ' rep' + (repMap.size !== 1 ? 's' : '');
 
-    // ── Load goals then build cards ──
+    // ── Build cards (goals loaded async after render) ──
     const AVATAR_COLORS = ['#2563eb','#7c3aed','#0891b2','#d97706','#dc2626','#16a34a','#db2777','#ea580c'];
+    const now = new Date();
+    const goalYear = now.getFullYear(), goalMonth = now.getMonth() + 1;
     const repEntries = Array.from(repMap.entries())
       .sort((a, b) => {
         if (a[0] === 'Unassigned') return 1;
@@ -6806,27 +6808,9 @@ function updateKpiTile(label, value) {
         return b[1].funded - a[1].funded;
       });
 
-    // Fetch current month goals for all reps
-    const now = new Date();
-    const goalYear = now.getFullYear(), goalMonth = now.getMonth() + 1;
-    let goalsMap = new Map();
-    try {
-      const repNames = repEntries.map(([r]) => r).filter(r => r !== 'Unassigned');
-      if (repNames.length > 0 && window.sb) {
-        const { data: goalsData } = await window.sb
-          .from('rep_goals')
-          .select('rep, goal')
-          .in('rep', repNames)
-          .eq('year', goalYear)
-          .eq('month', goalMonth);
-        (goalsData || []).forEach(g => goalsMap.set(g.rep, g.goal));
-      }
-    } catch(e) { console.warn('[RepsDaily] Could not load goals:', e); }
-
-    // Attach goals to repMap data
-    repEntries.forEach(([repName, data]) => {
-      data._goal = goalsMap.get(repName) || null;
-    });
+    // Pre-attach empty goals so cards render immediately without waiting
+    const goalsMap = new Map();
+    repEntries.forEach(([repName, data]) => { data._goal = null; });
 
     grid.innerHTML = '';
 
@@ -6929,24 +6913,44 @@ function updateKpiTile(label, value) {
       if (goalBtn) {
         goalBtn.addEventListener('click', async function() {
           const rep = this.dataset.rep;
-          const current = goalsMap.get(rep) || '';
-          const input = prompt(`Set monthly funded goal for ${rep}:`, current);
-          if (input === null) return;
-          const goal = parseInt(input);
+          const cur = goalsMap.get(rep) || {};
+          const goalInput = prompt('Funded deals goal for ' + rep + ' this month:', cur.goal || '');
+          if (goalInput === null) return;
+          const goal = parseInt(goalInput);
           if (isNaN(goal) || goal < 0) { alert('Please enter a valid number.'); return; }
+          const daysInput = prompt('Total business days to fund this month (e.g. 22):', cur.business_days || '');
+          if (daysInput === null) return;
+          const business_days = parseInt(daysInput);
+          if (isNaN(business_days) || business_days < 1) { alert('Please enter a valid number of days.'); return; }
           try {
             const { error } = await window.sb.from('rep_goals').upsert({
-              rep, year: goalYear, month: goalMonth, goal
+              rep, year: goalYear, month: goalMonth, goal, business_days
             }, { onConflict: 'rep,year,month' });
             if (error) throw error;
-            goalsMap.set(rep, goal);
-            this.textContent = `🎯 Goal: ${goal}`;
+            goalsMap.set(rep, { goal, business_days });
+            this.textContent = '🎯 ' + goal + ' / ' + business_days + 'd';
           } catch(e) { alert('Could not save goal: ' + e.message); }
         });
       }
 
       grid.appendChild(card);
     });
+
+    // Async patch: load goals then update buttons without re-rendering cards
+    (async () => {
+      try {
+        const repNames = repEntries.map(([r]) => r).filter(r => r !== 'Unassigned');
+        if (!repNames.length || !window.sb) return;
+        const { data: goalsData } = await window.sb
+          .from('rep_goals').select('rep, goal, business_days')
+          .in('rep', repNames).eq('year', goalYear).eq('month', goalMonth);
+        (goalsData || []).forEach(g => {
+          goalsMap.set(g.rep, { goal: g.goal, business_days: g.business_days });
+          const btn = grid.querySelector('.rd-goal-btn[data-rep="' + CSS.escape(g.rep) + '"]');
+          if (btn && g.goal) btn.textContent = '🎯 ' + g.goal + (g.business_days ? ' / ' + g.business_days + 'd' : '');
+        });
+      } catch(e) { console.warn('[RepsDaily] Could not load goals:', e); }
+    })();
   }
   // ── REPS DAILY: AMOUNT FORMATTER ──────────────────────────────────────────
   function fmtAmt(n) {
