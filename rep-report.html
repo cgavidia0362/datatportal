@@ -52,26 +52,40 @@
   .progress-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
 
   /* Pacing card */
-  .pacing-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
-  .pacing-stat{background:#f8fafc;border-radius:10px;padding:12px 10px;text-align:center}
-  .pacing-stat-val{font-size:22px;font-weight:600;line-height:1;margin-bottom:4px}
-  .pacing-stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:'DM Mono',monospace}
-  .pacing-bar-wrap{margin-bottom:10px}
-  .pacing-status-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-family:'DM Mono',monospace}
-  .pace-badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:500;font-family:'DM Mono',monospace}
+  .pace-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px}
+  .pace-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:500;font-family:'DM Mono',monospace;white-space:nowrap}
+  .pace-badge-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
   .pace-ahead{background:var(--green-light);color:var(--green)}
   .pace-on{background:var(--blue-light);color:var(--blue)}
   .pace-behind{background:var(--amber-light);color:var(--amber)}
   .pace-critical{background:var(--red-light);color:var(--red)}
-  .pace-sub{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .pace-fraction{text-align:right}
+  .pace-fraction-nums{font-size:22px;font-weight:600;line-height:1;letter-spacing:-.5px}
+  .pace-fraction-lbl{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px}
 
-  /* Dual-marker progress (expected vs actual) */
-  .dual-track{height:12px;background:#f1f5f9;border-radius:99px;position:relative;overflow:visible;margin-bottom:6px}
-  .dual-fill-actual{height:100%;border-radius:99px;transition:width .6s ease;position:absolute;top:0;left:0}
-  .dual-marker-expected{position:absolute;top:-3px;width:3px;height:18px;border-radius:2px;background:#64748b;transition:left .6s ease}
-  .dual-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;flex-wrap:wrap}
-  .dual-legend span{display:flex;align-items:center;gap:5px}
-  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+  /* Weighted track */
+  .pace-track-wrap{margin-bottom:14px}
+  .pace-track{height:8px;background:#f1f5f9;border-radius:99px;position:relative;overflow:visible;margin-bottom:10px}
+  .pace-fill{height:100%;border-radius:99px;transition:width .6s ease;position:absolute;top:0;left:0;min-width:0}
+  .pace-marker{position:absolute;top:-5px;width:2px;height:18px;border-radius:2px;background:#94a3b8;transition:left .6s ease;z-index:2}
+  .pace-marker-label{position:absolute;top:-18px;transform:translateX(-50%);font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap}
+
+  /* Quarter segments label row */
+  .pace-segments{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0;margin-bottom:8px}
+  .pace-seg{text-align:center;font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;padding:0 2px}
+  .pace-seg:first-child{text-align:left}
+  .pace-seg:last-child{text-align:right}
+
+  /* Stats row */
+  .pace-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px}
+  .pace-stat{background:var(--card);padding:12px;text-align:center}
+  .pace-stat-val{font-size:20px;font-weight:600;line-height:1;margin-bottom:3px}
+  .pace-stat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:'DM Mono',monospace}
+  .pace-message{font-size:12px;color:var(--muted);line-height:1.6;padding:12px 14px;background:#f8fafc;border-radius:10px;border-left:3px solid transparent}
+  .pace-message.ahead{border-color:var(--green)}
+  .pace-message.on{border-color:var(--blue)}
+  .pace-message.behind{border-color:var(--amber)}
+  .pace-message.critical{border-color:var(--red)}
 
   /* Compare */
   .compare-wrap{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-radius:12px;overflow:hidden}
@@ -166,36 +180,29 @@
 
     <!-- Pacing card -->
     <div class="card" id="pacingCard" style="display:none">
-      <div class="card-label">Pacing</div>
-      <div class="pacing-grid">
-        <div class="pacing-stat">
-          <div class="pacing-stat-val" id="paceDaysElapsed">—</div>
-          <div class="pacing-stat-lbl">Days elapsed</div>
-        </div>
-        <div class="pacing-stat">
-          <div class="pacing-stat-val" id="paceDaysLeft">—</div>
-          <div class="pacing-stat-lbl">Days left</div>
-        </div>
-        <div class="pacing-stat">
-          <div class="pacing-stat-val" id="paceExpected">—</div>
-          <div class="pacing-stat-lbl">Expected by now</div>
+      <div class="card-label">Monthly pacing</div>
+      <div class="pace-header">
+        <span class="pace-badge" id="paceBadge"><span class="pace-badge-dot" id="paceBadgeDot"></span><span id="paceBadgeText">—</span></span>
+        <div class="pace-fraction">
+          <div class="pace-fraction-nums"><span id="paceActual">—</span> <span style="color:var(--muted);font-weight:400;font-size:16px">/ <span id="paceExpected">—</span></span></div>
+          <div class="pace-fraction-lbl">funded vs expected</div>
         </div>
       </div>
-      <div class="pacing-bar-wrap">
-        <div class="dual-track">
-          <div class="dual-fill-actual" id="paceActualBar" style="width:0%"></div>
-          <div class="dual-marker-expected" id="paceExpectedMarker" style="left:0%"></div>
-        </div>
-        <div class="dual-legend">
-          <span><span class="dot" id="paceDot" style="background:#16a34a"></span>Actual funded</span>
-          <span><span class="dot" style="background:#64748b;border-radius:2px;width:4px;height:10px"></span>Expected pace</span>
-        </div>
+      <div class="pace-stats">
+        <div class="pace-stat"><div class="pace-stat-val" id="paceDaysElapsed">—</div><div class="pace-stat-lbl">Days elapsed</div></div>
+        <div class="pace-stat"><div class="pace-stat-val" id="paceDaysLeft">—</div><div class="pace-stat-lbl">Days left</div></div>
+        <div class="pace-stat"><div class="pace-stat-val" id="pacePct">—</div><div class="pace-stat-lbl">Of goal</div></div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-        <span class="pace-badge" id="paceBadge">—</span>
-        <span style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace" id="paceDetail">—</span>
+      <div class="pace-track-wrap">
+        <div class="pace-track">
+          <div class="pace-fill" id="paceActualBar" style="width:0%"></div>
+          <div class="pace-marker" id="paceExpectedMarker" style="left:0%">
+            <div class="pace-marker-label" id="paceMarkerLabel"></div>
+          </div>
+        </div>
+
       </div>
-      <div class="pace-sub" id="paceSub"></div>
+      <div class="pace-message" id="paceMessage"></div>
     </div>
 
     <!-- Month over month — no badges -->
@@ -204,13 +211,11 @@
       <div class="compare-wrap">
         <div class="compare-col">
           <div class="compare-col-label" id="prevMonthLabel">Previous</div>
-          <div class="compare-row"><span class="compare-key">Apps</span><span class="compare-val" id="prevApps">—</span></div>
           <div class="compare-row"><span class="compare-key">Funded</span><span class="compare-val" id="prevFunded">—</span></div>
           <div class="compare-row"><span class="compare-key">Dealers</span><span class="compare-val" id="prevDealers">—</span></div>
         </div>
         <div class="compare-col">
           <div class="compare-col-label" id="curMonthLabel">Current</div>
-          <div class="compare-row"><span class="compare-key">Apps</span><span class="compare-val" id="curApps">—</span></div>
           <div class="compare-row"><span class="compare-key">Funded</span><span class="compare-val" id="curFunded">—</span></div>
           <div class="compare-row"><span class="compare-key">Dealers</span><span class="compare-val" id="curDealers">—</span></div>
         </div>
@@ -405,65 +410,74 @@ async function load(){
       el('progressStatus').textContent= pct>=100?'Goal reached!':pct>=60?'On track':'Needs attention';
     }
 
-    // Pacing card
+    // Pacing card — weighted historical distribution
     if(goalVal!=null&&goalVal>0&&bizDays!=null&&bizDays>0){
       el('pacingCard').style.display = 'block';
 
-      // Business days elapsed from day 1 of current month through today
       const monthStart = new Date(curYear, curMonth-1, 1);
       const elapsed    = countBizDays(monthStart, today);
       const remaining  = Math.max(bizDays - elapsed, 0);
 
-      // Expected funded by now = (goal / totalDays) * elapsed
-      const expectedFloat = (goalVal / bizDays) * elapsed;
-      const expected      = Math.round(expectedFloat * 10) / 10; // 1 decimal
-
-      const diff    = cur.funded - expected;
-      const pctGoal = Math.min(Math.round(cur.funded / goalVal * 100), 100);
-      const pctExp  = Math.min(Math.round(expected  / goalVal * 100), 100);
-
-      // Badge
-      let badgeClass, badgeText, subText;
-      if(cur.funded >= goalVal){
-        badgeClass='pace-ahead'; badgeText='🎯 Goal reached!';
-        subText='Outstanding work — monthly goal already achieved.';
-      } else if(diff>=2){
-        badgeClass='pace-ahead'; badgeText='Ahead of pace';
-        subText=`${Math.abs(diff).toFixed(1)} deal${Math.abs(diff)>=2?'s':''} ahead of expected pace. Keep it up!`;
-      } else if(diff>=-1){
-        badgeClass='pace-on'; badgeText='On pace';
-        subText=`Right on track. ${remaining} business day${remaining!==1?'s':''} left to reach the goal.`;
-      } else if(diff>=-3){
-        badgeClass='pace-behind'; badgeText='Slightly behind';
-        subText=`${Math.abs(diff).toFixed(1)} deal${Math.abs(diff)>=2?'s':''} behind expected pace. ${remaining} day${remaining!==1?'s':''} to close the gap.`;
-      } else {
-        badgeClass='pace-critical'; badgeText='Needs to accelerate';
-        subText=`${Math.abs(diff).toFixed(1)} deals behind pace. ${remaining} business day${remaining!==1?'s':''} remaining — urgency needed.`;
+      // Weighted expected: Q1=21.2%, Q2=26.5%, Q3=24.5%, Q4=30.0%
+      const WEIGHTS = [0.212, 0.265, 0.245, 0.300];
+      function weightedExpected(goal, totalDays, elapsedDays){
+        const pct = Math.min(elapsedDays / totalDays, 1);
+        let exp = 0;
+        for(let q=0;q<4;q++){
+          const qStart = q*0.25, qEnd=(q+1)*0.25;
+          if(pct<=qStart) break;
+          const portion = Math.min(pct,qEnd)-qStart;
+          exp += WEIGHTS[q]*(portion/0.25)*goal;
+        }
+        return Math.round(exp*10)/10;
       }
 
-      el('paceDaysElapsed').textContent = elapsed;
-      el('paceDaysLeft').textContent    = remaining;
-      el('paceExpected').textContent    = expected;
-      el('paceBadge').textContent       = badgeText;
-      el('paceBadge').className         = 'pace-badge '+badgeClass;
-      el('paceDetail').textContent      = `${cur.funded} funded vs ${expected} expected`;
-      el('paceSub').textContent         = subText;
+      const expected = weightedExpected(goalVal, bizDays, elapsed);
+      const diff     = cur.funded - expected;
+      const pctGoal  = Math.min(Math.round(cur.funded/goalVal*100),100);
+      const pctExp   = Math.min(Math.round(expected/goalVal*100),100);
 
-      // Dual progress bar
+      let badgeClass, badgeText, msgClass, msgText;
+      if(cur.funded>=goalVal){
+        badgeClass='pace-ahead'; badgeText='Goal reached';
+        msgClass='ahead'; msgText='Outstanding — monthly goal already achieved. Every additional deal adds to the lead.';
+      } else if(diff>=2){
+        badgeClass='pace-ahead'; badgeText='Ahead of pace';
+        msgClass='ahead'; msgText=Math.abs(diff).toFixed(1)+' deals ahead of expected pace. Strong start — maintain the momentum into the final stretch.';
+      } else if(diff>=-1){
+        badgeClass='pace-on'; badgeText='On pace';
+        msgClass='on'; msgText='Right on track with '+remaining+' business day'+(remaining!==1?'s':'')+' remaining. Stay consistent to hit the goal.';
+      } else if(diff>=-3){
+        badgeClass='pace-behind'; badgeText='Slightly behind';
+        msgClass='behind'; msgText=Math.abs(diff).toFixed(1)+' deal'+(Math.abs(diff)>=2?'s':'')+' behind expected pace. '+remaining+' day'+(remaining!==1?'s':'')+' to close the gap — focus on high-potential dealers.';
+      } else {
+        badgeClass='pace-critical'; badgeText='Needs to accelerate';
+        msgClass='critical'; msgText=Math.abs(diff).toFixed(1)+' deals behind pace with '+remaining+' business day'+(remaining!==1?'s':'')+' remaining. Urgency needed — prioritize top-converting dealers now.';
+      }
+
       const dotColor = badgeClass==='pace-ahead'?'#16a34a':badgeClass==='pace-on'?'#1d4ed8':badgeClass==='pace-behind'?'#f59e0b':'#dc2626';
-      el('paceActualBar').style.width       = pctGoal+'%';
-      el('paceActualBar').style.background  = dotColor;
-      el('paceExpectedMarker').style.left   = pctExp+'%';
-      el('paceDot').style.background        = dotColor;
+
+      el('paceDaysElapsed').textContent  = elapsed;
+      el('paceDaysLeft').textContent     = remaining;
+      el('pacePct').textContent          = pctGoal+'%';
+      el('paceActual').textContent       = cur.funded;
+      el('paceExpected').textContent     = expected;
+      el('paceBadgeText').textContent    = badgeText;
+      el('paceBadgeDot').style.background = dotColor;
+      el('paceBadge').className          = 'pace-badge '+badgeClass;
+      el('paceMessage').textContent      = msgText;
+      el('paceMessage').className        = 'pace-message '+msgClass;
+      el('paceMarkerLabel').textContent  = 'expected';
+      el('paceActualBar').style.width    = pctGoal+'%';
+      el('paceActualBar').style.background = dotColor;
+      el('paceExpectedMarker').style.left  = Math.max(0,pctExp-0.5)+'%';
     }
 
     // Month over month — plain numbers, no badges
     el('prevMonthLabel').textContent = `${MONTHS[prevMonth-1]} ${prevYear}`;
     el('curMonthLabel').textContent  = `${MONTHS[curMonth-1]} ${curYear}`;
-    el('prevApps').textContent    = prev.apps.toLocaleString();
     el('prevFunded').textContent  = prev.funded;
     el('prevDealers').textContent = prev.dealers;
-    el('curApps').textContent     = cur.apps.toLocaleString();
     el('curFunded').textContent   = cur.funded;
     el('curDealers').textContent  = cur.dealers;
 
