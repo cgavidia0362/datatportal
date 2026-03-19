@@ -5991,7 +5991,7 @@ function updateKpiTile(label, value) {
           if (!window.sb) { console.warn('[BuyingDaily] Supabase client not ready.'); return; }
           const { data, error } = await window.sb
             .from('buying_daily_data')
-            .select('data, file_name, total_rows, states')
+            .select('data, file_name, total_rows, states, app_rows, funded_data, funded_file_name')
             .eq('id', 1)
             .single();
 
@@ -6068,6 +6068,8 @@ function updateKpiTile(label, value) {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      encoding: 'UTF-16',
+      delimiter: '',   // auto-detect tab vs comma
       complete(results) {
         const newData = {};
         const stateSet = new Set();
@@ -6077,7 +6079,7 @@ function updateKpiTile(label, value) {
         results.data.forEach(row => {
           const status = (row['Status Last'] || '').trim();
           const ts     = (row['Timestamp Submit'] || '').trim();
-          const state  = (row['State'] || '').trim().toUpperCase();
+          const state  = (row['Dealer State'] || row['State'] || '').trim().toUpperCase();
           
           if (!status || !ts) return;
 
@@ -6116,11 +6118,11 @@ function updateKpiTile(label, value) {
         // Store all raw rows for Reps Daily date filtering
         bdAllAppRows = results.data.filter(row => {
           const dealer = (row['Dealer Name'] || row['Dealer'] || '').trim();
-          const state  = (row['State'] || '').trim().toUpperCase();
+          const state  = (row['Dealer State'] || row['State'] || '').trim().toUpperCase();
           return dealer && state;
         }).map(row => ({
           dealer: (row['Dealer Name'] || row['Dealer'] || '').trim(),
-          state:  (row['State'] || '').trim().toUpperCase(),
+          state:  (row['Dealer State'] || row['State'] || '').trim().toUpperCase(),
           ts:     (row['Timestamp Submit'] || '').trim()
         }));
 
@@ -6548,7 +6550,7 @@ function updateKpiTile(label, value) {
     bdDealerApps = new Map();
     bdAllAppRows.forEach(row => {
       const dealer = (row['Dealer Name'] || row['dealer'] || '').trim();
-      const state  = (row['State'] || row['state'] || '').trim().toUpperCase();
+      const state  = (row['Dealer State'] || row['State'] || row['state'] || '').trim().toUpperCase();
       const tsRaw  = (row['Timestamp Submit'] || row['ts'] || '').trim();
       if (!dealer || !state) return;
 
