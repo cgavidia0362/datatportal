@@ -2467,21 +2467,19 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
       if (window.sb) {
         const { data: masterDealers, error } = await window.sb
           .from('master_dealers')
-          .select('dealer_id, dealer_name, state, fi, rep');
+          .select('dealer_id, dealer_name, state, fi, rep, cifnumber');
         
         if (!error && masterDealers) {
           window.masterDealersWithIds = masterDealers;
           window.masterDealerIdMap = new Map();
+          window.masterCifMap = new Map();
           masterDealers.forEach(d => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
-            window.masterDealerIdMap.set(key, {
-              dealer_id: d.dealer_id,
-              fi: d.fi,
-              rep: d.rep
-            });
+            window.masterDealerIdMap.set(key, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
+            if (d.cifnumber) window.masterCifMap.set(d.cifnumber, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
-          console.log('[Phase 1] Built dealer ID map with', window.masterDealerIdMap.size, 'entries');
+          console.log('[Phase 1] Built dealer ID map with', window.masterDealerIdMap.size, 'entries,', window.masterCifMap.size, 'CIFs');
         }
       }
     } catch (err) {
@@ -6065,12 +6063,26 @@ function updateKpiTile(label, value) {
 
   // ── CSV PARSING ────────────────────────────────────────────────────────────
   function parseCSV(file) {
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      encoding: 'UTF-16',
-      delimiter: '',   // auto-detect tab vs comma
-      complete(results) {
+    // Auto-detect encoding: read first bytes to check for UTF-16 BOM
+    const encReader = new FileReader();
+    encReader.onload = function(e) {
+      const bytes = new Uint8Array(e.target.result.slice(0,4));
+      // UTF-16 LE BOM: FF FE  |  UTF-16 BE BOM: FE FF
+      const isUtf16 = (bytes[0]===0xFF&&bytes[1]===0xFE)||(bytes[0]===0xFE&&bytes[1]===0xFF);
+      const encoding = isUtf16 ? 'UTF-16' : 'UTF-8';
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        encoding: encoding,
+        delimiter: '',
+        complete: parseAppCSVComplete
+      });
+    };
+    encReader.readAsArrayBuffer(file);
+  }
+
+  function parseAppCSVComplete(results) {
+    (function() {
         const newData = {};
         const stateSet = new Set();
         let totalRows = 0;
@@ -6123,10 +6135,50 @@ function updateKpiTile(label, value) {
         }).map(row => ({
           dealer: (row['Dealer Name'] || row['Dealer'] || '').trim(),
           state:  (row['Dealer State'] || row['State'] || '').trim().toUpperCase(),
+          cif:    (row['Dealer Cifnumber'] || '').trim(),
           ts:     (row['Timestamp Submit'] || '').trim()
         }));
 
-        // Persist to Supabase alongside bdData
+        // ── CIF Backfill: silently write cifnumber into master_dealers ──
+        (async () => {
+          try {
+            if (!window.sb || !window.masterDealerIdMap) return;
+            // Build unique cif→{dealer_id} map from this CSV
+            const cifUpdates = new Map(); // dealer_id → cifnumber
+            bdAllAppRows.forEach(row => {
+              const cif = (row.cif || '').trim();
+              if (!cif) return;
+              // Skip if we already know this CIF
+              if (window.masterCifMap?.has(cif)) return;
+              // Look up by name+state to get dealer_id
+              const nKey = normalizeDealerName(row.dealer) + '|' + normalizeState(row.state);
+              const masterData = window.masterDealerIdMap.get(nKey);
+              if (masterData?.dealer_id && !cifUpdates.has(masterData.dealer_id)) {
+                cifUpdates.set(masterData.dealer_id, cif);
+              }
+            });
+            if (cifUpdates.size === 0) {
+              console.log('[CIF] No new CIFs to backfill.');
+              return;
+            }
+            console.log('[CIF] Backfilling', cifUpdates.size, 'new CIFs into master_dealers...');
+            // Update each dealer_id with its cifnumber
+            const updates = [...cifUpdates.entries()].map(([dealer_id, cifnumber]) => ({ dealer_id, cifnumber }));
+            for (const u of updates) {
+              await window.sb.from('master_dealers')
+                .update({ cifnumber: u.cifnumber })
+                .eq('dealer_id', u.dealer_id);
+              // Also update local maps immediately
+              if (window.masterCifMap) {
+                const existing = [...window.masterDealerIdMap.values()].find(v => v.dealer_id === u.dealer_id);
+                if (existing) window.masterCifMap.set(u.cifnumber, existing);
+              }
+            }
+            console.log('[CIF] Backfill complete —', cifUpdates.size, 'dealers updated.');
+          } catch(e) { console.warn('[CIF] Backfill failed:', e); }
+        })();
+
+        // Persist app_rows to Supabase
         (async () => {
           try {
             if (!window.sb) return;
@@ -6195,9 +6247,7 @@ function updateKpiTile(label, value) {
         statusEl.textContent = '✅ "' + file.name + '" loaded (' + Object.keys(bdData).length + ' days · ' + totalRows.toLocaleString() + ' applications)';
 
         render();
-      },
-      error(err) { alert('Error parsing CSV:\n' + err.message); }
-    });
+    })(); // end IIFE
   }
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
@@ -6564,9 +6614,16 @@ function updateKpiTile(label, value) {
         }
       }
 
-      const normKey = normalizeDealerName(dealer) + '|' + state;
-      const masterData = window.masterDealerIdMap?.get(normKey);
-      const key = masterData?.dealer_id || normKey;
+      // CIF-first matching: if row has a cifnumber, look it up in masterCifMap
+      const cif = (row['cif'] || '').trim();
+      let key;
+      if (cif && window.masterCifMap?.has(cif)) {
+        key = window.masterCifMap.get(cif).dealer_id;
+      } else {
+        const nKey = normalizeDealerName(dealer) + '|' + state;
+        const masterData = window.masterDealerIdMap?.get(nKey);
+        key = masterData?.dealer_id || nKey;
+      }
       bdDealerApps.set(key, (bdDealerApps.get(key) || 0) + 1);
     });
 
@@ -6597,15 +6654,17 @@ function updateKpiTile(label, value) {
           if (!window.sb) return;
           const { data, error } = await window.sb
             .from('master_dealers')
-            .select('dealer_id, dealer_name, state, fi, rep');
+            .select('dealer_id, dealer_name, state, fi, rep, cifnumber');
           if (error || !data) throw error;
           window.currentMasterDealers = data;
           window.masterDealerIdMap = new Map();
+          window.masterCifMap = new Map();
           data.forEach(d => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
+            if (d.cifnumber) window.masterCifMap.set(d.cifnumber, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
           });
-          console.log('[RepsDaily] Loaded', data.length, 'master dealers');
+          console.log('[RepsDaily] Loaded', data.length, 'master dealers,', window.masterCifMap.size, 'with CIFs');
           renderRepsDaily();
         } catch(e) {
           console.error('[RepsDaily] Failed to load master dealers:', e);
@@ -6938,6 +6997,9 @@ function updateKpiTile(label, value) {
       grid.appendChild(card);
     });
 
+    // Render state breakdown
+    renderStateBreakdown(repMap);
+
     // Async patch: load goals then update buttons without re-rendering cards
     (async () => {
       try {
@@ -6954,6 +7016,53 @@ function updateKpiTile(label, value) {
       } catch(e) { console.warn('[RepsDaily] Could not load goals:', e); }
     })();
   }
+  // ── REPS DAILY: STATE BREAKDOWN ───────────────────────────────────────────
+  function renderStateBreakdown(repMap) {
+    const section = document.getElementById('rdStateSection');
+    const grid    = document.getElementById('rdStateGrid');
+    if (!section || !grid) return;
+
+    // Aggregate apps + funded by state across all reps
+    const stateMap = new Map(); // state → { apps, funded }
+    repMap.forEach((repData) => {
+      repData.dealers.forEach((dealer) => {
+        const st = (dealer.state || 'Unknown').toUpperCase();
+        if (!stateMap.has(st)) stateMap.set(st, { apps: 0, funded: 0 });
+        const s = stateMap.get(st);
+        s.apps   += dealer.apps   || 0;
+        s.funded += dealer.funded || 0;
+      });
+    });
+
+    if (stateMap.size === 0) { section.style.display = 'none'; return; }
+
+    // Sort by apps descending
+    const entries = [...stateMap.entries()].sort((a, b) => b[1].apps - a[1].apps);
+
+    grid.innerHTML = entries.map(([state, data]) => {
+      const ltb = data.apps ? (data.funded / data.apps * 100).toFixed(1) : '0.0';
+      return `
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:15px;font-weight:600;color:#0f172a;">${state}</span>
+            <span style="font-size:11px;font-family:monospace;background:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:99px;">${ltb}% LTB</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:20px;font-weight:600;color:#0f172a;">${data.apps.toLocaleString()}</div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:2px;">Apps</div>
+            </div>
+            <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:20px;font-weight:600;color:#15803d;">${data.funded}</div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#86efac;margin-top:2px;">Funded</div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    section.style.display = 'block';
+  }
+
   // ── REPS DAILY: AMOUNT FORMATTER ──────────────────────────────────────────
   function fmtAmt(n) {
     if (!n) return '$0';
