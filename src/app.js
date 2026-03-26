@@ -5899,6 +5899,7 @@ function updateKpiTile(label, value) {
   let bdAllAppRows = [];        // all raw CSV app rows for date filtering
   let rdFundedRows = [];        // [{dealer, state, amount, date}] from funded CSV
   let rdLastFetchedRange = null; // tracks last built date range
+  let bdSuppressDateChange = false; // suppress date change handler during programmatic updates
 
   // ── PUBLIC INIT (called from switchTab) ───────────────────────────────────
   window.initBuyingDaily = function () {
@@ -5936,8 +5937,6 @@ function updateKpiTile(label, value) {
 
       // date range inputs
       let rdDateChangeTimer = null;
-      let bdSuppressDateChange = false;
-
       const onDateChange = function() {
         render();
         if (bdSuppressDateChange) return;
@@ -6075,13 +6074,13 @@ function updateKpiTile(label, value) {
         skipEmptyLines: true,
         encoding: encoding,
         delimiter: '',
-        complete: parseAppCSVComplete
+        complete: function(results) { parseAppCSVComplete(results, file); }
       });
     };
     encReader.readAsArrayBuffer(file);
   }
 
-  function parseAppCSVComplete(results) {
+  function parseAppCSVComplete(results, file) {
     (function() {
         const newData = {};
         const stateSet = new Set();
