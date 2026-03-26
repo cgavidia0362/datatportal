@@ -6355,26 +6355,186 @@ function updateKpiTile(label, value) {
 
   // ── WEEKLY VIEW ────────────────────────────────────────────────────────────
   function renderWeekly() {
-    const groups = groupBy(getWeekKey);
-    const keys   = Object.keys(groups).sort();
-    const rows   = keys.map(k => ({ key: k, totals: sumByStatus(groups[k]) }));
+    // Determine current upload month from bdData keys
+    const allDates = Object.keys(bdData).map(d => toISO(d)).sort();
+    if (!allDates.length) return;
 
-    renderComparison('bdWeeklyCompare', rows, 'Week');
-    buildBarChart('bdWeeklyChart', rows.map(r => r.key), rows);
+    // Use the most recent month in the data as the reference month
+    const latestISO   = allDates[allDates.length - 1];
+    const refYear     = parseInt(latestISO.slice(0,4));
+    const refMonth    = parseInt(latestISO.slice(5,7));
+    const monthNames  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthLabel  = monthNames[refMonth-1] + ' ' + refYear;
 
-    // summary table
-    document.getElementById('bdWeeklyTbody').innerHTML = rows.map((r, i) => {
-      const total     = totalOf(r.totals);
-      const prevTotal = i > 0 ? totalOf(rows[i-1].totals) : null;
-      const chg       = prevTotal ? ((total - prevTotal) / prevTotal * 100).toFixed(1) : null;
+    const lbl = document.getElementById('bdWeeklySummaryLabel');
+    if (lbl) lbl.textContent = monthLabel + ' — Weekly Summary';
+    const title = document.getElementById('bdWeekCompareTitle');
+    if (title) title.textContent = 'Week by week breakdown — ' + monthLabel;
 
-      return '<tr>' +
-        '<td>' + r.key + '</td>' +
-        '<td class="bd-total-col">' + fmt(total) + '</td>' +
-        STATUSES.map(s => '<td>' + fmt(r.totals[s]) + '</td>').join('') +
-        '<td>' + (chg !== null ? changeTag(chg) : '<span style="color:#94a3b8;font-size:.78rem;">—</span>') + '</td>' +
-      '</tr>';
-    }).join('');
+    // Build fixed 4-week calendar for ref month
+    // Week 1: days 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end
+    const daysInMonth = new Date(refYear, refMonth, 0).getDate();
+    const weekRanges = [
+      { n:1, start:1,  end:7 },
+      { n:2, start:8,  end:14 },
+      { n:3, start:15, end:21 },
+      { n:4, start:22, end:daysInMonth },
+    ];
+
+    const today = new Date();
+    const todayISO = today.toISOString().slice(0,10);
+
+    // Count biz days in a range
+    function bizInRange(y, m, s, e) {
+      let count = 0;
+      for (let d = s; d <= e; d++) {
+        const dow = new Date(y, m-1, d).getDay();
+        if (dow !== 0 && dow !== 6) count++;
+      }
+      return count;
+    }
+
+    // Get funded count for a date range from rdFundedRows, respecting state filter
+    const activeState = document.getElementById('bdStateFilter')?.value || 'ALL';
+    function fundedInRange(startISO, endISO) {
+      return rdFundedRows.filter(r => {
+        let d = r.date || '';
+        if (d.includes('/')) {
+          const p = d.split('/');
+          if (p.length === 3) d = p[2].padStart(4,'0') + '-' + p[0].padStart(2,'0') + '-' + p[1].padStart(2,'0');
+        }
+        if (d < startISO || d > endISO) return false;
+        if (activeState !== 'ALL' && (r.state || '').toUpperCase() !== activeState) return false;
+        return true;
+      }).length;
+    }
+
+    // Build week data
+    const pad = n => String(n).padStart(2,'0');
+    const weeks = weekRanges.map(wr => {
+      const startISO = refYear + '-' + pad(refMonth) + '-' + pad(wr.start);
+      const endISO   = refYear + '-' + pad(refMonth) + '-' + pad(Math.min(wr.end, daysInMonth));
+
+      // Sum statuses for days in this week that exist in bdData
+      const totals = {}; STATUSES.forEach(s => totals[s] = 0);
+      Object.keys(bdData).forEach(mmddyyyy => {
+        const iso = toISO(mmddyyyy);
+        if (iso < startISO || iso > endISO) return;
+        const state = document.getElementById('bdStateFilter')?.value || 'ALL';
+        const day = bdData[mmddyyyy][state] || bdData[mmddyyyy]['ALL'] || {};
+        STATUSES.forEach(s => { totals[s] += day[s] || 0; });
+      });
+
+      const funded   = fundedInRange(startISO, endISO);
+      const apps     = totalOf(totals);
+      const biz      = bizInRange(refYear, refMonth, wr.start, Math.min(wr.end, daysInMonth));
+      const isCurrent = todayISO >= startISO && todayISO <= endISO;
+      const isFuture  = startISO > todayISO;
+      const progressPct = isFuture ? 0 : isCurrent
+        ? Math.round(bizInRange(refYear, refMonth, wr.start, today.getDate()) / biz * 100)
+        : 100;
+
+      return { n:wr.n, startISO, endISO, startDay:wr.start, endDay:Math.min(wr.end,daysInMonth),
+               totals, apps, funded, biz, isCurrent, isFuture, progressPct };
+    });
+
+    // ── 1. Week summary cards ──
+    const cardGrid = document.getElementById('bdWeekCards');
+    if (cardGrid) {
+      cardGrid.innerHTML = weeks.map(w => {
+        const dateLabel = monthNames[refMonth-1].slice(0,3) + ' ' + w.startDay + ' – ' + monthNames[refMonth-1].slice(0,3) + ' ' + w.endDay;
+        const cur  = w.isCurrent ? 'style="border-color:#3b82f6;box-shadow:0 0 0 1px #3b82f6"' : '';
+        const fade = w.isFuture  ? 'style="opacity:.42"' : '';
+        const badge = w.isCurrent ? '<div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:500;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:99px;font-family:monospace">Current</div>' : '';
+        const appVal  = w.isFuture ? '<span style="color:#cbd5e1">—</span>' : w.apps.toLocaleString();
+        const fundVal = w.isFuture ? '<span style="color:#cbd5e1">—</span>' : w.funded;
+        const fundBg  = w.isFuture ? 'background:#f8fafc' : 'background:#f0fdf4';
+        const fundClr = w.isFuture ? 'color:#cbd5e1' : 'color:#15803d';
+        return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px 16px;position:relative;" ' + cur + ' ' + fade + '>' +
+          badge +
+          '<div style="font-size:10px;font-weight:500;font-family:monospace;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Week ' + w.n + '</div>' +
+          '<div style="font-size:15px;font-weight:600;margin-bottom:2px">' + dateLabel + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;margin-bottom:14px;font-family:monospace">' + w.biz + ' business days</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+            '<div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center"><div style="font-size:20px;font-weight:600">' + appVal + '</div><div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-top:3px">Apps</div></div>' +
+            '<div style="' + fundBg + ';border-radius:8px;padding:10px;text-align:center"><div style="font-size:20px;font-weight:600;' + fundClr + '">' + fundVal + '</div><div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#86efac;margin-top:3px">Funded</div></div>' +
+          '</div>' +
+          '<div style="height:3px;background:#f1f5f9;border-radius:99px;margin-top:14px;overflow:hidden"><div style="height:100%;width:' + w.progressPct + '%;background:#3b82f6;border-radius:99px"></div></div>' +
+        '</div>';
+      }).join('');
+    }
+
+    // ── 2. Quality breakdown stacked bars ──
+    const STATUS_COLORS = { 'Denial':'#ef4444','Counter':'#f59e0b','Approved':'#3b82f6','Pending Approval':'#8b5cf6','Funded':'#16a34a','Accepted':'#06b6d4','Duplicate':'#94a3b8' };
+    const SHOW_STATUSES = ['Denial','Counter','Approved','Pending Approval','Funded'];
+
+    const legend = document.getElementById('bdQualityLegend');
+    if (legend) {
+      legend.innerHTML = SHOW_STATUSES.map(s =>
+        '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:#64748b">' +
+        '<div style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:' + STATUS_COLORS[s] + '"></div>' + s + '</div>'
+      ).join('');
+    }
+
+    const qRows = document.getElementById('bdQualityRows');
+    if (qRows) {
+      qRows.innerHTML = weeks.filter(w => !w.isFuture && w.apps > 0).map(w => {
+        const total = w.apps || 1;
+        const segs = SHOW_STATUSES.map(s => {
+          const val = s === 'Funded' ? w.funded : (w.totals[s] || 0);
+          const pct = (val / total * 100);
+          const show = pct > 4;
+          return '<div style="height:100%;width:' + pct.toFixed(1) + '%;background:' + STATUS_COLORS[s] + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.9);overflow:hidden;white-space:nowrap;border-radius:0">' + (show ? pct.toFixed(0)+'%' : '') + '</div>';
+        }).join('');
+        return '<div style="display:grid;grid-template-columns:56px 1fr 80px;align-items:center;gap:12px">' +
+          '<div style="font-size:12px;font-weight:500;color:' + (w.isCurrent?'#3b82f6':'#64748b') + ';font-family:monospace;text-align:right">Wk ' + w.n + '</div>' +
+          '<div style="height:24px;border-radius:6px;overflow:hidden;display:flex;width:100%">' + segs + '</div>' +
+          '<div style="font-size:12px;font-weight:600;text-align:right;font-family:monospace;color:#374151">' + w.apps.toLocaleString() + ' apps</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    // ── 3. All weeks comparison table ──
+    const ct = document.getElementById('bdWeekCompareTable');
+    if (!ct) return;
+
+    const metrics = [
+      { label:'Total Apps', fn: w => w.apps },
+      { label:'Denial',     fn: w => w.totals['Denial'] || 0 },
+      { label:'Counter',    fn: w => w.totals['Counter'] || 0 },
+      { label:'Approved',   fn: w => w.totals['Approved'] || 0 },
+      { label:'Pending',    fn: w => w.totals['Pending Approval'] || 0 },
+      { label:'Funded',     fn: w => w.funded, funded: true },
+      { label:'Funded Rate',fn: w => w.apps ? (w.funded/w.apps*100).toFixed(1)+'%' : '0.0%', isRate: true },
+    ];
+
+    const thStyle = 'font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:#94a3b8;padding:8px 14px;text-align:right;border-bottom:2px solid #f1f5f9;font-family:monospace;white-space:nowrap';
+    const thFirst = 'font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:#94a3b8;padding:8px 14px;text-align:left;border-bottom:2px solid #f1f5f9;font-family:monospace';
+
+    let html = '<thead><tr><th style="' + thFirst + '">Metric</th>';
+    weeks.forEach(w => {
+      const curStyle = w.isCurrent ? 'color:#1d4ed8;background:#f8fbff;' : '';
+      html += '<th style="' + thStyle + ';' + curStyle + '">Week ' + w.n + '<br><span style="font-weight:400;font-size:9px;letter-spacing:.04em">' + monthNames[refMonth-1].slice(0,3) + ' ' + w.startDay + '–' + w.endDay + '</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    metrics.forEach((m, mi) => {
+      const rowBg = m.funded ? 'background:#f0fdf4' : (mi%2===0 ? 'background:#fafafa' : '');
+      html += '<tr>';
+      const labelClr = m.funded ? 'color:#15803d;font-weight:600' : 'color:#374151';
+      html += '<td style="padding:10px 14px;border-bottom:1px solid #f8fafc;font-size:13px;' + labelClr + '">' + m.label + '</td>';
+      weeks.forEach(w => {
+        const cur  = w.isCurrent ? 'background:#f8fbff;font-weight:600;color:#1d4ed8;' : '';
+        const fade = w.isFuture  ? 'color:#cbd5e1' : '';
+        const fundedCur = m.funded && w.isCurrent ? 'background:#dcfce7;color:#15803d;' : m.funded && !w.isFuture ? 'color:#15803d;font-weight:600;' : '';
+        const val  = w.isFuture ? '—' : m.fn(w);
+        html += '<td style="padding:10px 14px;border-bottom:1px solid #f8fafc;font-size:13px;text-align:right;font-family:monospace;' + cur + fade + fundedCur + (rowBg&&!m.funded?rowBg:'') + '">' + (typeof val==='number'?val.toLocaleString():val) + '</td>';
+      });
+      html += '</tr>';
+    });
+
+    html += '</tbody>';
+    ct.innerHTML = html;
   }
 
   // ── MONTHLY VIEW ───────────────────────────────────────────────────────────
@@ -6559,7 +6719,15 @@ function updateKpiTile(label, value) {
           const amtRaw  = (row['Loan Amount'] || row['Amount'] || '').trim();
           if (!dealer || !state) return;
           const amount = parseFloat(amtRaw.replace(/[$,\s]/g, '')) || 0;
-          rdFundedRows.push({ dealer, state, amount, date: dateRaw });
+          // Normalize date to ISO (YYYY-MM-DD) for consistent comparisons
+          let dateISO = dateRaw;
+          if (dateRaw && dateRaw.includes('/')) {
+            const parts = dateRaw.split('/');
+            if (parts.length === 3) {
+              dateISO = parts[2].padStart(4,'0') + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+            }
+          }
+          rdFundedRows.push({ dealer, state, amount, date: dateISO });
         });
 
         // Update upload card

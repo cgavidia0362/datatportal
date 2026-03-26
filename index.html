@@ -1224,32 +1224,25 @@ th, td {
 
             <!-- ── WEEKLY PANEL ── -->
             <div class="bd-view-panel" id="bd-panel-weekly">
-              <div class="bd-compare-strip" id="bdWeeklyCompare"></div>
-              <div class="bd-section-card">
-                <h3>📈 Weekly Totals – Applications by Status</h3>
-                <div class="bd-chart-wrap"><canvas id="bdWeeklyChart"></canvas></div>
-              </div>
-              <div class="bd-section-card">
-                <h3>📊 Weekly Summary</h3>
-                <div class="bd-table-wrap">
-                  <table class="bd-table">
-                    <thead>
-                      <tr>
-                        <th style="text-align:left;">Week</th>
-                        <th>Total</th>
-                        <th>Accepted</th>
-                        <th>Approved</th>
-                        <th>Counter</th>
-                        <th>Denial</th>
-                        <th>Duplicate</th>
-                        <th>Funded</th>
-                        <th>Pending</th>
-                        <th>vs Prev</th>
-                      </tr>
-                    </thead>
-                    <tbody id="bdWeeklyTbody"></tbody>
-                  </table>
+              <!-- Week Summary Cards -->
+              <div style="font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#94a3b8;margin-bottom:12px;" id="bdWeeklySummaryLabel">Weekly Summary</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;" id="bdWeekCards"></div>
+
+              <!-- App Quality Breakdown -->
+              <div style="font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#94a3b8;margin-bottom:12px;">App quality by week</div>
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px 24px;margin-bottom:28px;" id="bdQualityCard">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+                  <span style="font-size:14px;font-weight:600;">Status distribution per week</span>
+                  <div style="display:flex;flex-wrap:wrap;gap:12px;" id="bdQualityLegend"></div>
                 </div>
+                <div style="display:flex;flex-direction:column;gap:10px;" id="bdQualityRows"></div>
+              </div>
+
+              <!-- All Weeks Table -->
+              <div style="font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#94a3b8;margin-bottom:12px;">All weeks comparison</div>
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px 24px;overflow-x:auto;" id="bdWeekCompareCard">
+                <div style="font-size:14px;font-weight:600;margin-bottom:16px;" id="bdWeekCompareTitle">Week by week breakdown</div>
+                <table style="width:100%;border-collapse:collapse;min-width:500px;" id="bdWeekCompareTable"></table>
               </div>
             </div>
 
