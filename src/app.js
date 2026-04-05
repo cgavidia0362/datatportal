@@ -1862,17 +1862,26 @@ function handleFile(file) {
     };
     reader.readAsArrayBuffer(file);
   } else {
-    // Use PapaParse for CSV
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: false,
-      complete: (res) => {
-        parsed.fields = res.meta.fields || [];
-        parsed.rows   = res.data || [];
-        setupMappingUI();
-      }
-    });
+    // Auto-detect encoding: check for UTF-16 BOM
+    const encSniff = new FileReader();
+    encSniff.onload = (ev) => {
+      const bytes = new Uint8Array(ev.target.result.slice(0, 4));
+      const isUtf16 = (bytes[0]===0xFF&&bytes[1]===0xFE)||(bytes[0]===0xFE&&bytes[1]===0xFF);
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        encoding: isUtf16 ? 'UTF-16' : 'UTF-8',
+        delimiter: '',
+        complete: (res) => {
+          parsed.fields = res.meta.fields || [];
+          parsed.rows   = res.data || [];
+          console.log('[Upload] Parsed', parsed.rows.length, 'rows, fields:', parsed.fields.slice(0,6));
+          setupMappingUI();
+        }
+      });
+    };
+    encSniff.readAsArrayBuffer(file);
   }
 }
 
@@ -1945,8 +1954,8 @@ function guessMapping(fields) {
 
   // patterns for each logical column
   const g = {
-    dealer: pick([/dealer|store|merchant|seller|partner|client|account/]),
-    state:  pick([/state\b|^st\b|state code|region code/]),
+    dealer: pick([/^dealer name$|^dealer$|store|merchant|seller|partner|client|account/]),
+    state:  pick([/^dealer state$|^state$|^st$|state code|region code|\bstate\b/]),
     status: pick([/status|decision|result|outcome|fund(ed|ing)|approve|den(y|ied)|pending|counter/]),
     loan:   pick([/loan amount|amount financed|financed amount|principal|funded amount|approval amount|gross amount|amt\b/]),
     apr:    pick([/apr|rate\b|interest/]),
@@ -2372,6 +2381,7 @@ const mergeFundedData = matchAndMergeFundedIntoSnapshot;
 
 // ===== PHASE 1: Validate snapshot and fetch dealer IDs =====
 async function validateSnapshot(snapshot) {
+  console.log('[validateSnapshot] CALLED with snapshot dealerRows:', (snapshot?.dealerRows||[]).length);
   const validationIssues = {
     mismatches: [],
     newDealers: []
@@ -2411,6 +2421,8 @@ async function validateSnapshot(snapshot) {
     console.log('[Validation] Built dealer ID map with', window.masterDealerIdMap.size, 'entries');
     
     // Check snapshot dealers against master list
+    console.log('[validateSnapshot] dealerRows count:', (snapshot.dealerRows||[]).length);
+    console.log('[validateSnapshot] first row sample:', JSON.stringify((snapshot.dealerRows||[])[0]));
     (snapshot.dealerRows || []).forEach(dealerRow => {
       const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
       
@@ -2423,13 +2435,14 @@ async function validateSnapshot(snapshot) {
         });
       }
     });
+    console.log('[validateSnapshot] newDealers sample:', JSON.stringify(validationIssues.newDealers.slice(0,2)));
     
     console.log('[Validation] Found', validationIssues.newDealers.length, 'new dealers not in master list');
     
     return validationIssues;
     
   } catch (err) {
-    console.error('[Validation] Error:', err);
+    console.error('[validateSnapshot] INTERNAL ERROR:', err);
     return validationIssues;
   }
 }
@@ -2452,6 +2465,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     ltv:    $('#mapLtv')?.value    || '',
     fi:     $('#mapFI')?.value     || '',
   };
+  console.log('[Analyze] Mapping:', mapping);
+  console.log('[Analyze] Fields available:', parsed.fields);
   if (!mapping.dealer || !mapping.state || !mapping.status) {
     alert('Please map at least Dealer, State, and Status.');
     return;
@@ -2488,6 +2503,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     
     const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
 lastBuiltSnapshot = snap;
+console.log('[Analyze] snap.dealerRows sample:', (snap.dealerRows||[]).slice(0,2).map(r=>({dealer:r.dealer,state:r.state})));
+console.log('[Analyze] total dealerRows:', (snap.dealerRows||[]).length);
 // ===== DETECT FUNDED-ONLY DEALERS =====
 // Find dealers who funded deals but had NO applications OR 0 funded apps this month
 let orphansForModal = [];
@@ -2501,7 +2518,7 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
     const key = normalizeDealerName(r.dealer).trim() + '|' + normalizeState(r.state).trim();
     appDealerMap.set(key, {
       funded: r.funded || 0,
-      totalApps: r.totalApps || 0
+      totalApps: r.total || 0
     });
   });
   
@@ -2542,15 +2559,14 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   
   console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
   
-  // Find dealers who funded deals but had 0 funded apps OR aren't in app CSV at all
+  // Find dealers who funded deals but have NO apps in the app CSV at all
   fundedByDealer.forEach(function(entry, key) {
     const appData = appDealerMap.get(key);
     
-    // Case 1: Not in application CSV at all
-    // Case 2: In application CSV but funded count = 0
-    if (!appData || appData.funded === 0) {
+    // Only flag if truly absent from app CSV (has zero total apps, not just zero funded status)
+    if (!appData || appData.totalApps === 0) {
       console.log('[Debug] Funded-only dealer found:', key, 
-                  appData ? `(in app CSV with ${appData.funded} funded, ${appData.totalApps} total apps)` : '(not in app CSV)');
+                  appData ? '(in app CSV with ' + appData.totalApps + ' total apps)' : '(not in app CSV)');
       orphansForModal.push({
         dealer: entry.dealerName,
         state: entry.state,
@@ -2578,6 +2594,10 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
 // Validate the snapshot against master dealer list
 try {
   const validationIssues = await validateSnapshot(lastBuiltSnapshot);
+  console.log('[Validation] validateSnapshot returned:', 
+    'newDealers:', validationIssues.newDealers.length, 
+    'mismatches:', validationIssues.mismatches.length,
+    'sample:', JSON.stringify(validationIssues.newDealers.slice(0,1)));
   
   // Do a preliminary merge to identify unmatched funded dealers
   let unmatchedFundedDealers = [];
@@ -2640,9 +2660,11 @@ try {
       html += '<div class="text-xs text-gray-500 mb-2">Choose to add each dealer to the master list, link to an existing dealer, or skip.</div>';
       html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1 text-left">Dealer Name</th><th class="p-1">State</th><th class="p-1">Action</th></tr></thead><tbody>';
       validationIssues.newDealers.forEach((d, i) => {
+        const dName  = d.dealer || d.name  || '(unknown)';
+        const dState = d.state  || d.csvState || '—';
         html += `<tr class="border-t" id="nd-row-${i}">
-          <td class="p-1">${d.dealer}</td>
-          <td class="p-1">${d.state}</td>
+          <td class="p-1">${dName}</td>
+          <td class="p-1">${dState}</td>
           <td class="p-1">
             <select class="text-xs border rounded px-1 py-0.5 nd-action-select" data-idx="${i}"
               onchange="window._onNewDealerActionChange(${i}, this.value)">
@@ -2733,11 +2755,23 @@ try {
         return;
       }
       resultsDiv.innerHTML = matches.map(d =>
-        `<div class="px-2 py-1 hover:bg-blue-50 cursor-pointer border-b last:border-0"
-          onclick="window._selectLinkedDealer(${idx}, '${d.dealer_id}', '${d.dealer_name.replace(/'/g,"\'")} (${d.state})')">
+        `<div class="px-2 py-1 hover:bg-blue-50 cursor-pointer border-b last:border-0 nd-result-item"
+          data-idx="${idx}"
+          data-id="${d.dealer_id}"
+          data-label="${(d.dealer_name + ' (' + d.state + ')').replace(/"/g, '&quot;')}">
           ${d.dealer_name} <span class="text-gray-400">${d.state}</span>
         </div>`
       ).join('');
+      // Use event delegation to avoid apostrophe issues in onclick attributes
+      resultsDiv.querySelectorAll('.nd-result-item').forEach(el => {
+        el.addEventListener('click', function() {
+          window._selectLinkedDealer(
+            parseInt(this.dataset.idx),
+            this.dataset.id,
+            this.dataset.label
+          );
+        });
+      });
     };
 
     window._selectLinkedDealer = function(idx, dealerId, label) {
@@ -2799,27 +2833,30 @@ try {
         for (const d of pendingNewDealers) {
           const actionEl = document.querySelector(`.nd-action-select[data-idx="${d.idx}"]`);
           const action = actionEl ? actionEl.value : 'add';
+          const dName  = (d.dealer || d.name  || '').trim().toLowerCase();
+          const dState = (d.state  || d.csvState || '').trim().toUpperCase();
           const dealerRow = (s.dealerRows || []).find(r =>
-            r.dealer.trim().toLowerCase() === d.dealer.trim().toLowerCase() &&
-            r.state.trim().toUpperCase() === d.state.trim().toUpperCase()
+            (r.dealer||'').trim().toLowerCase() === dName &&
+            (r.state ||'').trim().toUpperCase()  === dState
           );
           if (action === 'add') {
-            console.log('[Review] Adding new dealer to master:', d.dealer, d.state);
-            const result = await addMasterDealer(d.dealer, d.state, d.fi || 'Independent', '');
+            const dn = d.dealer||d.name||''; const ds = d.state||d.csvState||''; const dfi = d.fi||d.csvFI||'Independent';
+            console.log('[Review] Adding new dealer to master:', dn, ds);
+            const result = await addMasterDealer(dn, ds, dfi, '');
             if (result.success && result.data?.dealer_id && dealerRow) {
               dealerRow.dealer_id = result.data.dealer_id;
-              console.log('[Review] Assigned new dealer_id:', result.data.dealer_id, 'to', d.dealer);
+              console.log('[Review] Assigned new dealer_id:', result.data.dealer_id, 'to', dn);
             }
           } else if (action === 'link') {
             const selectedId = document.getElementById('nd-selected-id-' + d.idx)?.value;
             if (selectedId && dealerRow) {
               dealerRow.dealer_id = selectedId;
-              console.log('[Review] Linked', d.dealer, 'to existing dealer_id:', selectedId);
+              console.log('[Review] Linked', d.dealer||d.name, 'to existing dealer_id:', selectedId);
             } else if (!selectedId) {
               console.warn('[Review] Link selected but no dealer chosen for:', d.dealer, '— skipping');
             }
           } else {
-            console.log('[Review] Skipping new dealer:', d.dealer);
+            console.log('[Review] Skipping new dealer:', d.dealer||d.name);
           }
         }
       }
