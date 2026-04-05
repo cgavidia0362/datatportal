@@ -3465,7 +3465,24 @@ console.warn('[monthly refresh] KPI reload failed:', e);
   }
 
   function renderCards(snaps) {
-    var cards = snaps.map(function (s) {
+    // Populate year dropdown
+    const yearSel = document.getElementById('monthlyYearFilter');
+    if (yearSel) {
+      const years = [...new Set(snaps.map(s => String(s.year)))].sort().reverse();
+      const curYear = yearSel.value;
+      yearSel.innerHTML = '<option value="ALL">All Years</option>' +
+        years.map(y => '<option value="' + y + '"' + (curYear === y ? ' selected' : '') + '>' + y + '</option>').join('');
+      if (!yearSel._wired) {
+        yearSel.addEventListener('change', function() { renderCards(snaps); });
+        yearSel._wired = true;
+      }
+    }
+
+    // Filter by selected year
+    const selYear = yearSel ? yearSel.value : 'ALL';
+    const filtered = selYear === 'ALL' ? snaps : snaps.filter(s => String(s.year) === selYear);
+
+    var cards = filtered.map(function (s) {
       return (
         '<button class="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:shadow transition-colors hover:bg-indigo-50/30" data-id="'+s.id+'">' +
           '<div class="text-sm text-slate-500">'+monthName(s.month)+' '+s.year+'</div>' +
@@ -6577,8 +6594,26 @@ function updateKpiTile(label, value) {
   // ── MONTHLY VIEW ───────────────────────────────────────────────────────────
   function renderMonthly() {
     const groups = groupBy(getMonthKey);
-    const keys   = Object.keys(groups).sort();
-    const rows   = keys.map(k => ({ key: k, totals: sumByStatus(groups[k]) }));
+    const allKeys = Object.keys(groups).sort();
+
+    // Populate year dropdown
+    const yearSel = document.getElementById('bdMonthlyYearFilter');
+    if (yearSel) {
+      const years = [...new Set(allKeys.map(k => k.split('-')[0]))].sort();
+      const currentVal = yearSel.value;
+      yearSel.innerHTML = '<option value="ALL">All Years</option>' +
+        years.map(y => '<option value="' + y + '"' + (currentVal === y ? ' selected' : '') + '>' + y + '</option>').join('');
+      // Wire change handler once
+      if (!yearSel._wired) {
+        yearSel.addEventListener('change', renderMonthly);
+        yearSel._wired = true;
+      }
+    }
+
+    // Filter by selected year
+    const selectedYear = yearSel ? yearSel.value : 'ALL';
+    const keys = selectedYear === 'ALL' ? allKeys : allKeys.filter(k => k.startsWith(selectedYear + '-'));
+    const rows = keys.map(k => ({ key: k, totals: sumByStatus(groups[k]) }));
 
     // pretty month labels for chart
     const monthLabels = rows.map(r => {

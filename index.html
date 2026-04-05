@@ -756,6 +756,12 @@ th, td {
           <div id="tab-Monthly" class="tab-panel hidden">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-lg font-semibold">Monthly Report</h2>
+              <div class="flex items-center gap-2">
+                <label class="text-sm text-gray-500">Year:</label>
+                <select id="monthlyYearFilter" class="rounded-lg border px-3 py-2 text-sm bg-white">
+                  <option value="ALL">All Years</option>
+                </select>
+              </div>
             </div>
             <div id="monthlyGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
             <div id="monthlyDetail" class="hidden mt-6">
@@ -1248,6 +1254,15 @@ th, td {
 
             <!-- ── MONTHLY PANEL ── -->
             <div class="bd-view-panel" id="bd-panel-monthly">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                <span style="font-size:13px;font-weight:600;color:#374151;">Monthly Summary</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <label style="font-size:12px;color:#6b7280;">Year:</label>
+                  <select id="bdMonthlyYearFilter" style="font-size:13px;border:1px solid #d1d5db;border-radius:6px;padding:4px 10px;background:#fff;color:#374151;cursor:pointer;">
+                    <option value="ALL">All Years</option>
+                  </select>
+                </div>
+              </div>
               <div class="bd-compare-strip" id="bdMonthlyCompare"></div>
               <div class="bd-section-card">
                 <h3>📈 Monthly Totals – Applications by Status</h3>
