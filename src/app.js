@@ -164,8 +164,7 @@ async function fetchMonthlySummariesSB() {
     });
     console.log('[sb] ALL month IDs before slice:', Array.from(byId.keys()).sort());
     var finalResult = Array.from(byId.values())
-      .sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); })
-      .slice(-12);
+      .sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
     
     console.log('[sb] fetchMonthlySummariesSB: SUCCESS - Returning', finalResult.length, 'months');
     console.log('[sb] fetchMonthlySummariesSB: Month IDs:', finalResult.map(s => s.id).join(', '));
@@ -3450,7 +3449,7 @@ console.warn('[monthly refresh] KPI reload failed:', e);
 }
     if (!snaps || !snaps.length) {
       // ⤵️ Fallback to localStorage if SB is empty/locked (dev/RLS)
-      const snapsLocal = getSnaps().slice(-12);
+      const snapsLocal = getSnaps();
       if (snapsLocal.length) {
         renderCards(snapsLocal);
       } else {
@@ -3460,26 +3459,28 @@ console.warn('[monthly refresh] KPI reload failed:', e);
     }
     renderCards(snaps.map(function (s) { return Object.assign({}, s, { __fromSB: true }); }));
   } else {
-    const snapsLocal = getSnaps().slice(-12);
+    const snapsLocal = getSnaps();
     renderCards(snapsLocal);
   }
 
   function renderCards(snaps) {
-    // Populate year dropdown
+    // Populate year dropdown and wire filter
     const yearSel = document.getElementById('monthlyYearFilter');
     if (yearSel) {
       const years = [...new Set(snaps.map(s => String(s.year)))].sort().reverse();
       const curYear = yearSel.value;
       yearSel.innerHTML = '<option value="ALL">All Years</option>' +
         years.map(y => '<option value="' + y + '"' + (curYear === y ? ' selected' : '') + '>' + y + '</option>').join('');
-      if (!yearSel._wired) {
-        yearSel.addEventListener('change', function() { renderCards(snaps); });
-        yearSel._wired = true;
-      }
+      // Always replace handler to keep snaps reference fresh
+      const newSel = yearSel.cloneNode(true);
+      yearSel.parentNode.replaceChild(newSel, yearSel);
+      newSel.value = curYear;
+      newSel.addEventListener('change', function() { renderCards(snaps); });
     }
 
     // Filter by selected year
-    const selYear = yearSel ? yearSel.value : 'ALL';
+    const activeSel = document.getElementById('monthlyYearFilter');
+    const selYear = activeSel ? activeSel.value : 'ALL';
     const filtered = selYear === 'ALL' ? snaps : snaps.filter(s => String(s.year) === selYear);
 
     var cards = filtered.map(function (s) {
