@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Dealer YTD Report</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --blue:#1d4ed8;--blue-light:#eff6ff;
+    --amber:#d97706;--amber-light:#fef3c7;
+    --green:#15803d;--green-light:#dcfce7;
+    --border:#e2e8f0;--bg:#f8fafc;--card:#fff;
+    --text:#0f172a;--muted:#64748b;
+  }
+  html,body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .page{max-width:680px;margin:0 auto;padding:16px 12px 48px}
+
+  /* Header */
+  .header{border-radius:16px;padding:24px 20px;margin-bottom:14px}
+  .header.y2025{background:#d97706}
+  .header.y2026{background:var(--blue)}
+  .brand{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:14px;font-family:'DM Mono',monospace}
+  .header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .header-title{font-size:22px;font-weight:600;color:#fff}
+  .header-sub{font-size:13px;color:rgba(255,255,255,.7);margin-top:4px}
+  .year-btns{display:flex;gap:6px;flex-shrink:0}
+  .yr-btn{font-size:12px;padding:6px 14px;border-radius:99px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.7);cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
+  .yr-btn.active-2025{background:#fff;color:#d97706;border-color:#fff;font-weight:500}
+  .yr-btn.active-2026{background:#fff;color:var(--blue);border-color:#fff;font-weight:500}
+
+  /* Search + pagination bar */
+  .controls{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+  .search-input{flex:1;padding:10px 14px;border-radius:10px;border:0.5px solid var(--border);font-size:14px;background:var(--card);color:var(--text);font-family:'DM Sans',sans-serif}
+  .section-lbl{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:'DM Mono',monospace}
+
+  /* Dealer cards */
+  .dealer-list{display:flex;flex-direction:column;gap:8px}
+  .dealer-card{background:var(--card);border:0.5px solid var(--border);border-radius:14px;overflow:hidden}
+  .dealer-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;min-height:48px}
+  .dealer-name{font-size:14px;font-weight:500;color:var(--text)}
+  .dealer-meta{font-size:11px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace}
+  .funded-pill{font-size:11px;font-weight:500;color:var(--green);background:var(--green-light);padding:4px 10px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+  .chevron{font-size:11px;color:var(--muted);transition:transform .2s;margin-left:6px;flex-shrink:0}
+  .chevron.open{transform:rotate(180deg)}
+
+  /* Stats grid — 4 cols */
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-top:0.5px solid var(--border)}
+  .stat{background:var(--card);padding:10px 6px;text-align:center}
+  .stat-val{font-size:14px;font-weight:500;color:var(--text)}
+  .stat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace}
+  .stat.funded .stat-val{color:var(--green)}
+  .stat.rate .stat-val{color:var(--blue)}
+
+  /* Monthly breakdown */
+  .monthly-wrap{display:none;border-top:0.5px solid var(--border);background:#f8fafc;padding:12px 16px}
+  .monthly-wrap.open{display:block}
+  .monthly-title{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px;font-family:'DM Mono',monospace}
+  .month-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--border)}
+  .month-row:last-child{border-bottom:none}
+  .month-name{font-size:13px;color:var(--text);min-width:72px}
+  .month-stats{display:flex;gap:20px}
+  .ms{text-align:right}
+  .ms-val{font-size:13px;font-weight:500;color:var(--text)}
+  .ms-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-family:'DM Mono',monospace}
+  .ms.funded .ms-val{color:var(--green)}
+
+  /* Pagination */
+  .pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap}
+  .pg-btn{font-size:13px;padding:6px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:'DM Sans',sans-serif;min-height:36px}
+  .pg-btn:disabled{opacity:.4;cursor:not-allowed}
+  .pg-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .pg-info{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace}
+
+  /* Loading */
+  .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading-wrap{text-align:center;padding:48px 0;color:var(--muted)}
+
+  @media(max-width:380px){
+    .stats-grid{grid-template-columns:repeat(4,1fr)}
+    .stat-val{font-size:13px}
+    .month-stats{gap:12px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header y2026" id="mainHeader">
+    <div class="brand">Buying Analysis Portal · Dealer Report</div>
+    <div class="header-top">
+      <div>
+        <div class="header-title">YTD Dealer Performance</div>
+        <div class="header-sub" id="headerSub">Loading…</div>
+      </div>
+      <div class="year-btns" id="yearBtns"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <input class="search-input" type="text" placeholder="Search dealers…" id="searchInput" oninput="onSearch()"/>
+  </div>
+
+  <div class="section-lbl" id="sectionLbl">Loading dealers…</div>
+  <div class="dealer-list" id="dealerList">
+    <div class="loading-wrap"><div class="spinner"></div><div style="margin-top:12px;font-size:13px">Loading…</div></div>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const PER_PAGE = 10;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false } });
+
+let allDealers = [];     // all for current year
+let filtered   = [];     // after search
+let years      = [];
+let curYear    = new Date().getFullYear();
+let curPage    = 1;
+let searchQ    = '';
+
+async function load() {
+  try {
+    // Get available years from monthly_snapshots (has all data)
+    const { data: yrData } = await sb.from('monthly_snapshots').select('year').order('year', { ascending: false }).limit(5000);
+    years = [...new Set((yrData||[]).map(r => r.year))].sort((a,b)=>b-a);
+    if (!years.length) { years = [new Date().getFullYear()]; }
+    curYear = years[0];
+
+    buildYearBtns();
+    await loadYear(curYear);
+  } catch(e) {
+    document.getElementById('dealerList').innerHTML = '<div class="loading-wrap" style="color:#dc2626">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function buildYearBtns() {
+  const wrap = document.getElementById('yearBtns');
+  wrap.innerHTML = years.map(y =>
+    `<button class="yr-btn ${y === curYear ? 'active-' + y : ''}" onclick="switchYear(${y})">${y}</button>`
+  ).join('');
+}
+
+async function loadYear(y) {
+  curYear = y;
+  curPage = 1;
+  searchQ = document.getElementById('searchInput').value.toLowerCase();
+
+  // Update header color
+  const hdr = document.getElementById('mainHeader');
+  hdr.className = 'header y' + y;
+
+  // Update year buttons
+  document.querySelectorAll('.yr-btn').forEach(b => {
+    const by = parseInt(b.textContent);
+    b.className = 'yr-btn' + (by === y ? ' active-' + by : '');
+  });
+
+  document.getElementById('headerSub').textContent = y + ' · Loading…';
+  document.getElementById('sectionLbl').textContent = 'Loading dealers…';
+  document.getElementById('dealerList').innerHTML = '<div class="loading-wrap"><div class="spinner"></div></div>';
+  document.getElementById('pagination').innerHTML = '';
+
+  // Fetch YTD totals
+  // Pull all monthly snapshots for this year — paginate to get all rows
+  let snaps = [], snapErr = null, from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await sb
+      .from('monthly_snapshots')
+      .select('dealer, state, month, total_apps, approved, counter, pending, denial, funded')
+      .eq('year', y)
+      .order('month', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) { snapErr = error; break; }
+    if (!data || data.length === 0) break;
+    snaps = snaps.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  if (snapErr) throw snapErr;
+
+  // Aggregate by dealer|state
+  const dealerMap = new Map();
+  (snaps || []).forEach(r => {
+    const key = (r.dealer||'').toLowerCase().trim() + '|' + (r.state||'').toUpperCase().trim();
+    if (!dealerMap.has(key)) {
+      dealerMap.set(key, {
+        name: r.dealer||'—', state: r.state||'—',
+        apps:0, approved:0, counter:0, pending:0, denial:0, funded:0,
+        months:[]
+      });
+    }
+    const d = dealerMap.get(key);
+    d.apps     += r.total_apps || 0;
+    d.approved += r.approved   || 0;
+    d.counter  += r.counter    || 0;
+    d.pending  += r.pending    || 0;
+    d.denial   += r.denial     || 0;
+    d.funded   += r.funded     || 0;
+    if ((r.total_apps||0) > 0 || (r.funded||0) > 0) {
+      d.months.push({ month: r.month, apps: r.total_apps||0, funded: r.funded||0 });
+    }
+  });
+
+  // Build dealer list sorted A-Z
+  allDealers = Array.from(dealerMap.values())
+    .map(d => ({
+      ...d,
+      ltb: d.apps ? (d.funded / d.apps * 100).toFixed(1) : '0.0',
+      lta: d.apps ? (d.approved / d.apps * 100).toFixed(1) : '0.0'
+    }))
+    .sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('headerSub').textContent = y + ' · ' + allDealers.length + ' dealers';
+  applyFilter();
+}
+
+function switchYear(y) { loadYear(y); }
+
+function onSearch() {
+  searchQ = document.getElementById('searchInput').value.toLowerCase();
+  curPage = 1;
+  applyFilter();
+}
+
+function applyFilter() {
+  filtered = searchQ
+    ? allDealers.filter(d => d.name.toLowerCase().includes(searchQ))
+    : [...allDealers];
+  renderPage();
+}
+
+function renderPage() {
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  if (curPage > pages) curPage = pages;
+
+  const start = (curPage - 1) * PER_PAGE;
+  const slice = filtered.slice(start, start + PER_PAGE);
+
+  document.getElementById('sectionLbl').textContent =
+    total + ' dealer' + (total !== 1 ? 's' : '') + ' · sorted A–Z' +
+    (pages > 1 ? ' · page ' + curPage + ' of ' + pages : '');
+
+  document.getElementById('dealerList').innerHTML = slice.map((d, i) => {
+    const monthRows = d.months.map(m =>
+      `<div class="month-row">
+        <span class="month-name">${MONTHS[m.month-1]} ${curYear}</span>
+        <div class="month-stats">
+          <div class="ms"><div class="ms-val">${m.apps.toLocaleString()}</div><div class="ms-lbl">Apps</div></div>
+          <div class="ms funded"><div class="ms-val">${m.funded}</div><div class="ms-lbl">Funded</div></div>
+        </div>
+      </div>`
+    ).join('');
+
+    return `<div class="dealer-card">
+      <div class="dealer-header" onclick="toggleCard(this)">
+        <div style="flex:1;min-width:0">
+          <div class="dealer-name">${d.name}</div>
+          <div class="dealer-meta">${d.state}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="funded-pill">${d.funded} funded</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-val">${d.apps.toLocaleString()}</div><div class="stat-lbl">Total Apps</div></div>
+        <div class="stat"><div class="stat-val">${d.approved}</div><div class="stat-lbl">Approved</div></div>
+        <div class="stat"><div class="stat-val">${d.counter}</div><div class="stat-lbl">Counter</div></div>
+        <div class="stat"><div class="stat-val">${d.pending}</div><div class="stat-lbl">Pending</div></div>
+        <div class="stat"><div class="stat-val">${d.denial}</div><div class="stat-lbl">Denial</div></div>
+        <div class="stat funded"><div class="stat-val">${d.funded}</div><div class="stat-lbl">Funded</div></div>
+        <div class="stat rate"><div class="stat-val">${d.ltb}%</div><div class="stat-lbl">LTB</div></div>
+        <div class="stat rate"><div class="stat-val">${d.lta}%</div><div class="stat-lbl">LTA</div></div>
+      </div>
+      ${d.months.length ? `
+      <div class="monthly-wrap">
+        <div class="monthly-title">Monthly breakdown</div>
+        ${monthRows}
+      </div>` : ''}
+    </div>`;
+  }).join('') || '<div class="loading-wrap">No dealers found.</div>';
+
+  renderPagination(pages);
+}
+
+function renderPagination(pages) {
+  const el = document.getElementById('pagination');
+  if (pages <= 1) { el.innerHTML = ''; return; }
+
+  let html = `<button class="pg-btn" onclick="goPage(${curPage-1})" ${curPage===1?'disabled':''}>← Prev</button>`;
+
+  // Show page numbers with ellipsis
+  const range = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || (p >= curPage-1 && p <= curPage+1)) range.push(p);
+    else if (range[range.length-1] !== '…') range.push('…');
+  }
+  range.forEach(p => {
+    if (p === '…') html += `<span class="pg-info">…</span>`;
+    else html += `<button class="pg-btn ${p===curPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  });
+
+  html += `<button class="pg-btn" onclick="goPage(${curPage+1})" ${curPage===pages?'disabled':''}>Next →</button>`;
+  el.innerHTML = html;
+}
+
+function goPage(p) {
+  const pages = Math.ceil(filtered.length / PER_PAGE);
+  if (p < 1 || p > pages) return;
+  curPage = p;
+  window.scrollTo(0, 0);
+  renderPage();
+}
+
+function toggleCard(header) {
+  const monthly = header.parentElement.querySelector('.monthly-wrap');
+  if (!monthly) return;
+  const chev = header.querySelector('.chevron');
+  const open = monthly.classList.toggle('open');
+  if (chev) chev.classList.toggle('open', open);
+}
+
+load();
+</script>
+</body>
+</html>

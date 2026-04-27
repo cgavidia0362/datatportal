@@ -1334,6 +1334,7 @@ const TABS = [
   { id: 'Yearly',  label: 'Yearly' },
   { id: 'ILReps',  label: '📊 Rep Performance' },
   { id: 'BuyingDaily', label: '📊 Buying Daily' },
+  { id: 'Funding',     label: '💰 Funding' },
   { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
 ];
 function buildSidebar() {
@@ -4322,6 +4323,14 @@ async function fetchMonthlyYearListSB(year) {
   return Array.from(byMonth.values()).sort(function (a, b) {
     if (a.year !== b.year) return a.year - b.year;
     return a.month - b.month;
+  });
+}
+
+function copyDealerReportLink() {
+  const url = window.location.origin + '/dealer-report.html';
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('btnDealerReportLink');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Copy dealer report link', 2000); }
   });
 }
 

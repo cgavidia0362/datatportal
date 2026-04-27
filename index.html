@@ -926,7 +926,13 @@ th, td {
 
             <!-- Per-Dealer YTD Totals -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
-              <h3 class="font-semibold mb-2">Per-Dealer YTD Totals</h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold">Per-Dealer YTD Totals</h3>
+                <button id="btnDealerReportLink" onclick="copyDealerReportLink()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm text-slate-600 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  Copy dealer report link
+                </button>
+              </div>
               <div class="mb-3 flex items-center justify-between gap-3">
                 <!-- left: search -->
                 <div class="w-full max-w-md">
@@ -1354,6 +1360,15 @@ th, td {
           </div><!-- end tab-BuyingDaily -->
 
           <!-- Settings Tab - MOVED TO CORRECT LOCATION -->
+          <!-- Funding Tab -->
+          <div id="tab-Funding" class="tab-panel hidden">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center" style="min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+              <div style="font-size:40px;">💰</div>
+              <h2 class="text-xl font-semibold text-gray-700">Funding</h2>
+              <p class="text-sm text-gray-400">This section is coming soon.</p>
+            </div>
+          </div>
+
           <div id="tab-Settings" class="tab-panel hidden">
             <div class="mb-6">
               <h2 class="text-2xl font-bold text-gray-900">Settings</h2>
