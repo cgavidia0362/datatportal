@@ -7411,9 +7411,9 @@ function updateKpiTile(label, value) {
     .fnd-legend{font-size:12px;color:var(--color-text-secondary,#64748b);padding:8px 16px 12px;display:flex;gap:12px;flex-wrap:wrap}
     .fnd-panel{display:none}.fnd-panel.on{display:block}
     .fnd-view{display:none}.fnd-view.on{display:block}
-    .fnd-ai-row td{text-align:left;padding:12px 16px;background:#eff6ff}
+    .fnd-ai-row td{text-align:left;padding:12px 16px;background:#eff6ff;white-space:normal;max-width:0;width:100%}
     .fnd-ai-lbl{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#1d4ed8;opacity:.7;margin-bottom:5px}
-    .fnd-ai-txt{font-size:13px;color:#1e40af;line-height:1.7}
+    .fnd-ai-txt{font-size:13px;color:#1e40af;line-height:1.7;white-space:pre-wrap;word-wrap:break-word;max-width:100%}
     .fnd-ai-btn{font-size:11px;color:var(--color-text-secondary,#64748b);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit}
     @media(max-width:600px){.fnd-kpis{grid-template-columns:1fr 1fr}}`;
     document.head.appendChild(s);
