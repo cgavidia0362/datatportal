@@ -7341,7 +7341,9 @@ function updateKpiTile(label, value) {
   let fOvSort  = { key: 'deals',        dir: 'desc' };
   let fDtfSort = { key: 'days_to_fund', dir: 'desc' };
   let fRetSort = { key: 'dealer',       dir: 'asc'  };
-  let fOvSearch  = '', fDtfSearch = '', fRetSearch = '';
+  let fYrSort  = { key: 'deals',        dir: 'desc' };
+  let fOvSearch = '', fDtfSearch = '', fRetSearch = '', fYrSearch = '';
+  let fYrRows = []; // cached for sort/search without re-fetch
   
   function getSb(){
     if(!fSb) fSb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false}});
@@ -7469,15 +7471,24 @@ function updateKpiTile(label, value) {
     (data||[]).forEach(d=>{
       const k = normName(d.dealer_name)+'|'+String(d.state||'').toUpperCase();
       fndDealerMap.set(k, d.dealer_id);
-      if(d.cifnumber) fndCifMap.set(d.cifnumber, d.dealer_id);
+      if(d.cifnumber) fndCifMap.set(String(d.cifnumber).trim(), d.dealer_id);
     });
     console.log('[Funding] matchDealers: loaded', fndDealerMap.size, 'dealers,', fndCifMap.size, 'CIFs');
     return rows.map(r=>{
-      const name = (r.Dealer||r.dealer||'').trim();
-      const state = (r['Dealer State']||r.State||r.state||'').toUpperCase();
-      const k = normName(name)+'|'+state;
-      const dealer_id = fndDealerMap.get(k) || null;
-      if(!dealer_id) console.warn('[Funding] No match for:', name, state);
+      const cif    = String(r['Dealer Cifnumber'] || r['Dealer CifNumber'] || r['cifnumber'] || '').trim();
+      const name   = (r.Dealer || r.dealer || '').trim();
+      const state  = (r['Dealer State'] || r.State || r.state || '').toUpperCase();
+      const nameKey = normName(name) + '|' + state;
+  
+      // CIF-first: fastest and most reliable match
+      let dealer_id = cif ? (fndCifMap.get(cif) || null) : null;
+  
+      // Fallback to name+state if CIF not found or not present
+      if(!dealer_id) dealer_id = fndDealerMap.get(nameKey) || null;
+  
+      if(!dealer_id) console.warn('[Funding] No match for:', name, state, 'CIF:', cif||'(none)');
+      else           console.log('[Funding] Matched via', cif&&fndCifMap.get(cif)?'CIF':'name+state', ':', name, '→', dealer_id);
+  
       return {...r, _dealer_id: dealer_id};
     });
   }
@@ -7549,7 +7560,7 @@ function updateKpiTile(label, value) {
     const totalReturns = allReturns.filter(r=>r.dealer_id===dealerId||r.dealer===dealerName).length;
     const avgDays = allDeals.filter(d=>d.dealer_id===dealerId||d.dealer===dealerName).reduce((a,d)=>a+(d.days_to_fund||0),0)/Math.max(totalDeals,1);
     const prompt = `Summarize this auto dealer's funding performance in 2-3 sentences. Be specific. Dealer: ${dealerName}. Total funded: ${totalDeals}. Avg days to fund: ${avgDays.toFixed(1)}. Returns: ${totalReturns}. Delay reasons: ${delayReasons||'none'}. Return reasons: ${returnReasons||'none'}.`;
-    const resp = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:prompt}]})});
+    const resp = await fetch('/api/ai-summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:prompt}]})});
     const data = await resp.json();
     const text = data.content?.[0]?.text||'Unable to generate summary.';
     fAiCache[key] = text;
@@ -7683,7 +7694,7 @@ function updateKpiTile(label, value) {
     // sort
     rows = sortRows(rows, fOvSort.key==='amount'?'amount':fOvSort.key==='avgDays'?'avgDays':fOvSort.key==='returns'?'returns':'deals', fOvSort.dir);
   
-    const thead = `<tr>
+    const thead = `<tr id="fnd-ov-head">
       <th style="text-align:left">Dealer</th>
       <th class="fnd-sortable" onclick="window.fndOvSort('deals')">Funded deals ${sortIcon('deals',fOvSort)}</th>
       <th class="fnd-sortable" onclick="window.fndOvSort('amount')">Amount ${sortIcon('amount',fOvSort)}</th>
@@ -7707,10 +7718,10 @@ function updateKpiTile(label, value) {
         <span class="fnd-card-title">Per-dealer summary</span>
         <div class="fnd-search-wrap">
           <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
-          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fOvSearch}" oninput="window.fndOvSearch(this.value)"/>
+          <input id="fnd-ov-search" class="fnd-search" type="text" placeholder="Search dealers…" value="${fOvSearch}" oninput="window.fndOvSearch(this.value)"/>
         </div>
       </div>
-      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody id="fnd-ov-body">${tbody}</tbody></table></div>
     </div>
     <div class="fnd-legend">Days pill: <span class="fp fp-g">≤5</span> on track &nbsp;<span class="fp fp-y">6–9</span> moderate &nbsp;<span class="fp fp-r">10+</span> delayed</div>`;
   }
@@ -7723,7 +7734,7 @@ function updateKpiTile(label, value) {
     const sortKey = fDtfSort.key;
     rows = sortRows(rows, sortKey, fDtfSort.dir);
   
-    const thead = `<tr>
+    const thead = `<tr id="fnd-dtf-head">
       <th style="text-align:left" class="fnd-sortable" onclick="window.fndDtfSort('dealer')">Dealer ${sortIcon('dealer',fDtfSort)}</th>
       <th style="text-align:left">VIN</th>
       <th class="fnd-sortable" onclick="window.fndDtfSort('received_date')">Received ${sortIcon('received_date',fDtfSort)}</th>
@@ -7751,10 +7762,10 @@ function updateKpiTile(label, value) {
         <span class="fnd-card-title">Days to fund — deal level</span>
         <div class="fnd-search-wrap">
           <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
-          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fDtfSearch}" oninput="window.fndDtfSearch(this.value)"/>
+          <input id="fnd-dtf-search" class="fnd-search" type="text" placeholder="Search dealers…" value="${fDtfSearch}" oninput="window.fndDtfSearch(this.value)"/>
         </div>
       </div>
-      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody id="fnd-dtf-body">${tbody}</tbody></table></div>
     </div>`;
   }
   
@@ -7766,7 +7777,7 @@ function updateKpiTile(label, value) {
   
     if(!rows.length) return `<div class="fnd-card"><div class="fnd-empty">No returns this month.</div></div>`;
   
-    const thead = `<tr>
+    const thead = `<tr id="fnd-ret-head">
       <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('dealer')">Dealer ${sortIcon('dealer',fRetSort)}</th>
       <th style="text-align:left">VIN</th>
       <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('reason')">Reason ${sortIcon('reason',fRetSort)}</th>
@@ -7783,10 +7794,10 @@ function updateKpiTile(label, value) {
         <span class="fnd-card-title">Returned contracts <span style="font-size:12px;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:99px;font-weight:500;margin-left:6px">${rows.length}</span></span>
         <div class="fnd-search-wrap">
           <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
-          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fRetSearch}" oninput="window.fndRetSearch(this.value)"/>
+          <input id="fnd-ret-search" class="fnd-search" type="text" placeholder="Search dealers…" value="${fRetSearch}" oninput="window.fndRetSearch(this.value)"/>
         </div>
       </div>
-      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody id="fnd-ret-body">${tbody}</tbody></table></div>
     </div>`;
   }
   
@@ -7805,7 +7816,7 @@ function updateKpiTile(label, value) {
     const totA=yDeals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
     const totDays=totD?(yDeals.reduce((a,d)=>a+(d.days_to_fund||0),0)/totD).toFixed(1):'—';
     const totR=yReturns.length;
-  
+
     const dMap = new Map();
     yDeals.forEach(d=>{
       const k=d.dealer_id||d.dealer;
@@ -7814,24 +7825,15 @@ function updateKpiTile(label, value) {
       if(d.days_to_fund){ e.days+=Number(d.days_to_fund); e.dc++; } e.allDeals.push(d);
     });
     yReturns.forEach(r=>{ const k=r.dealer_id||r.dealer; if(dMap.has(k)){ dMap.get(k).returns++; dMap.get(k).allReturns.push(r); } });
-    const dealers = [...dMap.values()].sort((a,b)=>b.deals-a.deals);
-  
-    const rows = dealers.map((d,i)=>{
-      const avg = d.dc?(d.days/d.dc).toFixed(1):'—';
-      const rr  = d.deals?(d.returns/d.deals*100).toFixed(0)+'%':'0%';
-      const showAI = d.deals>=5||d.returns>0;
-      return `<tr onclick="${showAI?`window.fndYearlyAI('yai${i}','${(d.id||'').replace(/'/g,'')}','${d.name.replace(/'/g,"\\'")}')`:''}" style="${showAI?'cursor:pointer':''}">
-        <td><div class="fnd-dn">${d.name}</div></td>
-        <td>${d.deals}</td>
-        <td class="fnd-amt">${fmtFull$(d.amount)}</td>
-        <td><span class="fp ${pillClass(parseFloat(avg)||0)}">${avg}</span></td>
-        <td style="color:${d.returns>0?'#be123c':'inherit'};font-weight:${d.returns>0?500:400}">${d.returns}</td>
-        <td>${rr}</td>
-        <td>${showAI?`<button class="fnd-ai-btn">View insight ↓</button>`:'<span style="font-size:12px;color:var(--color-text-secondary,#94a3b8)">—</span>'}</td>
-      </tr>
-      <tr id="yai${i}" style="display:none" class="fnd-ai-row"><td colspan="7"><div class="fnd-ai-lbl">AI insight — YTD</div><div class="fnd-ai-txt" id="yai${i}-txt" style="font-style:italic">Click row to generate insight…</div></td></tr>`;
-    }).join('');
-  
+
+    // Cache processed rows for sort/search without re-fetching
+    fYrRows = [...dMap.values()].map(d=>({
+      ...d,
+      avgDays: d.dc ? d.days/d.dc : 0,
+      returnRate: d.deals ? d.returns/d.deals : 0
+    }));
+    window._fndDealerMap = dMap;
+
     el.innerHTML = `
     <div class="fnd-kpis">
       <div class="fnd-kpi fnd-kpi-blue"><div class="fnd-kpi-lbl">YTD funded</div><div class="fnd-kpi-val">${fmtFull$(totA)}</div><div class="fnd-kpi-sub">${totD} deals ${curYear}</div></div>
@@ -7840,13 +7842,50 @@ function updateKpiTile(label, value) {
       <div class="fnd-kpi fnd-kpi-red"><div class="fnd-kpi-lbl">YTD returns</div><div class="fnd-kpi-val">${totR}</div><div class="fnd-kpi-sub">contracts returned</div></div>
     </div>
     <div class="fnd-card">
-      <div class="fnd-card-hdr"><span class="fnd-card-title">Yearly dealer performance — ${curYear}</span></div>
+      <div class="fnd-card-hdr">
+        <span class="fnd-card-title">Yearly dealer performance — ${curYear}</span>
+        <div class="fnd-search-wrap">
+          <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input id="fnd-yr-search" class="fnd-search" type="text" placeholder="Search dealers…" value="${fYrSearch}" oninput="window.fndYrSearch(this.value)"/>
+        </div>
+      </div>
       <div style="overflow-x:auto"><table class="fnd-tbl">
-        <thead><tr><th style="text-align:left">Dealer</th><th>Funded</th><th>Amount</th><th>Avg days</th><th>Returns</th><th>Return rate</th><th>Insight</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="7" class="fnd-empty">No yearly data yet</td></tr>'}</tbody>
+        <thead><tr id="fnd-yr-head">
+          <th style="text-align:left">Dealer</th>
+          <th class="fnd-sortable" onclick="window.fndYrSort('deals')">Funded ${sortIcon('deals',fYrSort)}</th>
+          <th class="fnd-sortable" onclick="window.fndYrSort('amount')">Amount ${sortIcon('amount',fYrSort)}</th>
+          <th class="fnd-sortable" onclick="window.fndYrSort('avgDays')">Avg days ${sortIcon('avgDays',fYrSort)}</th>
+          <th class="fnd-sortable" onclick="window.fndYrSort('returns')">Returns ${sortIcon('returns',fYrSort)}</th>
+          <th class="fnd-sortable" onclick="window.fndYrSort('returnRate')">Return rate ${sortIcon('returnRate',fYrSort)}</th>
+          <th>Insight</th>
+        </tr></thead>
+        <tbody id="fnd-yr-body">${buildYrRows()}</tbody>
       </table></div>
     </div>`;
-    window._fndDealerMap = dMap;
+  }
+
+  function buildYrRows(){
+    let rows = fYrRows.slice();
+    if(fYrSearch) rows = rows.filter(r=>r.name.toLowerCase().includes(fYrSearch.toLowerCase()));
+    rows = sortRows(rows, fYrSort.key, fYrSort.dir);
+    if(!rows.length) return '<tr><td colspan="7" class="fnd-empty">No yearly data yet</td></tr>';
+    return rows.map((d,i)=>{
+      const avg = d.avgDays ? d.avgDays.toFixed(1) : '—';
+      const rr  = d.deals ? (d.returnRate*100).toFixed(0)+'%' : '0%';
+      const showAI = d.deals>=5||d.returns>0;
+      const safeId = d.id ? String(d.id).replace(/[^a-z0-9]/gi,'') : 'n'+i;
+      const rowId  = 'yai'+safeId;
+      return `<tr>
+        <td><div class="fnd-dn">${d.name}</div></td>
+        <td>${d.deals}</td>
+        <td class="fnd-amt">${fmtFull$(d.amount)}</td>
+        <td><span class="fp ${pillClass(parseFloat(avg)||0)}">${avg}</span></td>
+        <td style="color:${d.returns>0?'#be123c':'inherit'};font-weight:${d.returns>0?500:400}">${d.returns}</td>
+        <td>${rr}</td>
+        <td>${showAI?`<button class="fnd-ai-btn" onclick="window.fndYearlyAI('${rowId}','${(d.id||'').replace(/'/g,'')}','${d.name.replace(/'/g,"\\'")}')">View insight ↓</button>`:'<span style="font-size:12px;color:var(--color-text-secondary,#94a3b8)">—</span>'}</td>
+      </tr>
+      <tr id="${rowId}" style="display:none" class="fnd-ai-row"><td colspan="7"><div class="fnd-ai-lbl">AI insight — YTD</div><div class="fnd-ai-txt" id="${rowId}-txt" style="font-style:italic">Loading…</div></td></tr>`;
+    }).join('');
   }
   
   // ── Global handlers ──
@@ -7871,24 +7910,86 @@ function updateKpiTile(label, value) {
     if(id==='ret') { const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet(); }
   };
   
-  // Sort handlers
+  // ── Sort icon updater ──
+  function refreshSortIcons(headId, sortState){
+    const head = document.getElementById(headId);
+    if(!head) return;
+    head.querySelectorAll('.fnd-sort-icon').forEach(el=>{
+      const th = el.closest('th');
+      const onclick = th ? (th.getAttribute('onclick')||'') : '';
+      const keyMatch = onclick.match(/fnd\w+Sort\('([^']+)'\)/);
+      const key = keyMatch ? keyMatch[1] : null;
+      if(!key){ el.className='fnd-sort-icon'; el.textContent=''; return; }
+      if(key===sortState.key){ el.className='fnd-sort-icon on'; el.textContent=sortState.dir==='asc'?'↑':'↓'; }
+      else { el.className='fnd-sort-icon'; el.textContent='↕'; }
+    });
+  }
+
+  // ── Overview rows builder ──
+  function buildOvRows(){
+    const byDealer = new Map();
+    fDeals.forEach(d=>{
+      const k=d.dealer_id||d.dealer;
+      if(!byDealer.has(k)) byDealer.set(k,{dealer:d.dealer,id:d.dealer_id,deals:0,amount:0,days:0,daysCount:0,returns:0});
+      const e=byDealer.get(k); e.deals++; e.amount+=Number(d.funded_amount)||0;
+      if(d.days_to_fund){ e.days+=Number(d.days_to_fund); e.daysCount++; }
+    });
+    fReturns.forEach(r=>{ const k=r.dealer_id||r.dealer; if(byDealer.has(k)) byDealer.get(k).returns++; });
+    let rows=[...byDealer.values()].map(d=>({...d,avgDays:d.daysCount?(d.days/d.daysCount):0}));
+    if(fOvSearch) rows=rows.filter(r=>r.dealer.toLowerCase().includes(fOvSearch.toLowerCase()));
+    rows=sortRows(rows,fOvSort.key==='amount'?'amount':fOvSort.key==='avgDays'?'avgDays':fOvSort.key==='returns'?'returns':'deals',fOvSort.dir);
+    return rows.map(d=>{
+      const avg=d.avgDays||0;
+      return `<tr><td><div class="fnd-dn">${d.dealer}</div></td><td>${d.deals}</td><td class="fnd-amt">${fmtFull$(d.amount)}</td><td><span class="fp ${pillClass(avg)}">${avg?avg.toFixed(1):'—'}</span></td><td style="color:${d.returns>0?'#be123c':'inherit'};font-weight:${d.returns>0?500:400}">${d.returns||'—'}</td></tr>`;
+    }).join('')||'<tr><td colspan="5" class="fnd-empty">No data</td></tr>';
+  }
+
+  // ── DTF rows builder ──
+  function buildDtfRows(){
+    let rows=fDeals.slice();
+    if(fDtfSearch) rows=rows.filter(r=>r.dealer.toLowerCase().includes(fDtfSearch.toLowerCase()));
+    rows=sortRows(rows,fDtfSort.key,fDtfSort.dir);
+    return rows.map(r=>{
+      const d=Number(r.days_to_fund)||0;
+      return `<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono">${r.vin||'—'}</td><td>${r.received_date||'—'}</td><td>${r.funded_date||'—'}</td><td><span class="fp ${pillClass(d)}">${d||'—'}</span></td><td class="fnd-amt">${r.funded_amount?fmtFull$(r.funded_amount):'—'}</td><td style="text-align:left"><span class="fnd-reason">${r.delay_reason||'—'}</span></td></tr>`;
+    }).join('')||'<tr><td colspan="7" class="fnd-empty">No data</td></tr>';
+  }
+
+  // ── Returns rows builder ──
+  function buildRetRows(){
+    let rows=fReturns.slice();
+    if(fRetSearch) rows=rows.filter(r=>r.dealer.toLowerCase().includes(fRetSearch.toLowerCase()));
+    rows=sortRows(rows,fRetSort.key,fRetSort.dir);
+    return rows.map(r=>`<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono" style="text-align:left">${r.vin||'—'}</td><td style="text-align:left"><span class="fnd-reason">${r.reason||'—'}</span></td></tr>`).join('')||'<tr><td colspan="3" class="fnd-empty">No returns</td></tr>';
+  }
+
+  // Sort handlers — only update tbody + icons, never rebuild the whole panel
   window.fndOvSort = function(key){
     fOvSort = fOvSort.key===key ? {key,dir:fOvSort.dir==='asc'?'desc':'asc'} : {key,dir:'desc'};
-    const el=document.getElementById('fnd-ov'); if(el) el.innerHTML=renderOverview();
+    const tb=document.getElementById('fnd-ov-body'); if(tb) tb.innerHTML=buildOvRows();
+    refreshSortIcons('fnd-ov-head',fOvSort);
   };
   window.fndDtfSort = function(key){
     fDtfSort = fDtfSort.key===key ? {key,dir:fDtfSort.dir==='asc'?'desc':'asc'} : {key,dir:'desc'};
-    const el=document.getElementById('fnd-dtf'); if(el) el.innerHTML=renderDtf();
+    const tb=document.getElementById('fnd-dtf-body'); if(tb) tb.innerHTML=buildDtfRows();
+    refreshSortIcons('fnd-dtf-head',fDtfSort);
   };
   window.fndRetSort = function(key){
     fRetSort = fRetSort.key===key ? {key,dir:fRetSort.dir==='asc'?'desc':'asc'} : {key,dir:'asc'};
-    const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet();
+    const tb=document.getElementById('fnd-ret-body'); if(tb) tb.innerHTML=buildRetRows();
+    refreshSortIcons('fnd-ret-head',fRetSort);
   };
-  
-  // Search handlers
-  window.fndOvSearch  = function(v){ fOvSearch=v;  const el=document.getElementById('fnd-ov');  if(el) el.innerHTML=renderOverview(); };
-  window.fndDtfSearch = function(v){ fDtfSearch=v; const el=document.getElementById('fnd-dtf'); if(el) el.innerHTML=renderDtf(); };
-  window.fndRetSearch = function(v){ fRetSearch=v; const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet(); };
+  window.fndYrSort = function(key){
+    fYrSort = fYrSort.key===key ? {key,dir:fYrSort.dir==='asc'?'desc':'asc'} : {key,dir:'desc'};
+    const tb=document.getElementById('fnd-yr-body'); if(tb) tb.innerHTML=buildYrRows();
+    refreshSortIcons('fnd-yr-head',fYrSort);
+  };
+
+  // Search handlers — only update tbody, input keeps focus
+  window.fndOvSearch  = function(v){ fOvSearch=v;  const tb=document.getElementById('fnd-ov-body');  if(tb) tb.innerHTML=buildOvRows(); };
+  window.fndDtfSearch = function(v){ fDtfSearch=v; const tb=document.getElementById('fnd-dtf-body'); if(tb) tb.innerHTML=buildDtfRows(); };
+  window.fndRetSearch = function(v){ fRetSearch=v; const tb=document.getElementById('fnd-ret-body'); if(tb) tb.innerHTML=buildRetRows(); };
+  window.fndYrSearch  = function(v){ fYrSearch=v;  const tb=document.getElementById('fnd-yr-body');  if(tb) tb.innerHTML=buildYrRows(); };
   
   window.fndYearlyAI = async function(rowId, dealerId, dealerName){
     const row=document.getElementById(rowId); if(!row) return;
