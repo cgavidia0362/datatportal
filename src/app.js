@@ -7560,7 +7560,7 @@ function updateKpiTile(label, value) {
     const totalReturns = allReturns.filter(r=>r.dealer_id===dealerId||r.dealer===dealerName).length;
     const avgDays = allDeals.filter(d=>d.dealer_id===dealerId||d.dealer===dealerName).reduce((a,d)=>a+(d.days_to_fund||0),0)/Math.max(totalDeals,1);
     const prompt = `Summarize this auto dealer's funding performance in 2-3 sentences. Be specific. Dealer: ${dealerName}. Total funded: ${totalDeals}. Avg days to fund: ${avgDays.toFixed(1)}. Returns: ${totalReturns}. Delay reasons: ${delayReasons||'none'}. Return reasons: ${returnReasons||'none'}.`;
-    const resp = await fetch('/api/ai-summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:prompt}]})});
+    const resp = await fetch('/api/ai-summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:200,messages:[{role:'user',content:prompt}]})});
     const data = await resp.json();
     const text = data.content?.[0]?.text||'Unable to generate summary.';
     fAiCache[key] = text;
