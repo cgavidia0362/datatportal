@@ -1370,6 +1370,7 @@ function switchTab(id) {
   }  
   if (id === 'ILReps') { if (typeof window.initRepPerformance === 'function') window.initRepPerformance(); }
   if (id === 'BuyingDaily') { if (typeof window.initBuyingDaily === 'function') window.initBuyingDaily(); }
+  if (id === 'Funding') { if (typeof window.initFunding === 'function') window.initFunding(); }
   if (id === 'tab-Settings' || id === 'Settings') {
     // CRITICAL FIX: Ensure Settings tab is in the right place before showing
     const settingsTab = document.getElementById('tab-Settings');
@@ -7319,3 +7320,637 @@ function updateKpiTile(label, value) {
   }
 
 })(); /* end BuyingDailyModule IIFE */
+// ============================================================
+// FUNDING MODULE
+// ============================================================
+(function() {
+  'use strict';
+  
+  const SUPABASE_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
+  const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  
+  let fSb = null;
+  let fDeals = [], fReturns = [];
+  let fView = 'monthly', fTab = 'ov';
+  let fCurYear = new Date().getFullYear(), fCurMonth = new Date().getMonth()+1;
+  let fAvailMonths = [];
+  let fAiCache = {};
+  
+  // Sort state
+  let fOvSort  = { key: 'deals',        dir: 'desc' };
+  let fDtfSort = { key: 'days_to_fund', dir: 'desc' };
+  let fRetSort = { key: 'dealer',       dir: 'asc'  };
+  let fOvSearch  = '', fDtfSearch = '', fRetSearch = '';
+  
+  function getSb(){
+    if(!fSb) fSb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false}});
+    return fSb;
+  }
+  
+  function injectStyles(){
+    if(document.getElementById('fnd-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'fnd-styles';
+    s.textContent = `
+    .fnd{font-family:inherit;color:var(--color-text-primary,#0f172a)}
+    .fnd-topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+    .fnd-h1{font-size:18px;font-weight:500;margin:0}
+    .fnd-sub{font-size:13px;color:var(--color-text-secondary,#64748b);margin-top:4px}
+    .fnd-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .fnd-upload-btn{display:inline-flex;align-items:center;gap:7px;background:#1d4ed8;color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s}
+    .fnd-upload-btn:hover{background:#1e40af}
+    .fnd-upload-btn svg{width:14px;height:14px;stroke:#fff;fill:none;flex-shrink:0;stroke-width:2}
+    .fnd-tog{display:flex;background:rgba(0,0,0,.06);border-radius:8px;padding:3px;gap:2px}
+    .fnd-tog button{border:none;background:none;font-size:13px;padding:6px 16px;border-radius:6px;cursor:pointer;color:var(--color-text-secondary,#64748b);font-family:inherit;transition:all .15s}
+    .fnd-tog button.on{background:var(--color-background-primary,#fff);color:#1d4ed8;font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .fnd-sel{font-size:13px;padding:7px 12px;border-radius:8px;border:0.5px solid rgba(0,0,0,.15);background:var(--color-background-primary,#fff);color:var(--color-text-primary,#0f172a);font-family:inherit}
+    .fnd-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+    .fnd-kpi{background:var(--color-background-primary,#fff);border-radius:12px;padding:14px 16px;border:0.5px solid rgba(0,0,0,.08)}
+    .fnd-kpi.fnd-kpi-blue{background:#eff6ff;border-color:#bfdbfe}
+    .fnd-kpi.fnd-kpi-red{background:#fff1f2;border-color:#fecdd3}
+    .fnd-kpi-lbl{font-size:11px;color:var(--color-text-secondary,#64748b);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+    .fnd-kpi.fnd-kpi-blue .fnd-kpi-lbl{color:#1d4ed8;font-weight:500}
+    .fnd-kpi.fnd-kpi-red .fnd-kpi-lbl{color:#be123c;font-weight:500}
+    .fnd-kpi-val{font-size:22px;font-weight:500;color:var(--color-text-primary,#0f172a)}
+    .fnd-kpi.fnd-kpi-blue .fnd-kpi-val{color:#1e40af;font-size:24px}
+    .fnd-kpi.fnd-kpi-red .fnd-kpi-val{color:#be123c}
+    .fnd-kpi-sub{font-size:12px;color:var(--color-text-secondary,#64748b);margin-top:3px}
+    .fnd-tabs{display:flex;border-bottom:0.5px solid rgba(0,0,0,.1);margin-bottom:16px;gap:2px}
+    .fnd-tab{font-size:13px;padding:9px 18px;border:none;background:none;cursor:pointer;color:var(--color-text-secondary,#64748b);border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;border-radius:6px 6px 0 0;transition:background .15s}
+    .fnd-tab.on{color:#1d4ed8;font-weight:500;border-bottom-color:#1d4ed8;background:#eff6ff}
+    .fnd-tab:hover:not(.on){background:rgba(0,0,0,.04)}
+    .fnd-card{background:var(--color-background-primary,#fff);border:0.5px solid rgba(0,0,0,.08);border-radius:14px;overflow:hidden;margin-bottom:14px}
+    .fnd-card-hdr{padding:12px 16px;border-bottom:0.5px solid rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .fnd-card-title{font-size:14px;font-weight:500;color:var(--color-text-primary,#0f172a)}
+    .fnd-search-wrap{display:flex;align-items:center;gap:0;border:0.5px solid rgba(0,0,0,.15);border-radius:8px;overflow:hidden;background:var(--color-background-primary,#fff)}
+    .fnd-search-icon{padding:0 8px;color:var(--color-text-secondary,#94a3b8);display:flex;align-items:center}
+    .fnd-search{border:none;outline:none;font-size:13px;padding:7px 10px 7px 0;background:transparent;color:var(--color-text-primary,#0f172a);width:180px;font-family:inherit}
+    .fnd-tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .fnd-tbl th{background:rgba(0,0,0,.03);padding:9px 14px;font-size:11px;font-weight:500;color:var(--color-text-secondary,#64748b);text-transform:uppercase;letter-spacing:.06em;border-bottom:0.5px solid rgba(0,0,0,.08);text-align:right;white-space:nowrap;user-select:none}
+    .fnd-tbl th:first-child{text-align:left}
+    .fnd-tbl th.fnd-sortable{cursor:pointer}
+    .fnd-tbl th.fnd-sortable:hover{color:var(--color-text-primary,#0f172a);background:rgba(0,0,0,.05)}
+    .fnd-sort-icon{margin-left:3px;opacity:.4;font-size:10px}
+    .fnd-sort-icon.on{opacity:1;color:#1d4ed8}
+    .fnd-tbl td{padding:10px 14px;border-bottom:0.5px solid rgba(0,0,0,.05);color:var(--color-text-secondary,#64748b);text-align:right;vertical-align:top}
+    .fnd-tbl td:first-child{text-align:left}
+    .fnd-tbl tr:last-child td{border-bottom:none}
+    .fnd-tbl tr:hover td{background:rgba(0,0,0,.02)}
+    .fnd-dn{font-weight:500;color:var(--color-text-primary,#0f172a)}
+    .fnd-mono{font-family:monospace;font-size:12px}
+    .fnd-amt{color:#1d4ed8;font-weight:500}
+    .fnd-reason{font-size:12px;color:var(--color-text-secondary,#64748b);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+    .fp{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap}
+    .fp-g{background:#dcfce7;color:#15803d}
+    .fp-y{background:#fef3c7;color:#92400e}
+    .fp-r{background:#fee2e2;color:#991b1b}
+    .fnd-empty{text-align:center;padding:40px;color:var(--color-text-secondary,#94a3b8);font-size:14px}
+    .fnd-legend{font-size:12px;color:var(--color-text-secondary,#64748b);padding:8px 16px 12px;display:flex;gap:12px;flex-wrap:wrap}
+    .fnd-panel{display:none}.fnd-panel.on{display:block}
+    .fnd-view{display:none}.fnd-view.on{display:block}
+    .fnd-ai-row td{text-align:left;padding:12px 16px;background:#eff6ff}
+    .fnd-ai-lbl{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#1d4ed8;opacity:.7;margin-bottom:5px}
+    .fnd-ai-txt{font-size:13px;color:#1e40af;line-height:1.7}
+    .fnd-ai-btn{font-size:11px;color:var(--color-text-secondary,#64748b);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit}
+    @media(max-width:600px){.fnd-kpis{grid-template-columns:1fr 1fr}}`;
+    document.head.appendChild(s);
+  }
+  
+  // ── Helpers ──
+  function normName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\b(llc|inc|co|company|corp|ltd|the|auto|group)\b/g,'').replace(/\s+/g,' ').trim(); }
+  function fmt$(n){ if(!n&&n!==0) return '$0'; const a=Math.abs(n); return '$'+(a>=1e6?(a/1e6).toFixed(2)+'M':a>=1e3?(a/1e3).toFixed(0)+'K':Math.round(a).toLocaleString()); }
+  function fmtFull$(n){ return '$'+Math.round(n||0).toLocaleString(); }
+  function parseDate(s){ if(!s) return null; const p=String(s).split(/[\/\-]/); if(p.length<3) return null; const y=p[2].length===2?'20'+p[2]:p[2]; return new Date(y,p[0]-1,p[1]); }
+  function pillClass(d){ return d<=5?'fp-g':d<=9?'fp-y':'fp-r'; }
+  
+  // ── Parse Excel ──
+  function parseExcel(file, cb){
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+        const delaySheetName  = wb.SheetNames.find(n => n.toLowerCase().includes('delay'))  || wb.SheetNames[0];
+        const returnSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('return')) || wb.SheetNames[1];
+        const delays  = delaySheetName  ? XLSX.utils.sheet_to_json(wb.Sheets[delaySheetName],  {raw:true, cellDates:true}) : [];
+        const returns = returnSheetName ? XLSX.utils.sheet_to_json(wb.Sheets[returnSheetName], {raw:true}) : [];
+  
+        delays.forEach(r => {
+          const recv = r['Received'] instanceof Date ? r['Received'] : parseDate(String(r['Received']||''));
+          const fund = r['Funded']   instanceof Date ? r['Funded']   : parseDate(String(r['Funded']||''));
+          if(recv && fund){
+            r._recv = recv; r._fund = fund;
+            r._recvStr = (recv.getMonth()+1)+'/'+recv.getDate()+'/'+String(recv.getFullYear()).slice(2);
+            r._fundStr = (fund.getMonth()+1)+'/'+fund.getDate()+'/'+String(fund.getFullYear()).slice(2);
+            const excelDays = typeof r['Days to fund']==='number' ? r['Days to fund'] : null;
+            r['Days to fund'] = excelDays || calcBizDays(recv, fund);
+          }
+        });
+        cb(null, {delays, returns});
+      } catch(err){ cb(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  
+  function calcBizDays(start, end) {
+    let count = 0, d = new Date(start);
+    d.setHours(0,0,0,0);
+    const e = new Date(end); e.setHours(0,0,0,0);
+    while(d < e){ if(d.getDay()!==0&&d.getDay()!==6) count++; d.setDate(d.getDate()+1); }
+    return count;
+  }
+  
+  // ── Match dealer to master ──
+  async function matchDealers(rows){
+    const sb = getSb();
+    const {data} = await sb.from('master_dealers').select('dealer_id,dealer_name,state,cifnumber');
+    const fndDealerMap = new Map();
+    const fndCifMap = new Map();
+    (data||[]).forEach(d=>{
+      const k = normName(d.dealer_name)+'|'+String(d.state||'').toUpperCase();
+      fndDealerMap.set(k, d.dealer_id);
+      if(d.cifnumber) fndCifMap.set(d.cifnumber, d.dealer_id);
+    });
+    console.log('[Funding] matchDealers: loaded', fndDealerMap.size, 'dealers,', fndCifMap.size, 'CIFs');
+    return rows.map(r=>{
+      const name = (r.Dealer||r.dealer||'').trim();
+      const state = (r['Dealer State']||r.State||r.state||'').toUpperCase();
+      const k = normName(name)+'|'+state;
+      const dealer_id = fndDealerMap.get(k) || null;
+      if(!dealer_id) console.warn('[Funding] No match for:', name, state);
+      return {...r, _dealer_id: dealer_id};
+    });
+  }
+  
+  // ── Save to Supabase ──
+  async function saveMonth(year, month, delays, returns){
+    const sb = getSb();
+    await sb.from('funding_deals').delete().eq('year',year).eq('month',month);
+    await sb.from('funding_returns').delete().eq('year',year).eq('month',month);
+  
+    const dealRows = delays.map(r=>{
+      const recv = r._recv || (r.Received instanceof Date ? r.Received : parseDate(String(r.Received||r.received||'')));
+      const fund = r._fund || (r.Funded   instanceof Date ? r.Funded   : parseDate(String(r.Funded||r.funded||'')));
+      return {
+        year, month,
+        dealer: (r.Dealer||r.dealer||'').trim(),
+        dealer_id: r._dealer_id||null,
+        vin: String(r['Vin Number']||r.VIN||r.vin||''),
+        received_date: recv instanceof Date ? recv.toISOString().split('T')[0] : null,
+        funded_date:   fund instanceof Date ? fund.toISOString().split('T')[0] : null,
+        days_to_fund: typeof r['Days to fund']==='number' ? r['Days to fund'] : (calcBizDays(recv,fund)||0),
+        delay_reason: (r['Reason For Delay']||r.reason||r.Reason||'').trim(),
+        funded_amount: parseFloat(String(r['Amount']||r['Funded Amount']||r.funded_amount||0).replace(/[$,]/g,''))||0
+      };
+    });
+    console.log('[Funding] Saving', dealRows.length, 'deals, sample:', JSON.stringify(dealRows[0]));
+    if(dealRows.length) await sb.from('funding_deals').insert(dealRows);
+  
+    const retRows = returns.filter(r=>(r.Dealer||r.dealer||'').trim()).map(r=>({
+      year, month,
+      dealer: (r.Dealer||r.dealer||'').trim(),
+      dealer_id: r._dealer_id||null,
+      vin: String(r['Vin Number']||r['VIN']||r.vin||''),
+      reason: (r.Reason||r.reason||'').trim()
+    }));
+    if(retRows.length) await sb.from('funding_returns').insert(retRows);
+  }
+  
+  // ── Load month data ──
+  async function loadMonth(year, month){
+    const sb = getSb();
+    const [{data:deals},{data:returns}] = await Promise.all([
+      sb.from('funding_deals').select('*').eq('year',year).eq('month',month).order('dealer'),
+      sb.from('funding_returns').select('*').eq('year',year).eq('month',month).order('dealer')
+    ]);
+    fDeals = deals||[]; fReturns = returns||[];
+  }
+  
+  // ── Load available months ──
+  async function loadAvailMonths(){
+    const sb = getSb();
+    const {data} = await sb.from('funding_deals').select('year,month').order('year',{ascending:false}).order('month',{ascending:false});
+    const seen = new Set();
+    fAvailMonths = [];
+    (data||[]).forEach(r=>{
+      const k=r.year+'-'+r.month;
+      if(!seen.has(k)){ seen.add(k); fAvailMonths.push({year:r.year,month:r.month}); }
+    });
+    if(fAvailMonths.length){ fCurYear=fAvailMonths[0].year; fCurMonth=fAvailMonths[0].month; }
+  }
+  
+  // ── AI Summary ──
+  async function generateAISummary(dealerId, dealerName, allDeals, allReturns){
+    const key = dealerId||dealerName;
+    if(fAiCache[key]) return fAiCache[key];
+    const delayReasons = allDeals.filter(d=>d.dealer_id===dealerId||d.dealer===dealerName).filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
+    const returnReasons = allReturns.filter(r=>r.dealer_id===dealerId||r.dealer===dealerName).filter(r=>r.reason).map(r=>r.reason).join('; ');
+    const totalDeals = allDeals.filter(d=>d.dealer_id===dealerId||d.dealer===dealerName).length;
+    const totalReturns = allReturns.filter(r=>r.dealer_id===dealerId||r.dealer===dealerName).length;
+    const avgDays = allDeals.filter(d=>d.dealer_id===dealerId||d.dealer===dealerName).reduce((a,d)=>a+(d.days_to_fund||0),0)/Math.max(totalDeals,1);
+    const prompt = `Summarize this auto dealer's funding performance in 2-3 sentences. Be specific. Dealer: ${dealerName}. Total funded: ${totalDeals}. Avg days to fund: ${avgDays.toFixed(1)}. Returns: ${totalReturns}. Delay reasons: ${delayReasons||'none'}. Return reasons: ${returnReasons||'none'}.`;
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:prompt}]})});
+    const data = await resp.json();
+    const text = data.content?.[0]?.text||'Unable to generate summary.';
+    fAiCache[key] = text;
+    try { await getSb().from('funding_ai_summaries').upsert({dealer_id:dealerId||null,dealer:dealerName,summary:text,year:fCurYear,month:null},{onConflict:'dealer,year'}); } catch(e){}
+    return text;
+  }
+  
+  // ── Sort helper ──
+  function sortRows(rows, key, dir){
+    return rows.slice().sort((a,b)=>{
+      let av = a[key]||0, bv = b[key]||0;
+      if(typeof av==='string') return dir==='asc'?av.localeCompare(bv):bv.localeCompare(av);
+      return dir==='asc'?av-bv:bv-av;
+    });
+  }
+  
+  function sortIcon(key, state){
+    if(state.key!==key) return '<span class="fnd-sort-icon">↕</span>';
+    return `<span class="fnd-sort-icon on">${state.dir==='asc'?'↑':'↓'}</span>`;
+  }
+  
+  // ── Render ──
+  function render(){
+    const app = document.getElementById('fundingApp');
+    if(!app) return;
+  
+    const hasData = fDeals.length > 0 || fReturns.length > 0;
+    const monthOpts = fAvailMonths.map(m=>`<option value="${m.year}-${m.month}" ${m.year===fCurYear&&m.month===fCurMonth?'selected':''}>${MN[m.month-1]} ${m.year}</option>`).join('');
+    const subLabel = hasData
+      ? `${MN[fCurMonth-1]} ${fCurYear} &nbsp;·&nbsp; ${fDeals.length} deals &nbsp;·&nbsp; ${fReturns.length} returns`
+      : 'No data uploaded yet';
+  
+    app.innerHTML = `
+    <div class="fnd">
+      <div class="fnd-topbar">
+        <div>
+          <div class="fnd-h1">Funding</div>
+          <div class="fnd-sub" id="fnd-sub">${subLabel}</div>
+        </div>
+        <div class="fnd-controls">
+          <div class="fnd-tog">
+            <button class="${fView==='monthly'?'on':''}" onclick="window.fndSwitchView('monthly')">Monthly</button>
+            <button class="${fView==='yearly'?'on':''}"  onclick="window.fndSwitchView('yearly')">Yearly</button>
+          </div>
+          ${fAvailMonths.length ? `<select class="fnd-sel" id="fndMonthSel" onchange="window.fndChangeMonth(this.value)" style="${fView==='yearly'?'display:none':''}"><option value="">Select month</option>${monthOpts}</select>` : ''}
+          <label>
+            <button class="fnd-upload-btn" onclick="document.querySelector('#fundingApp input[type=file]').click()">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              Upload month
+            </button>
+            <input type="file" accept=".xlsx,.xls" style="display:none" onchange="window.fndHandleUpload(this)"/>
+          </label>
+        </div>
+      </div>
+  
+      <div id="fnd-monthly" class="fnd-view ${fView==='monthly'?'on':''}">
+        ${hasData ? renderMonthly() : renderEmpty()}
+      </div>
+      <div id="fnd-yearly" class="fnd-view ${fView==='yearly'?'on':''}">
+        <div id="fnd-yearly-content"><div class="fnd-empty">Loading yearly data…</div></div>
+      </div>
+    </div>`;
+  
+    if(fView==='yearly') renderYearly();
+  }
+  
+  function renderEmpty(){
+    return `<div style="border:2px dashed rgba(0,0,0,.12);border-radius:14px;padding:48px;text-align:center;cursor:pointer" onclick="document.querySelector('#fundingApp input[type=file]').click()">
+      <div style="font-size:32px;margin-bottom:12px">📂</div>
+      <div style="font-size:15px;font-weight:500;color:var(--color-text-primary,#0f172a);margin-bottom:6px">Upload your first month</div>
+      <div style="font-size:13px;color:var(--color-text-secondary,#64748b)">Excel file with a Delays sheet and a Returns sheet</div>
+    </div>`;
+  }
+  
+  function renderMonthly(){
+    const totalAmt  = fDeals.reduce((a,r)=>a+(Number(r.funded_amount)||0),0);
+    const dtfArr    = fDeals.map(r=>Number(r.days_to_fund)).filter(v=>v>0);
+    const avgDTF    = dtfArr.length ? (dtfArr.reduce((a,b)=>a+b,0)/dtfArr.length).toFixed(1) : '—';
+    const avgDeal   = fDeals.length && totalAmt ? fmt$(totalAmt/fDeals.length) : '—';
+  
+    return `
+    <div class="fnd-kpis">
+      <div class="fnd-kpi fnd-kpi-blue">
+        <div class="fnd-kpi-lbl">Total funded</div>
+        <div class="fnd-kpi-val">${fmtFull$(totalAmt)}</div>
+        <div class="fnd-kpi-sub">${fDeals.length} deals · ${MN[fCurMonth-1]} ${fCurYear}</div>
+      </div>
+      <div class="fnd-kpi">
+        <div class="fnd-kpi-lbl">Avg days to fund</div>
+        <div class="fnd-kpi-val">${avgDTF}</div>
+        <div class="fnd-kpi-sub">business days</div>
+      </div>
+      <div class="fnd-kpi">
+        <div class="fnd-kpi-lbl">Avg deal size</div>
+        <div class="fnd-kpi-val">${avgDeal}</div>
+        <div class="fnd-kpi-sub">per funded deal</div>
+      </div>
+      <div class="fnd-kpi fnd-kpi-red">
+        <div class="fnd-kpi-lbl">Returns</div>
+        <div class="fnd-kpi-val">${fReturns.length}</div>
+        <div class="fnd-kpi-sub">contracts returned</div>
+      </div>
+    </div>
+  
+    <div class="fnd-tabs">
+      <button class="fnd-tab ${fTab==='ov'?'on':''}"  onclick="window.fndShowTab('ov',this)">Overview</button>
+      <button class="fnd-tab ${fTab==='dtf'?'on':''}" onclick="window.fndShowTab('dtf',this)">Days to fund</button>
+      <button class="fnd-tab ${fTab==='ret'?'on':''}" onclick="window.fndShowTab('ret',this)">Returns</button>
+    </div>
+  
+    <div id="fnd-ov"  class="fnd-panel ${fTab==='ov'?'on':''}">${renderOverview()}</div>
+    <div id="fnd-dtf" class="fnd-panel ${fTab==='dtf'?'on':''}">${renderDtf()}</div>
+    <div id="fnd-ret" class="fnd-panel ${fTab==='ret'?'on':''}">${renderRet()}</div>`;
+  }
+  
+  // ── Overview panel ──
+  function renderOverview(){
+    const byDealer = new Map();
+    fDeals.forEach(d=>{
+      const k = d.dealer_id||d.dealer;
+      if(!byDealer.has(k)) byDealer.set(k,{dealer:d.dealer,id:d.dealer_id,deals:0,amount:0,days:0,daysCount:0,returns:0});
+      const e=byDealer.get(k); e.deals++; e.amount+=Number(d.funded_amount)||0;
+      if(d.days_to_fund){ e.days+=Number(d.days_to_fund); e.daysCount++; }
+    });
+    fReturns.forEach(r=>{ const k=r.dealer_id||r.dealer; if(byDealer.has(k)) byDealer.get(k).returns++; });
+  
+    let rows = [...byDealer.values()].map(d=>({...d, avgDays: d.daysCount?(d.days/d.daysCount):0}));
+  
+    // search
+    if(fOvSearch) rows = rows.filter(r=>r.dealer.toLowerCase().includes(fOvSearch.toLowerCase()));
+    // sort
+    rows = sortRows(rows, fOvSort.key==='amount'?'amount':fOvSort.key==='avgDays'?'avgDays':fOvSort.key==='returns'?'returns':'deals', fOvSort.dir);
+  
+    const thead = `<tr>
+      <th style="text-align:left">Dealer</th>
+      <th class="fnd-sortable" onclick="window.fndOvSort('deals')">Funded deals ${sortIcon('deals',fOvSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndOvSort('amount')">Amount ${sortIcon('amount',fOvSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndOvSort('avgDays')">Avg days ${sortIcon('avgDays',fOvSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndOvSort('returns')">Returns ${sortIcon('returns',fOvSort)}</th>
+    </tr>`;
+  
+    const tbody = rows.map(d=>{
+      const avg = d.avgDays||0;
+      return `<tr>
+        <td><div class="fnd-dn">${d.dealer}</div></td>
+        <td>${d.deals}</td>
+        <td class="fnd-amt">${fmtFull$(d.amount)}</td>
+        <td><span class="fp ${pillClass(avg)}">${avg?avg.toFixed(1):'—'}</span></td>
+        <td style="color:${d.returns>0?'#be123c':'inherit'};font-weight:${d.returns>0?500:400}">${d.returns||'—'}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="5" class="fnd-empty">No data</td></tr>`;
+  
+    return `<div class="fnd-card">
+      <div class="fnd-card-hdr">
+        <span class="fnd-card-title">Per-dealer summary</span>
+        <div class="fnd-search-wrap">
+          <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fOvSearch}" oninput="window.fndOvSearch(this.value)"/>
+        </div>
+      </div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+    </div>
+    <div class="fnd-legend">Days pill: <span class="fp fp-g">≤5</span> on track &nbsp;<span class="fp fp-y">6–9</span> moderate &nbsp;<span class="fp fp-r">10+</span> delayed</div>`;
+  }
+  
+  // ── Days to Fund panel ──
+  function renderDtf(){
+    let rows = fDeals.slice();
+    if(fDtfSearch) rows = rows.filter(r=>r.dealer.toLowerCase().includes(fDtfSearch.toLowerCase()));
+  
+    const sortKey = fDtfSort.key;
+    rows = sortRows(rows, sortKey, fDtfSort.dir);
+  
+    const thead = `<tr>
+      <th style="text-align:left" class="fnd-sortable" onclick="window.fndDtfSort('dealer')">Dealer ${sortIcon('dealer',fDtfSort)}</th>
+      <th style="text-align:left">VIN</th>
+      <th class="fnd-sortable" onclick="window.fndDtfSort('received_date')">Received ${sortIcon('received_date',fDtfSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndDtfSort('funded_date')">Funded ${sortIcon('funded_date',fDtfSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndDtfSort('days_to_fund')">Days ${sortIcon('days_to_fund',fDtfSort)}</th>
+      <th class="fnd-sortable" onclick="window.fndDtfSort('funded_amount')">Amount ${sortIcon('funded_amount',fDtfSort)}</th>
+      <th style="text-align:left">Delay reason</th>
+    </tr>`;
+  
+    const tbody = rows.map(r=>{
+      const d = Number(r.days_to_fund)||0;
+      return `<tr>
+        <td><div class="fnd-dn">${r.dealer}</div></td>
+        <td class="fnd-mono">${r.vin||'—'}</td>
+        <td>${r.received_date||'—'}</td>
+        <td>${r.funded_date||'—'}</td>
+        <td><span class="fp ${pillClass(d)}">${d||'—'}</span></td>
+        <td class="fnd-amt">${r.funded_amount?fmtFull$(r.funded_amount):'—'}</td>
+        <td style="text-align:left"><span class="fnd-reason">${r.delay_reason||'—'}</span></td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="7" class="fnd-empty">No data</td></tr>`;
+  
+    return `<div class="fnd-card">
+      <div class="fnd-card-hdr">
+        <span class="fnd-card-title">Days to fund — deal level</span>
+        <div class="fnd-search-wrap">
+          <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fDtfSearch}" oninput="window.fndDtfSearch(this.value)"/>
+        </div>
+      </div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+    </div>`;
+  }
+  
+  // ── Returns panel ──
+  function renderRet(){
+    let rows = fReturns.slice();
+    if(fRetSearch) rows = rows.filter(r=>r.dealer.toLowerCase().includes(fRetSearch.toLowerCase()));
+    rows = sortRows(rows, fRetSort.key, fRetSort.dir);
+  
+    if(!rows.length) return `<div class="fnd-card"><div class="fnd-empty">No returns this month.</div></div>`;
+  
+    const thead = `<tr>
+      <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('dealer')">Dealer ${sortIcon('dealer',fRetSort)}</th>
+      <th style="text-align:left">VIN</th>
+      <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('reason')">Reason ${sortIcon('reason',fRetSort)}</th>
+    </tr>`;
+  
+    const tbody = rows.map(r=>`<tr>
+      <td><div class="fnd-dn">${r.dealer}</div></td>
+      <td class="fnd-mono" style="text-align:left">${r.vin||'—'}</td>
+      <td style="text-align:left"><span class="fnd-reason">${r.reason||'—'}</span></td>
+    </tr>`).join('');
+  
+    return `<div class="fnd-card">
+      <div class="fnd-card-hdr">
+        <span class="fnd-card-title">Returned contracts <span style="font-size:12px;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:99px;font-weight:500;margin-left:6px">${rows.length}</span></span>
+        <div class="fnd-search-wrap">
+          <span class="fnd-search-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input class="fnd-search" type="text" placeholder="Search dealers…" value="${fRetSearch}" oninput="window.fndRetSearch(this.value)"/>
+        </div>
+      </div>
+      <div style="overflow-x:auto"><table class="fnd-tbl"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+    </div>`;
+  }
+  
+  // ── Yearly ──
+  async function renderYearly(){
+    const el = document.getElementById('fnd-yearly-content');
+    if(!el) return;
+    const sb = getSb();
+    const curYear = new Date().getFullYear();
+    const [{data:allDeals},{data:allReturns}] = await Promise.all([
+      sb.from('funding_deals').select('*').eq('year',curYear),
+      sb.from('funding_returns').select('*').eq('year',curYear)
+    ]);
+    const yDeals = allDeals||[], yReturns = allReturns||[];
+    const totD=yDeals.length;
+    const totA=yDeals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
+    const totDays=totD?(yDeals.reduce((a,d)=>a+(d.days_to_fund||0),0)/totD).toFixed(1):'—';
+    const totR=yReturns.length;
+  
+    const dMap = new Map();
+    yDeals.forEach(d=>{
+      const k=d.dealer_id||d.dealer;
+      if(!dMap.has(k)) dMap.set(k,{name:d.dealer,id:d.dealer_id,deals:0,amount:0,days:0,dc:0,returns:0,allDeals:[],allReturns:[]});
+      const e=dMap.get(k); e.deals++; e.amount+=Number(d.funded_amount)||0;
+      if(d.days_to_fund){ e.days+=Number(d.days_to_fund); e.dc++; } e.allDeals.push(d);
+    });
+    yReturns.forEach(r=>{ const k=r.dealer_id||r.dealer; if(dMap.has(k)){ dMap.get(k).returns++; dMap.get(k).allReturns.push(r); } });
+    const dealers = [...dMap.values()].sort((a,b)=>b.deals-a.deals);
+  
+    const rows = dealers.map((d,i)=>{
+      const avg = d.dc?(d.days/d.dc).toFixed(1):'—';
+      const rr  = d.deals?(d.returns/d.deals*100).toFixed(0)+'%':'0%';
+      const showAI = d.deals>=5||d.returns>0;
+      return `<tr onclick="${showAI?`window.fndYearlyAI('yai${i}','${(d.id||'').replace(/'/g,'')}','${d.name.replace(/'/g,"\\'")}')`:''}" style="${showAI?'cursor:pointer':''}">
+        <td><div class="fnd-dn">${d.name}</div></td>
+        <td>${d.deals}</td>
+        <td class="fnd-amt">${fmtFull$(d.amount)}</td>
+        <td><span class="fp ${pillClass(parseFloat(avg)||0)}">${avg}</span></td>
+        <td style="color:${d.returns>0?'#be123c':'inherit'};font-weight:${d.returns>0?500:400}">${d.returns}</td>
+        <td>${rr}</td>
+        <td>${showAI?`<button class="fnd-ai-btn">View insight ↓</button>`:'<span style="font-size:12px;color:var(--color-text-secondary,#94a3b8)">—</span>'}</td>
+      </tr>
+      <tr id="yai${i}" style="display:none" class="fnd-ai-row"><td colspan="7"><div class="fnd-ai-lbl">AI insight — YTD</div><div class="fnd-ai-txt" id="yai${i}-txt" style="font-style:italic">Click row to generate insight…</div></td></tr>`;
+    }).join('');
+  
+    el.innerHTML = `
+    <div class="fnd-kpis">
+      <div class="fnd-kpi fnd-kpi-blue"><div class="fnd-kpi-lbl">YTD funded</div><div class="fnd-kpi-val">${fmtFull$(totA)}</div><div class="fnd-kpi-sub">${totD} deals ${curYear}</div></div>
+      <div class="fnd-kpi"><div class="fnd-kpi-lbl">Total deals</div><div class="fnd-kpi-val">${totD}</div><div class="fnd-kpi-sub">funded year-to-date</div></div>
+      <div class="fnd-kpi"><div class="fnd-kpi-lbl">Avg days to fund</div><div class="fnd-kpi-val">${totDays}</div><div class="fnd-kpi-sub">YTD average</div></div>
+      <div class="fnd-kpi fnd-kpi-red"><div class="fnd-kpi-lbl">YTD returns</div><div class="fnd-kpi-val">${totR}</div><div class="fnd-kpi-sub">contracts returned</div></div>
+    </div>
+    <div class="fnd-card">
+      <div class="fnd-card-hdr"><span class="fnd-card-title">Yearly dealer performance — ${curYear}</span></div>
+      <div style="overflow-x:auto"><table class="fnd-tbl">
+        <thead><tr><th style="text-align:left">Dealer</th><th>Funded</th><th>Amount</th><th>Avg days</th><th>Returns</th><th>Return rate</th><th>Insight</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" class="fnd-empty">No yearly data yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+    window._fndDealerMap = dMap;
+  }
+  
+  // ── Global handlers ──
+  window.fndSwitchView = function(v){
+    fView = v;
+    document.querySelectorAll('.fnd-view').forEach(x=>x.classList.remove('on'));
+    const el = document.getElementById('fnd-'+v);
+    if(el){ el.classList.add('on'); if(v==='yearly') renderYearly(); }
+    document.querySelectorAll('#fundingApp .fnd-tog button').forEach((b,i)=>b.classList.toggle('on',i===(v==='monthly'?0:1)));
+    const sel = document.getElementById('fndMonthSel');
+    if(sel) sel.style.display = v==='yearly'?'none':'';
+  };
+  
+  window.fndShowTab = function(id, btn){
+    fTab = id;
+    document.querySelectorAll('.fnd-panel').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.fnd-tab').forEach(x=>x.classList.remove('on'));
+    const p=document.getElementById('fnd-'+id); if(p) p.classList.add('on');
+    btn.classList.add('on');
+    if(id==='ov')  { const el=document.getElementById('fnd-ov');  if(el) el.innerHTML=renderOverview(); }
+    if(id==='dtf') { const el=document.getElementById('fnd-dtf'); if(el) el.innerHTML=renderDtf(); }
+    if(id==='ret') { const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet(); }
+  };
+  
+  // Sort handlers
+  window.fndOvSort = function(key){
+    fOvSort = fOvSort.key===key ? {key,dir:fOvSort.dir==='asc'?'desc':'asc'} : {key,dir:'desc'};
+    const el=document.getElementById('fnd-ov'); if(el) el.innerHTML=renderOverview();
+  };
+  window.fndDtfSort = function(key){
+    fDtfSort = fDtfSort.key===key ? {key,dir:fDtfSort.dir==='asc'?'desc':'asc'} : {key,dir:'desc'};
+    const el=document.getElementById('fnd-dtf'); if(el) el.innerHTML=renderDtf();
+  };
+  window.fndRetSort = function(key){
+    fRetSort = fRetSort.key===key ? {key,dir:fRetSort.dir==='asc'?'desc':'asc'} : {key,dir:'asc'};
+    const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet();
+  };
+  
+  // Search handlers
+  window.fndOvSearch  = function(v){ fOvSearch=v;  const el=document.getElementById('fnd-ov');  if(el) el.innerHTML=renderOverview(); };
+  window.fndDtfSearch = function(v){ fDtfSearch=v; const el=document.getElementById('fnd-dtf'); if(el) el.innerHTML=renderDtf(); };
+  window.fndRetSearch = function(v){ fRetSearch=v; const el=document.getElementById('fnd-ret'); if(el) el.innerHTML=renderRet(); };
+  
+  window.fndYearlyAI = async function(rowId, dealerId, dealerName){
+    const row=document.getElementById(rowId); if(!row) return;
+    row.style.display = row.style.display==='none'?'table-row':'none';
+    if(row.style.display==='none') return;
+    const txtEl=document.getElementById(rowId+'-txt'); if(!txtEl) return;
+    const cache=fAiCache[dealerId||dealerName];
+    if(cache){ txtEl.textContent=cache; txtEl.style.fontStyle='normal'; return; }
+    txtEl.textContent='Generating insight…';
+    const dm=window._fndDealerMap;
+    const entry=dm?dm.get(dealerId||dealerName):null;
+    if(!entry){ txtEl.textContent='Could not load dealer data.'; return; }
+    try {
+      const summary=await generateAISummary(dealerId||null,dealerName,entry.allDeals,entry.allReturns);
+      txtEl.textContent=summary; txtEl.style.fontStyle='normal';
+    } catch(e){ txtEl.textContent='Could not generate insight: '+e.message; }
+  };
+  
+  window.fndChangeMonth = async function(val){
+    if(!val) return;
+    const [y,m]=val.split('-');
+    fCurYear=parseInt(y); fCurMonth=parseInt(m);
+    await loadMonth(fCurYear,fCurMonth);
+    render();
+  };
+  
+  window.fndHandleUpload = async function(input){
+    const file=input.files[0]; if(!file) return;
+    const app=document.getElementById('fundingApp');
+    if(app) app.innerHTML='<div style="padding:48px;text-align:center;color:var(--color-text-secondary,#64748b);font-size:14px">Uploading and processing…</div>';
+    try {
+      parseExcel(file, async (err,{delays,returns})=>{
+        if(err){ alert('Error reading file: '+err.message); return; }
+        const mDelays  = await matchDealers(delays);
+        const mReturns = await matchDealers(returns);
+        let year=fCurYear, month=fCurMonth;
+        const firstRow = mDelays[0];
+        const firstDate = firstRow?._recv || (firstRow?.Received instanceof Date ? firstRow.Received : null) || parseDate(String(firstRow?.Received||firstRow?.received||''));
+        if(firstDate instanceof Date && !isNaN(firstDate)){ year=firstDate.getFullYear(); month=firstDate.getMonth()+1; }
+        console.log('[Funding] Auto-detected year/month:', year, month, 'from date:', firstDate);
+        await saveMonth(year, month, mDelays, mReturns);
+        fCurYear=year; fCurMonth=month;
+        fAiCache={};
+        await loadAvailMonths();
+        await loadMonth(fCurYear, fCurMonth);
+        render();
+        alert('Uploaded '+mDelays.length+' deals and '+mReturns.length+' returns for '+MN[month-1]+' '+year);
+      });
+    } catch(e){ alert('Upload failed: '+e.message); }
+  };
+  
+  // ── Init ──
+  window.initFunding = async function(){
+    injectStyles();
+    const app=document.getElementById('fundingApp');
+    if(!app) return;
+    app.innerHTML='<div style="padding:48px;text-align:center;color:var(--color-text-secondary,#64748b);font-size:14px">Loading funding data…</div>';
+    try {
+      await loadAvailMonths();
+      if(fAvailMonths.length) await loadMonth(fCurYear,fCurMonth);
+      render();
+    } catch(e){ app.innerHTML='<div style="padding:48px;color:#b91c1c">Error loading: '+e.message+'</div>'; }
+  };
+  
+  })();
