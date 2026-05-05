@@ -7746,8 +7746,7 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${MN[fCurMonth-1]} ${fCurYear}</span>
-        <button onclick="window.fndRegenMonthly()" style="margin-left:auto;font-size:11px;color:#1d4ed8;background:none;border:0.5px solid #bfdbfe;border-radius:6px;padding:3px 10px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
-      </div>
+        <button onclick="window.fndRegenMonthly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>      </div>
       <div class="fnd-insight-box-txt" id="fnd-monthly-insight-txt">
         <span class="fnd-insight-box-loading">${fMonthlyInsight||'Analyzing delays and returns…'}</span>
       </div>
@@ -7943,8 +7942,7 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${curYear} Year to Date</span>
-        <button onclick="window.fndRegenYearly()" style="margin-left:auto;font-size:11px;color:#1d4ed8;background:none;border:0.5px solid #bfdbfe;border-radius:6px;padding:3px 10px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
-      </div>
+        <button onclick="window.fndRegenYearly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>      </div>
       <div class="fnd-insight-box-txt" id="fnd-yearly-insight-txt">
         <span class="fnd-insight-box-loading">${fYearlyInsight||'Analyzing full year trends…'}</span>
       </div>
