@@ -7579,8 +7579,16 @@ function updateKpiTile(label, value) {
     return text;
   }
 
-  async function generateMonthlyInsight(deals, returns, year, month){
-    if(fMonthlyInsight) return fMonthlyInsight;
+  async function generateMonthlyInsight(deals, returns, year, month, force=false){
+    if(fMonthlyInsight && !force) return fMonthlyInsight;
+    // Check Supabase cache first
+    if(!force){
+      try {
+        const {data} = await getSb().from('funding_ai_summaries')
+          .select('summary').eq('type','monthly').eq('year',year).eq('month',month).maybeSingle();
+        if(data?.summary){ fMonthlyInsight=data.summary; return data.summary; }
+      } catch(e){}
+    }
     const delayReasons = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
     const returnReasons = returns.filter(r=>r.reason).map(r=>r.reason).join('; ');
     const totalAmt = deals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
@@ -7594,11 +7602,26 @@ Return reasons this month: ${returnReasons||'none'}.
 In 3-4 sentences, identify: (1) the most common causes of delays, (2) the most common causes of returns, and (3) anything unusual or worth flagging. Be specific and practical. Do not use markdown headers or bullet points — write in plain paragraphs.`;
     const text = await callAI(prompt);
     fMonthlyInsight = text;
+    // Save to Supabase so it persists across sessions
+    try {
+      await getSb().from('funding_ai_summaries').upsert(
+        {dealer_id:null, dealer:'__monthly__', summary:text, year, month, type:'monthly'},
+        {onConflict:'type,year,month'}
+      );
+    } catch(e){}
     return text;
   }
 
-  async function generateYearlyInsight(deals, returns, year){
-    if(fYearlyInsight) return fYearlyInsight;
+  async function generateYearlyInsight(deals, returns, year, force=false){
+    if(fYearlyInsight && !force) return fYearlyInsight;
+    // Check Supabase cache first
+    if(!force){
+      try {
+        const {data} = await getSb().from('funding_ai_summaries')
+          .select('summary').eq('type','yearly').eq('year',year).maybeSingle();
+        if(data?.summary){ fYearlyInsight=data.summary; return data.summary; }
+      } catch(e){}
+    }
     const delayReasons = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
     const returnReasons = returns.filter(r=>r.reason).map(r=>r.reason).join('; ');
     const totalAmt = deals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
@@ -7612,6 +7635,13 @@ All return reasons this year: ${returnReasons||'none'}.
 In 4-5 sentences, identify: (1) the most recurring causes of funding delays across all dealers, (2) the most common return reasons year-to-date, (3) any patterns or themes that stand out, and (4) anything that management should be aware of. Be specific and practical. Do not use markdown headers or bullet points — write in plain paragraphs.`;
     const text = await callAI(prompt);
     fYearlyInsight = text;
+    // Save to Supabase so it persists across sessions
+    try {
+      await getSb().from('funding_ai_summaries').upsert(
+        {dealer_id:null, dealer:'__yearly__', summary:text, year, month:null, type:'yearly'},
+        {onConflict:'type,year,month'}
+      );
+    } catch(e){}
     return text;
   }
   
@@ -7716,6 +7746,7 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${MN[fCurMonth-1]} ${fCurYear}</span>
+        <button onclick="window.fndRegenMonthly()" style="margin-left:auto;font-size:11px;color:#1d4ed8;background:none;border:0.5px solid #bfdbfe;border-radius:6px;padding:3px 10px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
       </div>
       <div class="fnd-insight-box-txt" id="fnd-monthly-insight-txt">
         <span class="fnd-insight-box-loading">${fMonthlyInsight||'Analyzing delays and returns…'}</span>
@@ -7912,6 +7943,7 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${curYear} Year to Date</span>
+        <button onclick="window.fndRegenYearly()" style="margin-left:auto;font-size:11px;color:#1d4ed8;background:none;border:0.5px solid #bfdbfe;border-radius:6px;padding:3px 10px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
       </div>
       <div class="fnd-insight-box-txt" id="fnd-yearly-insight-txt">
         <span class="fnd-insight-box-loading">${fYearlyInsight||'Analyzing full year trends…'}</span>
@@ -7942,6 +7974,31 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
     }
   }
   
+  // ── Regenerate handlers ──
+  window.fndRegenMonthly = async function(){
+    fMonthlyInsight = null;
+    const el = document.getElementById('fnd-monthly-insight-txt');
+    if(el) el.innerHTML = '<span class="fnd-insight-box-loading">Regenerating…</span>';
+    try {
+      const txt = await generateMonthlyInsight(fDeals, fReturns, fCurYear, fCurMonth, true);
+      if(el){ el.innerHTML=''; el.textContent=txt; }
+    } catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
+  };
+
+  window.fndRegenYearly = async function(){
+    fYearlyInsight = null;
+    const el = document.getElementById('fnd-yearly-insight-txt');
+    if(el) el.innerHTML = '<span class="fnd-insight-box-loading">Regenerating…</span>';
+    const dm = window._fndDealerMap;
+    if(!dm){ if(el) el.textContent='Could not regenerate — no data loaded.'; return; }
+    const allDeals = [], allReturns = [];
+    dm.forEach(d=>{ allDeals.push(...d.allDeals); allReturns.push(...d.allReturns); });
+    try {
+      const txt = await generateYearlyInsight(allDeals, allReturns, new Date().getFullYear(), true);
+      if(el){ el.innerHTML=''; el.textContent=txt; }
+    } catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
+  };
+
   // ── Global handlers ──
   window.fndSwitchView = function(v){
     fView = v;
