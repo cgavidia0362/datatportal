@@ -7402,7 +7402,7 @@ function updateKpiTile(label, value) {
     .fnd-dn{font-weight:500;color:var(--color-text-primary,#0f172a)}
     .fnd-mono{font-family:monospace;font-size:12px}
     .fnd-amt{color:#1d4ed8;font-weight:500}
-    .fnd-reason{font-size:12px;color:var(--color-text-secondary,#64748b);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+    .fnd-reason{font-size:12px;color:var(--color-text-secondary,#64748b);white-space:normal;word-wrap:break-word;display:block;line-height:1.5}
     .fp{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap}
     .fp-g{background:#dcfce7;color:#15803d}
     .fp-y{background:#fef3c7;color:#92400e}
@@ -7522,7 +7522,8 @@ function updateKpiTile(label, value) {
       dealer: (r.Dealer||r.dealer||'').trim(),
       dealer_id: r._dealer_id||null,
       vin: String(r['Vin Number']||r['VIN']||r.vin||''),
-      reason: (r.Reason||r.reason||'').trim()
+      reason: (r.Reason||r.reason||'').trim(),
+      amount: parseFloat(String(r['Amount']||r.amount||0).replace(/[$,]/g,''))||0
     }));
     if(retRows.length) await sb.from('funding_returns').insert(retRows);
   }
@@ -7659,10 +7660,10 @@ function updateKpiTile(label, value) {
         <div class="fnd-kpi-sub">per funded deal</div>
       </div>
       <div class="fnd-kpi fnd-kpi-red">
-        <div class="fnd-kpi-lbl">Returns</div>
-        <div class="fnd-kpi-val">${fReturns.length}</div>
-        <div class="fnd-kpi-sub">contracts returned</div>
-      </div>
+      <div class="fnd-kpi-lbl">Returns</div>
+      <div class="fnd-kpi-val">${fReturns.length}</div>
+      <div class="fnd-kpi-sub">${fmtFull$(fReturns.reduce((a,r)=>a+(Number(r.amount)||0),0))} returned</div>
+    </div>
     </div>
   
     <div class="fnd-tabs">
@@ -7778,17 +7779,13 @@ function updateKpiTile(label, value) {
     if(!rows.length) return `<div class="fnd-card"><div class="fnd-empty">No returns this month.</div></div>`;
   
     const thead = `<tr id="fnd-ret-head">
-      <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('dealer')">Dealer ${sortIcon('dealer',fRetSort)}</th>
-      <th style="text-align:left">VIN</th>
-      <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('reason')">Reason ${sortIcon('reason',fRetSort)}</th>
-    </tr>`;
+    <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('dealer')">Dealer ${sortIcon('dealer',fRetSort)}</th>
+    <th style="text-align:left">VIN</th>
+    <th class="fnd-sortable" onclick="window.fndRetSort('amount')">Amount ${sortIcon('amount',fRetSort)}</th>
+    <th style="text-align:left" class="fnd-sortable" onclick="window.fndRetSort('reason')">Reason ${sortIcon('reason',fRetSort)}</th>
+  </tr>`;
   
-    const tbody = rows.map(r=>`<tr>
-      <td><div class="fnd-dn">${r.dealer}</div></td>
-      <td class="fnd-mono" style="text-align:left">${r.vin||'—'}</td>
-      <td style="text-align:left"><span class="fnd-reason">${r.reason||'—'}</span></td>
-    </tr>`).join('');
-  
+  const tbody = buildRetRows();
     return `<div class="fnd-card">
       <div class="fnd-card-hdr">
         <span class="fnd-card-title">Returned contracts <span style="font-size:12px;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:99px;font-weight:500;margin-left:6px">${rows.length}</span></span>
@@ -7839,7 +7836,7 @@ function updateKpiTile(label, value) {
       <div class="fnd-kpi fnd-kpi-blue"><div class="fnd-kpi-lbl">YTD funded</div><div class="fnd-kpi-val">${fmtFull$(totA)}</div><div class="fnd-kpi-sub">${totD} deals ${curYear}</div></div>
       <div class="fnd-kpi"><div class="fnd-kpi-lbl">Total deals</div><div class="fnd-kpi-val">${totD}</div><div class="fnd-kpi-sub">funded year-to-date</div></div>
       <div class="fnd-kpi"><div class="fnd-kpi-lbl">Avg days to fund</div><div class="fnd-kpi-val">${totDays}</div><div class="fnd-kpi-sub">YTD average</div></div>
-      <div class="fnd-kpi fnd-kpi-red"><div class="fnd-kpi-lbl">YTD returns</div><div class="fnd-kpi-val">${totR}</div><div class="fnd-kpi-sub">contracts returned</div></div>
+      <div class="fnd-kpi fnd-kpi-red"><div class="fnd-kpi-lbl">YTD returns</div><div class="fnd-kpi-val">${totR}</div><div class="fnd-kpi-sub">${fmtFull$(yReturns.reduce((a,r)=>a+(Number(r.amount)||0),0))} returned</div></div>
     </div>
     <div class="fnd-card">
       <div class="fnd-card-hdr">
@@ -7951,7 +7948,7 @@ function updateKpiTile(label, value) {
     rows=sortRows(rows,fDtfSort.key,fDtfSort.dir);
     return rows.map(r=>{
       const d=Number(r.days_to_fund)||0;
-      return `<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono">${r.vin||'—'}</td><td>${r.received_date||'—'}</td><td>${r.funded_date||'—'}</td><td><span class="fp ${pillClass(d)}">${d||'—'}</span></td><td class="fnd-amt">${r.funded_amount?fmtFull$(r.funded_amount):'—'}</td><td style="text-align:left"><span class="fnd-reason">${r.delay_reason||'—'}</span></td></tr>`;
+      return `<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono">${r.vin||'—'}</td><td>${r.received_date||'—'}</td><td>${r.funded_date||'—'}</td><td><span class="fp ${pillClass(d)}">${d||'—'}</span></td><td class="fnd-amt">${r.funded_amount?fmtFull$(r.funded_amount):'—'}</td><td style="text-align:left"><span class="fnd-reason" title="${(r.delay_reason||'').replace(/"/g,'&quot;')}">${r.delay_reason||'—'}</span></td></tr>`;
     }).join('')||'<tr><td colspan="7" class="fnd-empty">No data</td></tr>';
   }
 
@@ -7960,7 +7957,7 @@ function updateKpiTile(label, value) {
     let rows=fReturns.slice();
     if(fRetSearch) rows=rows.filter(r=>r.dealer.toLowerCase().includes(fRetSearch.toLowerCase()));
     rows=sortRows(rows,fRetSort.key,fRetSort.dir);
-    return rows.map(r=>`<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono" style="text-align:left">${r.vin||'—'}</td><td style="text-align:left"><span class="fnd-reason">${r.reason||'—'}</span></td></tr>`).join('')||'<tr><td colspan="3" class="fnd-empty">No returns</td></tr>';
+    return rows.map(r=>`<tr><td><div class="fnd-dn">${r.dealer}</div></td><td class="fnd-mono" style="text-align:left">${r.vin||'—'}</td><td class="fnd-amt">${r.amount?fmtFull$(r.amount):'—'}</td><td style="text-align:left"><span class="fnd-reason" title="${(r.reason||'').replace(/"/g,'&quot;')}">${r.reason||'—'}</span></td></tr>`).join('')||'<tr><td colspan="4" class="fnd-empty">No returns</td></tr>';
   }
 
   // Sort handlers — only update tbody + icons, never rebuild the whole panel
