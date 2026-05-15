@@ -7267,51 +7267,215 @@ function updateKpiTile(label, value) {
     })();
   }
   // ── REPS DAILY: STATE BREAKDOWN ───────────────────────────────────────────
+  function workingDaysLeft() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const last  = new Date(today.getFullYear(), today.getMonth()+1, 0);
+    let count = 0;
+    for(let d=new Date(today); d<=last; d.setDate(d.getDate()+1)){
+      const wd=d.getDay(); if(wd!==0&&wd!==6) count++;
+    }
+    return count;
+  }
+
+  function buildStateCard(state, data, goals) {
+    const ltb = data.apps ? (data.funded/data.apps*100).toFixed(1) : '0.0';
+    const ag   = goals?.apps_goal   || 0;
+    const fg   = goals?.funded_goal || 0;
+    const dLeft = workingDaysLeft();
+    const wLeft = Math.max(dLeft/5, 0.2);
+
+    const appsPct    = ag ? Math.min(data.apps/ag*100,100)    : 0;
+    const fundedPct  = fg ? Math.min(data.funded/fg*100,100)  : 0;
+    const appsColor  = ag ? (data.apps>=ag?'#16a34a':appsPct>=70?'#d97706':'#3b82f6')   : '#3b82f6';
+    const fundColor  = fg ? (data.funded>=fg?'#16a34a':fundedPct>=70?'#d97706':'#16a34a') : '#16a34a';
+
+    const aNeedD = ag&&dLeft>0 ? Math.ceil(Math.max(ag-data.apps,0)/dLeft)   : null;
+    const aNeedW = ag          ? Math.ceil(Math.max(ag-data.apps,0)/wLeft)    : null;
+    const fNeedD = fg&&dLeft>0 ? Math.ceil(Math.max(fg-data.funded,0)/dLeft) : null;
+    const fNeedW = fg          ? Math.ceil(Math.max(fg-data.funded,0)/wLeft)  : null;
+
+    const appsGoalHTML = ag ? `
+      <div style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:3px;">
+          <span>Apps &nbsp;<b style="color:#0f172a">${data.apps.toLocaleString()}</b> / ${ag.toLocaleString()}</span>
+          <span style="color:${appsColor};font-weight:600">${appsPct.toFixed(0)}%</span>
+        </div>
+        <div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-bottom:3px;">
+          <div style="height:100%;width:${appsPct}%;background:${appsColor};border-radius:99px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;">${data.apps>=ag?'✅ Goal reached!':'Need <b>'+aNeedD+'/day</b> · <b>'+aNeedW+'/week</b>'}</div>
+      </div>` : '';
+
+    const fundedGoalHTML = fg ? `
+      <div style="margin-top:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:3px;">
+          <span>Funded &nbsp;<b style="color:#15803d">${data.funded}</b> / ${fg}</span>
+          <span style="color:${fundColor};font-weight:600">${fundedPct.toFixed(0)}%</span>
+        </div>
+        <div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-bottom:3px;">
+          <div style="height:100%;width:${fundedPct}%;background:${fundColor};border-radius:99px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;">${data.funded>=fg?'✅ Goal reached!':'Need <b>'+fNeedD+'/day</b> · <b>'+fNeedW+'/week</b>'}</div>
+      </div>` : '';
+
+    return `
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;" id="sc-${state}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-size:15px;font-weight:600;color:#0f172a;">${state}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;font-family:monospace;background:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:99px;">${ltb}% LTB</span>
+            <button onclick="window.rdOpenStateGoal('${state}')" style="font-size:11px;padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;cursor:pointer;color:#374151;font-family:inherit;">🎯 Goal</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;font-weight:600;color:#0f172a;">${data.apps.toLocaleString()}</div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:2px;">Apps</div>
+          </div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;font-weight:600;color:#15803d;">${data.funded}</div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#86efac;margin-top:2px;">Funded</div>
+          </div>
+        </div>
+        ${appsGoalHTML}${fundedGoalHTML}
+      </div>`;
+  }
+
   function renderStateBreakdown(repMap) {
     const section = document.getElementById('rdStateSection');
     const grid    = document.getElementById('rdStateGrid');
     if (!section || !grid) return;
 
-    // Aggregate apps + funded by state across all reps
-    const stateMap = new Map(); // state → { apps, funded }
+    const stateMap = new Map();
     repMap.forEach((repData) => {
       repData.dealers.forEach((dealer) => {
         const st = (dealer.state || 'Unknown').toUpperCase();
-        if (!stateMap.has(st)) stateMap.set(st, { apps: 0, funded: 0 });
+        if (!stateMap.has(st)) stateMap.set(st, { apps:0, funded:0 });
         const s = stateMap.get(st);
         s.apps   += dealer.apps   || 0;
         s.funded += dealer.funded || 0;
       });
     });
 
-    if (stateMap.size === 0) { section.style.display = 'none'; return; }
+    if (stateMap.size === 0) { section.style.display='none'; return; }
 
-    // Sort by apps descending
-    const entries = [...stateMap.entries()].sort((a, b) => b[1].apps - a[1].apps);
+    const entries = [...stateMap.entries()].sort((a,b) => b[1].apps - a[1].apps);
+    const now = new Date();
+    const goalYear = now.getFullYear(), goalMonth = now.getMonth()+1;
+    const stateGoalsMap = new Map();
 
-    grid.innerHTML = entries.map(([state, data]) => {
-      const ltb = data.apps ? (data.funded / data.apps * 100).toFixed(1) : '0.0';
-      return `
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <span style="font-size:15px;font-weight:600;color:#0f172a;">${state}</span>
-            <span style="font-size:11px;font-family:monospace;background:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:99px;">${ltb}% LTB</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
-              <div style="font-size:20px;font-weight:600;color:#0f172a;">${data.apps.toLocaleString()}</div>
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:2px;">Apps</div>
-            </div>
-            <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
-              <div style="font-size:20px;font-weight:600;color:#15803d;">${data.funded}</div>
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#86efac;margin-top:2px;">Funded</div>
-            </div>
-          </div>
-        </div>`;
-    }).join('');
+    // Store globals for modal + refresh
+    window._rdStateMap      = stateMap;
+    window._rdStateGoalsMap = stateGoalsMap;
+    window._rdGoalYear      = goalYear;
+    window._rdGoalMonth     = goalMonth;
+    window._rdRepMap        = repMap;
 
+    // Render immediately without goals
+    grid.innerHTML = entries.map(([st,d]) => buildStateCard(st,d,null)).join('');
     section.style.display = 'block';
+
+    // Async: load goals then patch cards
+    (async () => {
+      try {
+        if (!window.sb) return;
+        const { data: goalsData } = await window.sb
+          .from('state_goals').select('state,apps_goal,funded_goal,business_days')
+          .in('state', entries.map(([s])=>s)).eq('year',goalYear).eq('month',goalMonth);
+        (goalsData||[]).forEach(g => stateGoalsMap.set(g.state, g));
+        // Re-render cards with goals
+        entries.forEach(([st,d]) => {
+          const el = document.getElementById('sc-'+st);
+          if (el) el.outerHTML = buildStateCard(st, d, stateGoalsMap.get(st)||null);
+        });
+      } catch(e) { console.warn('[StateGoals] load error:', e); }
+    })();
   }
+
+  // ── STATE GOAL MODAL ──────────────────────────────────────────────────────
+  window.rdOpenStateGoal = function(state) {
+    const stateMap  = window._rdStateMap;
+    const goalsMap  = window._rdStateGoalsMap;
+    const data      = stateMap?.get(state) || { apps:0, funded:0 };
+    const cur       = goalsMap?.get(state) || {};
+    const dLeft     = workingDaysLeft();
+    const monthName = new Date().toLocaleString('default',{month:'long'});
+    const year      = new Date().getFullYear();
+
+    const existing = document.getElementById('sgModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'sgModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:28px;width:360px;box-shadow:0 24px 64px rgba(0,0,0,.18);font-family:inherit;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px;">
+          <div>
+            <div style="font-size:20px;font-weight:700;color:#0f172a;">🎯 ${state} Goals</div>
+            <div style="font-size:13px;color:#64748b;margin-top:3px;">${monthName} ${year} &nbsp;·&nbsp; ${dLeft} working days left</div>
+          </div>
+          <button onclick="document.getElementById('sgModal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em;">Monthly Apps Goal</label>
+          <input id="sgApps" type="number" min="0" value="${cur.apps_goal||''}" placeholder="e.g. 2000"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:15px;box-sizing:border-box;outline:none;color:#0f172a;">
+          <div style="font-size:12px;color:#94a3b8;margin-top:5px;">Currently at <b>${data.apps.toLocaleString()}</b> apps this period</div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em;">Monthly Funded Goal</label>
+          <input id="sgFunded" type="number" min="0" value="${cur.funded_goal||''}" placeholder="e.g. 150"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:15px;box-sizing:border-box;outline:none;color:#0f172a;">
+          <div style="font-size:12px;color:#94a3b8;margin-top:5px;">Currently at <b>${data.funded}</b> funded this period</div>
+        </div>
+
+        <div style="margin-bottom:24px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.04em;">Business Days This Month</label>
+          <input id="sgDays" type="number" min="1" max="31" value="${cur.business_days||22}"
+            style="width:100%;padding:11px 14px;border:1.5px solid #e2e8f0;border-radius:9px;font-size:15px;box-sizing:border-box;outline:none;color:#0f172a;">
+          <div style="font-size:12px;color:#94a3b8;margin-top:5px;"><b>${dLeft}</b> working days remaining in month</div>
+        </div>
+
+        <div style="display:flex;gap:10px;">
+          <button id="sgSave" style="flex:1;padding:13px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Save Goals</button>
+          <button onclick="document.getElementById('sgModal').remove()" style="flex:1;padding:13px;background:#f1f5f9;color:#374151;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>
+        </div>
+        <div id="sgErr" style="display:none;margin-top:10px;color:#dc2626;font-size:12px;text-align:center;padding:8px;background:#fef2f2;border-radius:8px;"></div>
+      </div>`;
+
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+    document.getElementById('sgApps').focus();
+
+    document.getElementById('sgSave').addEventListener('click', async function() {
+      const apps_goal    = parseInt(document.getElementById('sgApps').value)   || 0;
+      const funded_goal  = parseInt(document.getElementById('sgFunded').value) || 0;
+      const business_days = parseInt(document.getElementById('sgDays').value)  || 22;
+      const errEl = document.getElementById('sgErr');
+      this.textContent = 'Saving…'; this.disabled = true;
+      try {
+        const { error } = await window.sb.from('state_goals').upsert(
+          { state, year:window._rdGoalYear, month:window._rdGoalMonth, apps_goal, funded_goal, business_days },
+          { onConflict:'state,year,month' }
+        );
+        if (error) throw error;
+        window._rdStateGoalsMap.set(state, { apps_goal, funded_goal, business_days });
+        modal.remove();
+        // Patch just this card
+        const el = document.getElementById('sc-'+state);
+        if (el && window._rdStateMap) {
+          el.outerHTML = buildStateCard(state, window._rdStateMap.get(state)||{apps:0,funded:0}, { apps_goal, funded_goal, business_days });
+        }
+      } catch(e) {
+        errEl.textContent = 'Could not save: ' + e.message;
+        errEl.style.display = 'block';
+        this.textContent = 'Save Goals'; this.disabled = false;
+      }
+    });
+  };
 
   // ── REPS DAILY: AMOUNT FORMATTER ──────────────────────────────────────────
   function fmtAmt(n) {
@@ -7336,9 +7500,9 @@ function updateKpiTile(label, value) {
   let fCurYear = new Date().getFullYear(), fCurMonth = new Date().getMonth()+1;
   let fAvailMonths = [];
   let fAiCache = {};
-  let fMonthlyInsight = null; // cached monthly summary text
-  let fYearlyInsight  = null; // cached yearly summary text
-
+  let fMonthlyInsight = null;
+  let fYearlyInsight  = null;
+  
   // Sort state
   let fOvSort  = { key: 'deals',        dir: 'desc' };
   let fDtfSort = { key: 'days_to_fund', dir: 'desc' };
@@ -7581,7 +7745,6 @@ function updateKpiTile(label, value) {
 
   async function generateMonthlyInsight(deals, returns, year, month, force=false){
     if(fMonthlyInsight && !force) return fMonthlyInsight;
-    // Check Supabase cache first
     if(!force){
       try {
         const {data} = await getSb().from('funding_ai_summaries')
@@ -7589,11 +7752,11 @@ function updateKpiTile(label, value) {
         if(data?.summary){ fMonthlyInsight=data.summary; return data.summary; }
       } catch(e){}
     }
-    const delayReasons = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
+    const delayReasons  = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
     const returnReasons = returns.filter(r=>r.reason).map(r=>r.reason).join('; ');
     const totalAmt = deals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
-    const retAmt = returns.reduce((a,r)=>a+(Number(r.amount)||0),0);
-    const avgDays = deals.length ? (deals.reduce((a,d)=>a+(d.days_to_fund||0),0)/deals.length).toFixed(1) : 0;
+    const retAmt   = returns.reduce((a,r)=>a+(Number(r.amount)||0),0);
+    const avgDays  = deals.length?(deals.reduce((a,d)=>a+(d.days_to_fund||0),0)/deals.length).toFixed(1):0;
     const prompt = `You are analyzing subprime auto loan funding data for ${MN[month-1]} ${year}. Total funded deals: ${deals.length} ($${Math.round(totalAmt).toLocaleString()}). Average days to fund: ${avgDays}. Total returns: ${returns.length} ($${Math.round(retAmt).toLocaleString()}).
 
 Delay reasons this month: ${delayReasons||'none'}.
@@ -7602,19 +7765,12 @@ Return reasons this month: ${returnReasons||'none'}.
 In 3-4 sentences, identify: (1) the most common causes of delays, (2) the most common causes of returns, and (3) anything unusual or worth flagging. Be specific and practical. Do not use markdown headers or bullet points — write in plain paragraphs.`;
     const text = await callAI(prompt);
     fMonthlyInsight = text;
-    // Save to Supabase so it persists across sessions
-    try {
-      await getSb().from('funding_ai_summaries').upsert(
-        {dealer_id:null, dealer:'__monthly__', summary:text, year, month, type:'monthly'},
-        {onConflict:'type,year,month'}
-      );
-    } catch(e){}
+    try { await getSb().from('funding_ai_summaries').upsert({dealer_id:null,dealer:'__monthly__',summary:text,year,month,type:'monthly'},{onConflict:'type,year,month'}); } catch(e){}
     return text;
   }
 
   async function generateYearlyInsight(deals, returns, year, force=false){
     if(fYearlyInsight && !force) return fYearlyInsight;
-    // Check Supabase cache first
     if(!force){
       try {
         const {data} = await getSb().from('funding_ai_summaries')
@@ -7622,11 +7778,11 @@ In 3-4 sentences, identify: (1) the most common causes of delays, (2) the most c
         if(data?.summary){ fYearlyInsight=data.summary; return data.summary; }
       } catch(e){}
     }
-    const delayReasons = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
+    const delayReasons  = deals.filter(d=>d.delay_reason).map(d=>d.delay_reason).join('; ');
     const returnReasons = returns.filter(r=>r.reason).map(r=>r.reason).join('; ');
     const totalAmt = deals.reduce((a,d)=>a+(Number(d.funded_amount)||0),0);
-    const retAmt = returns.reduce((a,r)=>a+(Number(r.amount)||0),0);
-    const avgDays = deals.length ? (deals.reduce((a,d)=>a+(d.days_to_fund||0),0)/deals.length).toFixed(1) : 0;
+    const retAmt   = returns.reduce((a,r)=>a+(Number(r.amount)||0),0);
+    const avgDays  = deals.length?(deals.reduce((a,d)=>a+(d.days_to_fund||0),0)/deals.length).toFixed(1):0;
     const prompt = `You are analyzing a full year of subprime auto loan funding data for ${year}. Total funded deals: ${deals.length} ($${Math.round(totalAmt).toLocaleString()}). Average days to fund: ${avgDays}. Total returns: ${returns.length} ($${Math.round(retAmt).toLocaleString()}).
 
 All delay reasons this year: ${delayReasons||'none'}.
@@ -7635,13 +7791,7 @@ All return reasons this year: ${returnReasons||'none'}.
 In 4-5 sentences, identify: (1) the most recurring causes of funding delays across all dealers, (2) the most common return reasons year-to-date, (3) any patterns or themes that stand out, and (4) anything that management should be aware of. Be specific and practical. Do not use markdown headers or bullet points — write in plain paragraphs.`;
     const text = await callAI(prompt);
     fYearlyInsight = text;
-    // Save to Supabase so it persists across sessions
-    try {
-      await getSb().from('funding_ai_summaries').upsert(
-        {dealer_id:null, dealer:'__yearly__', summary:text, year, month:null, type:'yearly'},
-        {onConflict:'type,year,month'}
-      );
-    } catch(e){}
+    try { await getSb().from('funding_ai_summaries').upsert({dealer_id:null,dealer:'__yearly__',summary:text,year,month:null,type:'yearly'},{onConflict:'type,year,month'}); } catch(e){}
     return text;
   }
   
@@ -7746,7 +7896,8 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${MN[fCurMonth-1]} ${fCurYear}</span>
-        <button onclick="window.fndRegenMonthly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>      </div>
+        <button onclick="window.fndRegenMonthly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
+      </div>
       <div class="fnd-insight-box-txt" id="fnd-monthly-insight-txt">
         <span class="fnd-insight-box-loading">${fMonthlyInsight||'Analyzing delays and returns…'}</span>
       </div>
@@ -7942,7 +8093,8 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       <div class="fnd-insight-box-hdr">
         <span class="fnd-insight-box-icon">🤖</span>
         <span class="fnd-insight-box-lbl">AI Insight — ${curYear} Year to Date</span>
-        <button onclick="window.fndRegenYearly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>      </div>
+        <button onclick="window.fndRegenYearly()" style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-family:inherit">↺ Regenerate</button>
+      </div>
       <div class="fnd-insight-box-txt" id="fnd-yearly-insight-txt">
         <span class="fnd-insight-box-loading">${fYearlyInsight||'Analyzing full year trends…'}</span>
       </div>
@@ -7956,45 +8108,36 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
     </div>`;
     window._fndDealerMap = dMap;
 
-    // Auto-generate yearly insight
     if(!fYearlyInsight){
       generateYearlyInsight(yDeals, yReturns, curYear).then(txt=>{
-        const el2 = document.getElementById('fnd-yearly-insight-txt');
-        if(el2){ el2.innerHTML=''; el2.textContent=txt; }
-        fYearlyInsight = txt;
-      }).catch(e=>{
-        const el2 = document.getElementById('fnd-yearly-insight-txt');
-        if(el2) el2.textContent='Could not generate insight: '+e.message;
-      });
+        const e2=document.getElementById('fnd-yearly-insight-txt');
+        if(e2){ e2.innerHTML=''; e2.textContent=txt; } fYearlyInsight=txt;
+      }).catch(e=>{ const e2=document.getElementById('fnd-yearly-insight-txt'); if(e2) e2.textContent='Could not generate: '+e.message; });
     } else {
-      const el2 = document.getElementById('fnd-yearly-insight-txt');
-      if(el2) el2.textContent = fYearlyInsight;
+      const e2=document.getElementById('fnd-yearly-insight-txt');
+      if(e2) e2.textContent=fYearlyInsight;
     }
   }
   
   // ── Regenerate handlers ──
   window.fndRegenMonthly = async function(){
-    fMonthlyInsight = null;
-    const el = document.getElementById('fnd-monthly-insight-txt');
-    if(el) el.innerHTML = '<span class="fnd-insight-box-loading">Regenerating…</span>';
-    try {
-      const txt = await generateMonthlyInsight(fDeals, fReturns, fCurYear, fCurMonth, true);
-      if(el){ el.innerHTML=''; el.textContent=txt; }
-    } catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
+    fMonthlyInsight=null;
+    const el=document.getElementById('fnd-monthly-insight-txt');
+    if(el) el.innerHTML='<span class="fnd-insight-box-loading">Regenerating…</span>';
+    try{ const txt=await generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth,true); if(el){el.innerHTML='';el.textContent=txt;} }
+    catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
   };
 
   window.fndRegenYearly = async function(){
-    fYearlyInsight = null;
-    const el = document.getElementById('fnd-yearly-insight-txt');
-    if(el) el.innerHTML = '<span class="fnd-insight-box-loading">Regenerating…</span>';
-    const dm = window._fndDealerMap;
-    if(!dm){ if(el) el.textContent='Could not regenerate — no data loaded.'; return; }
-    const allDeals = [], allReturns = [];
-    dm.forEach(d=>{ allDeals.push(...d.allDeals); allReturns.push(...d.allReturns); });
-    try {
-      const txt = await generateYearlyInsight(allDeals, allReturns, new Date().getFullYear(), true);
-      if(el){ el.innerHTML=''; el.textContent=txt; }
-    } catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
+    fYearlyInsight=null;
+    const el=document.getElementById('fnd-yearly-insight-txt');
+    if(el) el.innerHTML='<span class="fnd-insight-box-loading">Regenerating…</span>';
+    const dm=window._fndDealerMap;
+    if(!dm){ if(el) el.textContent='No data loaded.'; return; }
+    const allD=[],allR=[];
+    dm.forEach(d=>{allD.push(...d.allDeals);allR.push(...d.allReturns);});
+    try{ const txt=await generateYearlyInsight(allD,allR,new Date().getFullYear(),true); if(el){el.innerHTML='';el.textContent=txt;} }
+    catch(e){ if(el) el.textContent='Could not regenerate: '+e.message; }
   };
 
   // ── Global handlers ──
@@ -8062,10 +8205,9 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
     fMonthlyInsight=null;
     await loadMonth(fCurYear,fCurMonth);
     render();
-    generateMonthlyInsight(fDeals, fReturns, fCurYear, fCurMonth).then(txt=>{
+    generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
       const el=document.getElementById('fnd-monthly-insight-txt');
-      if(el){ el.innerHTML=''; el.textContent=txt; }
-      fMonthlyInsight=txt;
+      if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
     }).catch(()=>{});
   };
   
@@ -8089,11 +8231,9 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
         await loadAvailMonths();
         await loadMonth(fCurYear, fCurMonth);
         render();
-        // Auto-generate monthly insight in background
-        generateMonthlyInsight(fDeals, fReturns, fCurYear, fCurMonth).then(txt=>{
+        generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
           const el=document.getElementById('fnd-monthly-insight-txt');
-          if(el){ el.innerHTML=''; el.textContent=txt; }
-          fMonthlyInsight=txt;
+          if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
         }).catch(()=>{});
         alert('Uploaded '+mDelays.length+' deals and '+mReturns.length+' returns for '+MN[month-1]+' '+year);
       });
@@ -8110,12 +8250,10 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       await loadAvailMonths();
       if(fAvailMonths.length) await loadMonth(fCurYear,fCurMonth);
       render();
-      // Auto-generate monthly insight after initial load
       if(fDeals.length){
-        generateMonthlyInsight(fDeals, fReturns, fCurYear, fCurMonth).then(txt=>{
+        generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
           const el=document.getElementById('fnd-monthly-insight-txt');
-          if(el){ el.innerHTML=''; el.textContent=txt; }
-          fMonthlyInsight=txt;
+          if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
         }).catch(()=>{});
       }
     } catch(e){ app.innerHTML='<div style="padding:48px;color:#b91c1c">Error loading: '+e.message+'</div>'; }
