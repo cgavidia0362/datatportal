@@ -9,323 +9,506 @@
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   :root{
-    --blue:#1d4ed8;--blue-light:#eff6ff;
-    --amber:#d97706;--amber-light:#fef3c7;
-    --green:#15803d;--green-light:#dcfce7;
+    --blue:#1d4ed8;--blue-lt:#eff6ff;
+    --green:#15803d;--green-lt:#dcfce7;
+    --red:#b91c1c;--red-lt:#fee2e2;
+    --amber:#d97706;--amber-lt:#fef3c7;
     --border:#e2e8f0;--bg:#f8fafc;--card:#fff;
-    --text:#0f172a;--muted:#64748b;
+    --text:#0f172a;--muted:#64748b;--mono:'DM Mono',monospace;
   }
   html,body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-  .page{max-width:680px;margin:0 auto;padding:16px 12px 48px}
+  .page{max-width:680px;margin:0 auto;padding:12px 12px 48px}
 
-  /* Header */
-  .header{border-radius:16px;padding:24px 20px;margin-bottom:14px}
-  .header.y2025{background:#d97706}
-  .header.y2026{background:var(--blue)}
-  .brand{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:14px;font-family:'DM Mono',monospace}
-  .header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-  .header-title{font-size:22px;font-weight:600;color:#fff}
-  .header-sub{font-size:13px;color:rgba(255,255,255,.7);margin-top:4px}
-  .year-btns{display:flex;gap:6px;flex-shrink:0}
-  .yr-btn{font-size:12px;padding:6px 14px;border-radius:99px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.7);cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
-  .yr-btn.active-2025{background:#fff;color:#d97706;border-color:#fff;font-weight:500}
-  .yr-btn.active-2026{background:#fff;color:var(--blue);border-color:#fff;font-weight:500}
+  /* ── Header ── */
+  .hdr{border-radius:14px;padding:18px 16px;margin-bottom:10px;background:var(--blue)}
+  .hdr.y2025{background:#d97706}
+  .brand{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:8px;font-family:var(--mono)}
+  .hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .hdr-name{font-size:19px;font-weight:500;color:#fff;line-height:1.2}
+  .hdr-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
+  .hdr-pills{display:flex;gap:6px;flex-shrink:0;margin-left:8px}
+  .hdr-pill{background:rgba(255,255,255,.18);border-radius:8px;padding:7px 12px;text-align:center;min-width:56px}
+  .hdr-pill-val{font-size:17px;font-weight:500;color:#fff;line-height:1}
+  .hdr-pill-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.55);margin-top:2px;font-family:var(--mono)}
+  .yr-btns{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+  .yr-btn{font-size:12px;padding:5px 14px;border-radius:99px;border:1.5px solid rgba(255,255,255,.35);background:transparent;color:rgba(255,255,255,.65);cursor:pointer;font-family:'DM Sans',sans-serif}
+  .yr-btn.active{background:#fff;color:var(--blue);border-color:#fff;font-weight:500}
+  .hdr.y2025 .yr-btn.active{color:#d97706}
 
-  /* Search + pagination bar */
-  .controls{display:flex;gap:8px;margin-bottom:10px;align-items:center}
-  .search-input{flex:1;padding:10px 14px;border-radius:10px;border:0.5px solid var(--border);font-size:14px;background:var(--card);color:var(--text);font-family:'DM Sans',sans-serif}
-  .section-lbl{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:'DM Mono',monospace}
+  /* ── Controls ── */
+  .controls{display:flex;gap:8px;margin-bottom:10px}
+  .search-input{flex:1;padding:10px 14px;border-radius:10px;border:0.5px solid var(--border);font-size:14px;background:var(--card);color:var(--text);font-family:'DM Sans',sans-serif;outline:none}
+  .search-input:focus{border-color:var(--blue)}
 
-  /* Dealer cards */
+  /* ── Section label ── */
+  .sec-lbl{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-family:var(--mono)}
+
+  /* ── Dealer card ── */
   .dealer-list{display:flex;flex-direction:column;gap:8px}
-  .dealer-card{background:var(--card);border:0.5px solid var(--border);border-radius:14px;overflow:hidden}
-  .dealer-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;min-height:48px}
+  .dealer-card{background:var(--card);border:0.5px solid var(--border);border-radius:13px;overflow:hidden}
+  .card-hdr{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;min-height:48px}
   .dealer-name{font-size:14px;font-weight:500;color:var(--text)}
-  .dealer-meta{font-size:11px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace}
-  .funded-pill{font-size:11px;font-weight:500;color:var(--green);background:var(--green-light);padding:4px 10px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+  .dealer-meta{font-size:11px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .funded-pill{font-size:11px;font-weight:500;color:var(--green);background:var(--green-lt);padding:4px 10px;border-radius:99px;white-space:nowrap;flex-shrink:0}
   .chevron{font-size:11px;color:var(--muted);transition:transform .2s;margin-left:6px;flex-shrink:0}
   .chevron.open{transform:rotate(180deg)}
 
-  /* Stats grid — 4 cols */
+  /* ── Stats grid (YTD) ── */
   .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-top:0.5px solid var(--border)}
-  .stat{background:var(--card);padding:10px 6px;text-align:center}
-  .stat-val{font-size:14px;font-weight:500;color:var(--text)}
-  .stat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace}
-  .stat.funded .stat-val{color:var(--green)}
-  .stat.rate .stat-val{color:var(--blue)}
+  .sg{background:var(--card);padding:9px 4px;text-align:center}
+  .sg-val{font-size:13px;font-weight:500;color:var(--text)}
+  .sg-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .sg.g .sg-val{color:var(--green)}
+  .sg.b .sg-val{color:var(--blue)}
+  .sg.r .sg-val{color:var(--red)}
+  .sg.a .sg-val{color:var(--amber)}
 
-  /* Monthly breakdown */
-  .monthly-wrap{display:none;border-top:0.5px solid var(--border);background:#f8fafc;padding:12px 16px}
+  /* ── Current month box ── */
+  .cur-wrap{margin:8px 10px 10px;border:0.5px solid #bfdbfe;border-radius:9px;overflow:hidden}
+  .cur-hdr{background:var(--blue-lt);padding:8px 12px;display:flex;align-items:center;justify-content:space-between}
+  .cur-hdr-lbl{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);font-family:var(--mono)}
+  .live-dot{display:inline-block;width:6px;height:6px;background:#22c55e;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .cur-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border)}
+  .cg{background:var(--card);padding:9px 4px;text-align:center}
+  .cg-val{font-size:15px;font-weight:500;color:var(--text)}
+  .cg-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .cg.g .cg-val{color:var(--green)}
+  .cg.b .cg-val{color:var(--blue)}
+  .cg.r .cg-val{color:var(--red)}
+  .cg.a .cg-val{color:var(--amber)}
+
+  /* ── Monthly breakdown ── */
+  .monthly-wrap{display:none;border-top:0.5px solid var(--border)}
   .monthly-wrap.open{display:block}
-  .monthly-title{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px;font-family:'DM Mono',monospace}
-  .month-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--border)}
-  .month-row:last-child{border-bottom:none}
-  .month-name{font-size:13px;color:var(--text);min-width:72px}
-  .month-stats{display:flex;gap:20px}
-  .ms{text-align:right}
-  .ms-val{font-size:13px;font-weight:500;color:var(--text)}
-  .ms-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-family:'DM Mono',monospace}
-  .ms.funded .ms-val{color:var(--green)}
+  .monthly-inner{background:var(--bg);padding:10px 12px 12px}
+  .monthly-title{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px;font-family:var(--mono)}
+  .tbl-scroll{overflow-x:auto;border-radius:8px;border:0.5px solid var(--border)}
+  .tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:440px}
+  .tbl thead tr{background:var(--bg)}
+  .tbl th{padding:8px 8px;text-align:right;font-size:8px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:var(--mono);white-space:nowrap;border-bottom:0.5px solid var(--border)}
+  .tbl th:first-child{text-align:left;padding-left:10px}
+  .tbl td{padding:8px;text-align:right;color:var(--muted);border-bottom:0.5px solid var(--border)}
+  .tbl td:first-child{text-align:left;color:var(--text);font-weight:500;white-space:nowrap;padding-left:10px}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl .gv{color:var(--green);font-weight:500}
+  .tbl .rv{color:var(--red);font-weight:500}
+  .tbl .bv{color:var(--blue)}
+  .tbl tfoot td{background:var(--bg);font-weight:500;color:var(--text);border-top:0.5px solid var(--border);border-bottom:none}
+  .tbl tfoot td.gv{color:var(--green)}
+  .tbl tfoot td.rv{color:var(--red)}
+  .tbl tfoot td.bv{color:var(--blue)}
 
-  /* Pagination */
-  .pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap}
+  /* ── Pagination ── */
+  .pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
   .pg-btn{font-size:13px;padding:6px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:'DM Sans',sans-serif;min-height:36px}
   .pg-btn:disabled{opacity:.4;cursor:not-allowed}
   .pg-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-  .pg-info{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace}
 
-  /* Loading */
+  /* ── Loading ── */
   .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .loading-wrap{text-align:center;padding:48px 0;color:var(--muted)}
+  .loading-wrap{text-align:center;padding:48px 0;color:var(--muted);font-size:13px}
 
   @media(max-width:380px){
+    .hdr-name{font-size:16px}
+    .hdr-pill-val{font-size:15px}
     .stats-grid{grid-template-columns:repeat(4,1fr)}
-    .stat-val{font-size:13px}
-    .month-stats{gap:12px}
   }
 </style>
 </head>
 <body>
 <div class="page">
-  <div class="header y2026" id="mainHeader">
+  <div class="hdr" id="mainHeader">
     <div class="brand">Buying Analysis Portal · Dealer Report</div>
-    <div class="header-top">
+    <div class="hdr-row">
       <div>
-        <div class="header-title">YTD Dealer Performance</div>
-        <div class="header-sub" id="headerSub">Loading…</div>
+        <div class="hdr-name" id="hdrName">YTD Dealer Performance</div>
+        <div class="hdr-sub" id="hdrSub">Loading…</div>
       </div>
-      <div class="year-btns" id="yearBtns"></div>
+      <div class="hdr-pills">
+        <div class="hdr-pill">
+          <div class="hdr-pill-val" id="hdrFunded">—</div>
+          <div class="hdr-pill-lbl">Funded</div>
+        </div>
+        <div class="hdr-pill">
+          <div class="hdr-pill-val" id="hdrApps">—</div>
+          <div class="hdr-pill-lbl">Total Apps</div>
+        </div>
+      </div>
     </div>
+    <div class="yr-btns" id="yrBtns"></div>
   </div>
 
   <div class="controls">
     <input class="search-input" type="text" placeholder="Search dealers…" id="searchInput" oninput="onSearch()"/>
   </div>
 
-  <div class="section-lbl" id="sectionLbl">Loading dealers…</div>
+  <div class="sec-lbl" id="secLbl">Loading dealers…</div>
   <div class="dealer-list" id="dealerList">
-    <div class="loading-wrap"><div class="spinner"></div><div style="margin-top:12px;font-size:13px">Loading…</div></div>
+    <div class="loading-wrap"><div class="spinner"></div><div style="margin-top:12px">Loading…</div></div>
   </div>
   <div class="pagination" id="pagination"></div>
 </div>
 
 <script>
-const SUPABASE_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SB_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
+const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const PER_PAGE = 10;
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false } });
+const sb = supabase.createClient(SB_URL, SB_KEY, {auth:{persistSession:false}});
 
-let allDealers = [];     // all for current year
-let filtered   = [];     // after search
-let years      = [];
-let curYear    = new Date().getFullYear();
-let curPage    = 1;
-let searchQ    = '';
+let allDealers = [], filtered = [], years = [];
+let curYear = new Date().getFullYear(), curPage = 1, searchQ = '';
 
+// ── Helpers ──────────────────────────────────────────────────────────────
+function norm(s){ return (s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
+function normStatus(s){
+  const t=(s||'').toLowerCase();
+  if(t.includes('approv')||t.includes('booked')) return 'approved';
+  if(t.includes('counter')) return 'counter';
+  if(t.includes('pend')) return 'pending';
+  if(t.includes('denial')||t.includes('denied')||t.includes('decline')) return 'denial';
+  if(t.includes('fund')) return 'funded';
+  return 'other';
+}
+function fmt(n){ return (n||0).toLocaleString(); }
+
+// ── Load all data ─────────────────────────────────────────────────────────
 async function load() {
   try {
-    // Get available years from monthly_snapshots (has all data)
-    const { data: yrData } = await sb.from('monthly_snapshots').select('year').order('year', { ascending: false }).limit(5000);
-    years = [...new Set((yrData||[]).map(r => r.year))].sort((a,b)=>b-a);
-    if (!years.length) { years = [new Date().getFullYear()]; }
+    const {data:yrData} = await sb.from('monthly_snapshots').select('year').order('year',{ascending:false}).limit(5000);
+    years = [...new Set((yrData||[]).map(r=>r.year))].sort((a,b)=>b-a);
+    if(!years.length) years=[new Date().getFullYear()];
     curYear = years[0];
-
     buildYearBtns();
     await loadYear(curYear);
   } catch(e) {
-    document.getElementById('dealerList').innerHTML = '<div class="loading-wrap" style="color:#dc2626">Failed to load: ' + e.message + '</div>';
+    document.getElementById('dealerList').innerHTML = '<div class="loading-wrap" style="color:#dc2626">Failed to load: '+e.message+'</div>';
   }
 }
 
-function buildYearBtns() {
-  const wrap = document.getElementById('yearBtns');
-  wrap.innerHTML = years.map(y =>
-    `<button class="yr-btn ${y === curYear ? 'active-' + y : ''}" onclick="switchYear(${y})">${y}</button>`
+function buildYearBtns(){
+  document.getElementById('yrBtns').innerHTML = years.map(y=>
+    `<button class="yr-btn ${y===curYear?'active':''}" onclick="switchYear(${y})">${y}</button>`
   ).join('');
 }
 
 async function loadYear(y) {
-  curYear = y;
-  curPage = 1;
-  searchQ = document.getElementById('searchInput').value.toLowerCase();
+  curYear=y; curPage=1; searchQ=document.getElementById('searchInput').value.toLowerCase();
+  const hdr=document.getElementById('mainHeader');
+  hdr.className='hdr '+(y===2025?'y2025':'');
+  document.querySelectorAll('.yr-btn').forEach(b=>{
+    b.className='yr-btn'+(parseInt(b.textContent)===y?' active':'');
+  });
+  document.getElementById('hdrSub').textContent = y+' · Loading…';
+  document.getElementById('secLbl').textContent = 'Loading dealers…';
+  document.getElementById('dealerList').innerHTML='<div class="loading-wrap"><div class="spinner"></div></div>';
+  document.getElementById('pagination').innerHTML='';
+  document.getElementById('hdrFunded').textContent='—';
+  document.getElementById('hdrApps').textContent='—';
 
-  // Update header color
-  const hdr = document.getElementById('mainHeader');
-  hdr.className = 'header y' + y;
+  // ── Parallel fetch ──
+  const [snapRes, retRes, masterRes, bdRes] = await Promise.all([
+    fetchAllSnaps(y),
+    sb.from('funding_returns').select('dealer,dealer_id,year,month').eq('year',y),
+    sb.from('master_dealers').select('dealer_name,state,cifnumber'),
+    sb.from('buying_daily_data').select('app_rows,funded_data').eq('id',1).maybeSingle()
+  ]);
 
-  // Update year buttons
-  document.querySelectorAll('.yr-btn').forEach(b => {
-    const by = parseInt(b.textContent);
-    b.className = 'yr-btn' + (by === y ? ' active-' + by : '');
+  // ── Build CIF map: norm(name)|state → cif ──
+  const cifByDealer = new Map();
+  const dealerByCif = new Map();
+  (masterRes.data||[]).forEach(d=>{
+    if(!d.cifnumber) return;
+    const k = norm(d.dealer_name)+'|'+(d.state||'').toUpperCase();
+    cifByDealer.set(k, d.cifnumber);
+    dealerByCif.set(d.cifnumber, norm(d.dealer_name)+'|'+(d.state||'').toUpperCase());
   });
 
-  document.getElementById('headerSub').textContent = y + ' · Loading…';
-  document.getElementById('sectionLbl').textContent = 'Loading dealers…';
-  document.getElementById('dealerList').innerHTML = '<div class="loading-wrap"><div class="spinner"></div></div>';
-  document.getElementById('pagination').innerHTML = '';
+  // ── Build returns map: norm(dealer)|state → {ytd, byMonth} ──
+  const returnsMap = new Map();
+  (retRes.data||[]).forEach(r=>{
+    const k = norm(r.dealer)+'|';  // returns don't always have state, match by name only
+    const nk = norm(r.dealer);
+    if(!returnsMap.has(nk)) returnsMap.set(nk,{ytd:0,byMonth:{}});
+    const e=returnsMap.get(nk);
+    e.ytd++;
+    e.byMonth[r.month]=(e.byMonth[r.month]||0)+1;
+  });
 
-  // Fetch YTD totals
-  // Pull all monthly snapshots for this year — paginate to get all rows
-  let snaps = [], snapErr = null, from = 0;
-  const pageSize = 1000;
-  while (true) {
-    const { data, error } = await sb
-      .from('monthly_snapshots')
-      .select('dealer, state, month, total_apps, approved, counter, pending, denial, funded')
-      .eq('year', y)
-      .order('month', { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) { snapErr = error; break; }
-    if (!data || data.length === 0) break;
-    snaps = snaps.concat(data);
-    if (data.length < pageSize) break;
-    from += pageSize;
+  // ── Build buying daily maps by CIF ──
+  const bdApps    = new Map(); // cif → {total,approved,counter,pending,denial}
+  const bdFunded  = new Map(); // cif → count
+  let bdMonthLabel = null;
+
+  if(bdRes?.data){
+    const appRows = bdRes.data.app_rows||[];
+    const fundedRows = bdRes.data.funded_data||[];
+
+    // Detect month label from timestamps
+    const mCounts={};
+    appRows.forEach(r=>{
+      if(!r.ts) return;
+      const p=r.ts.split(/[\s\/]/);
+      if(p.length>=3){ const k=(p[2]||'')+'-'+(p[0]||''); mCounts[k]=(mCounts[k]||0)+1; }
+    });
+    const top=Object.entries(mCounts).sort((a,b)=>b[1]-a[1])[0];
+    if(top){ const [yr,mo]=top[0].split('-'); bdMonthLabel=MN[(parseInt(mo)||1)-1]+' '+(yr||curYear); }
+    else { const n=new Date(); bdMonthLabel=MN[n.getMonth()]+' '+n.getFullYear(); }
+
+    appRows.forEach(r=>{
+      const cif=(r.cif||'').trim();
+      if(!cif) return;
+      if(!bdApps.has(cif)) bdApps.set(cif,{total:0,approved:0,counter:0,pending:0,denial:0});
+      const s=bdApps.get(cif); s.total++;
+      const st=normStatus(r.status||'');
+      if(st==='approved') s.approved++;
+      else if(st==='counter') s.counter++;
+      else if(st==='pending') s.pending++;
+      else if(st==='denial') s.denial++;
+    });
+
+    fundedRows.forEach(r=>{
+      // Try CIF first, then name+state lookup
+      let cif=(r.cif||'').trim();
+      if(!cif){ cif=cifByDealer.get(norm(r.dealer)+'|'+(r.state||'').toUpperCase())||''; }
+      if(cif) bdFunded.set(cif,(bdFunded.get(cif)||0)+1);
+    });
   }
-  if (snapErr) throw snapErr;
 
-  // Aggregate by dealer|state
+  // ── Aggregate snapshots by dealer ──
   const dealerMap = new Map();
-  (snaps || []).forEach(r => {
-    const key = (r.dealer||'').toLowerCase().trim() + '|' + (r.state||'').toUpperCase().trim();
-    if (!dealerMap.has(key)) {
-      dealerMap.set(key, {
-        name: r.dealer||'—', state: r.state||'—',
-        apps:0, approved:0, counter:0, pending:0, denial:0, funded:0,
-        months:[]
+  (snapRes||[]).forEach(r=>{
+    const key=norm(r.dealer)+'|'+(r.state||'').toUpperCase();
+    if(!dealerMap.has(key)) dealerMap.set(key,{
+      name:r.dealer,state:r.state,
+      apps:0,approved:0,counter:0,pending:0,denial:0,funded:0,
+      months:[]
+    });
+    const d=dealerMap.get(key);
+    d.apps     +=(r.total_apps||0);
+    d.approved +=(r.approved||0);
+    d.counter  +=(r.counter||0);
+    d.pending  +=(r.pending||0);
+    d.denial   +=(r.denial||0);
+    d.funded   +=(r.funded||0);
+    if((r.total_apps||0)>0||(r.funded||0)>0){
+      d.months.push({
+        month:r.month,
+        apps:r.total_apps||0,
+        approved:r.approved||0,
+        counter:r.counter||0,
+        pending:r.pending||0,
+        denial:r.denial||0,
+        funded:r.funded||0
       });
     }
-    const d = dealerMap.get(key);
-    d.apps     += r.total_apps || 0;
-    d.approved += r.approved   || 0;
-    d.counter  += r.counter    || 0;
-    d.pending  += r.pending    || 0;
-    d.denial   += r.denial     || 0;
-    d.funded   += r.funded     || 0;
-    if ((r.total_apps||0) > 0 || (r.funded||0) > 0) {
-      d.months.push({ month: r.month, apps: r.total_apps||0, funded: r.funded||0 });
-    }
   });
 
-  // Build dealer list sorted A-Z
-  allDealers = Array.from(dealerMap.values())
-    .map(d => ({
+  // ── Build final dealer list ──
+  allDealers = Array.from(dealerMap.entries()).map(([key, d])=>{
+    const cif = cifByDealer.get(key)||'';
+    const ret = returnsMap.get(norm(d.name)) || {ytd:0,byMonth:{}};
+    const bd  = cif ? { apps:bdApps.get(cif)||null, funded:bdFunded.get(cif)||0 } : null;
+    // Sort months
+    d.months.sort((a,b)=>a.month-b.month);
+    return {
       ...d,
-      ltb: d.apps ? (d.funded / d.apps * 100).toFixed(1) : '0.0',
-      lta: d.apps ? (d.approved / d.apps * 100).toFixed(1) : '0.0'
-    }))
-    .sort((a,b) => a.name.localeCompare(b.name));
+      cif,
+      returnsYtd: ret.ytd,
+      returnsByMonth: ret.byMonth,
+      bdApps: bd?.apps||null,
+      bdFunded: bd?.funded||0,
+      bdMonthLabel,
+      ltb: d.apps?(d.funded/d.apps*100).toFixed(1):'0.0',
+      lta: d.apps?(d.approved/d.apps*100).toFixed(1):'0.0'
+    };
+  }).sort((a,b)=>a.name.localeCompare(b.name));
 
-  document.getElementById('headerSub').textContent = y + ' · ' + allDealers.length + ' dealers';
+  // Update header pills with totals
+  const totFunded = allDealers.reduce((s,d)=>s+d.funded,0);
+  const totApps   = allDealers.reduce((s,d)=>s+d.apps,0);
+  document.getElementById('hdrFunded').textContent = fmt(totFunded);
+  document.getElementById('hdrApps').textContent   = fmt(totApps);
+  document.getElementById('hdrSub').textContent    = y+' · '+allDealers.length+' dealers';
+
   applyFilter();
 }
 
-function switchYear(y) { loadYear(y); }
-
-function onSearch() {
-  searchQ = document.getElementById('searchInput').value.toLowerCase();
-  curPage = 1;
-  applyFilter();
+async function fetchAllSnaps(y){
+  let rows=[], from=0;
+  while(true){
+    const {data,error}=await sb.from('monthly_snapshots')
+      .select('dealer,state,month,total_apps,approved,counter,pending,denial,funded')
+      .eq('year',y).order('month',{ascending:true})
+      .range(from,from+999);
+    if(error) break;
+    if(!data||!data.length) break;
+    rows=rows.concat(data);
+    if(data.length<1000) break;
+    from+=1000;
+  }
+  return rows;
 }
 
-function applyFilter() {
-  filtered = searchQ
-    ? allDealers.filter(d => d.name.toLowerCase().includes(searchQ))
-    : [...allDealers];
+function switchYear(y){ loadYear(y); }
+
+function onSearch(){
+  searchQ=document.getElementById('searchInput').value.toLowerCase();
+  curPage=1; applyFilter();
+}
+
+function applyFilter(){
+  filtered=searchQ?allDealers.filter(d=>d.name.toLowerCase().includes(searchQ)):[...allDealers];
   renderPage();
 }
 
-function renderPage() {
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-  if (curPage > pages) curPage = pages;
+function renderPage(){
+  const total=filtered.length;
+  const pages=Math.max(1,Math.ceil(total/PER_PAGE));
+  if(curPage>pages) curPage=pages;
+  const slice=filtered.slice((curPage-1)*PER_PAGE, curPage*PER_PAGE);
 
-  const start = (curPage - 1) * PER_PAGE;
-  const slice = filtered.slice(start, start + PER_PAGE);
+  document.getElementById('secLbl').textContent =
+    total+' dealer'+(total!==1?'s':'')+' · sorted A–Z'+(pages>1?' · page '+curPage+' of '+pages:'');
 
-  document.getElementById('sectionLbl').textContent =
-    total + ' dealer' + (total !== 1 ? 's' : '') + ' · sorted A–Z' +
-    (pages > 1 ? ' · page ' + curPage + ' of ' + pages : '');
-
-  document.getElementById('dealerList').innerHTML = slice.map((d, i) => {
-    const monthRows = d.months.map(m =>
-      `<div class="month-row">
-        <span class="month-name">${MONTHS[m.month-1]} ${curYear}</span>
-        <div class="month-stats">
-          <div class="ms"><div class="ms-val">${m.apps.toLocaleString()}</div><div class="ms-lbl">Apps</div></div>
-          <div class="ms funded"><div class="ms-val">${m.funded}</div><div class="ms-lbl">Funded</div></div>
-        </div>
-      </div>`
-    ).join('');
-
-    return `<div class="dealer-card">
-      <div class="dealer-header" onclick="toggleCard(this)">
-        <div style="flex:1;min-width:0">
-          <div class="dealer-name">${d.name}</div>
-          <div class="dealer-meta">${d.state}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="funded-pill">${d.funded} funded</span>
-          <span class="chevron">▼</span>
-        </div>
-      </div>
+  document.getElementById('dealerList').innerHTML = slice.map(d=>{
+    // ── Stats grid ──
+    const statsHTML = `
       <div class="stats-grid">
-        <div class="stat"><div class="stat-val">${d.apps.toLocaleString()}</div><div class="stat-lbl">Total Apps</div></div>
-        <div class="stat"><div class="stat-val">${d.approved}</div><div class="stat-lbl">Approved</div></div>
-        <div class="stat"><div class="stat-val">${d.counter}</div><div class="stat-lbl">Counter</div></div>
-        <div class="stat"><div class="stat-val">${d.pending}</div><div class="stat-lbl">Pending</div></div>
-        <div class="stat"><div class="stat-val">${d.denial}</div><div class="stat-lbl">Denial</div></div>
-        <div class="stat funded"><div class="stat-val">${d.funded}</div><div class="stat-lbl">Funded</div></div>
-        <div class="stat rate"><div class="stat-val">${d.ltb}%</div><div class="stat-lbl">LTB</div></div>
-        <div class="stat rate"><div class="stat-val">${d.lta}%</div><div class="stat-lbl">LTA</div></div>
-      </div>
-      ${d.months.length ? `
-      <div class="monthly-wrap">
-        <div class="monthly-title">Monthly breakdown</div>
-        ${monthRows}
-      </div>` : ''}
-    </div>`;
-  }).join('') || '<div class="loading-wrap">No dealers found.</div>';
+        <div class="sg"><div class="sg-val">${fmt(d.apps)}</div><div class="sg-lbl">Apps YTD</div></div>
+        <div class="sg b"><div class="sg-val">${fmt(d.approved)}</div><div class="sg-lbl">Approved</div></div>
+        <div class="sg a"><div class="sg-val">${fmt(d.counter)}</div><div class="sg-lbl">Counter</div></div>
+        <div class="sg"><div class="sg-val">${fmt(d.pending)}</div><div class="sg-lbl">Pending</div></div>
+        <div class="sg r"><div class="sg-val">${fmt(d.denial)}</div><div class="sg-lbl">Denial</div></div>
+        <div class="sg g"><div class="sg-val">${fmt(d.funded)}</div><div class="sg-lbl">Funded</div></div>
+        <div class="sg r"><div class="sg-val">${d.returnsYtd||'—'}</div><div class="sg-lbl">Returns YTD</div></div>
+        <div class="sg b"><div class="sg-val">${d.ltb}%</div><div class="sg-lbl">LTB</div></div>
+      </div>`;
+
+    // ── Current month box ──
+    let curHTML = '';
+    if(d.bdApps || d.bdFunded){
+      const ba = d.bdApps||{total:0,approved:0,counter:0,pending:0,denial:0};
+      curHTML = `
+        <div class="cur-wrap">
+          <div class="cur-hdr">
+            <span class="cur-hdr-lbl"><span class="live-dot"></span>${d.bdMonthLabel||'Current month'} — buying daily</span>
+            <span style="font-size:9px;color:var(--blue);font-family:var(--mono);font-weight:500">LIVE</span>
+          </div>
+          <div class="cur-grid">
+            <div class="cg"><div class="cg-val">${fmt(ba.total)}</div><div class="cg-lbl">Apps</div></div>
+            <div class="cg b"><div class="cg-val">${fmt(ba.approved)}</div><div class="cg-lbl">Approved</div></div>
+            <div class="cg a"><div class="cg-val">${fmt(ba.counter)}</div><div class="cg-lbl">Counter</div></div>
+            <div class="cg"><div class="cg-val">${fmt(ba.pending)}</div><div class="cg-lbl">Pending</div></div>
+            <div class="cg r"><div class="cg-val">${fmt(ba.denial)}</div><div class="cg-lbl">Denial</div></div>
+            <div class="cg g"><div class="cg-val">${fmt(d.bdFunded)}</div><div class="cg-lbl">Funded</div></div>
+          </div>
+        </div>`;
+    }
+
+    // ── Monthly breakdown table ──
+    let monthlyHTML = '';
+    if(d.months.length){
+      const rows = d.months.map(m=>`
+        <tr>
+          <td>${MN[m.month-1]} ${curYear}</td>
+          <td>${fmt(m.apps)}</td>
+          <td class="bv">${fmt(m.approved)}</td>
+          <td>${fmt(m.counter)}</td>
+          <td>${fmt(m.pending)}</td>
+          <td class="rv">${fmt(m.denial)}</td>
+          <td class="gv">${fmt(m.funded)}</td>
+          <td class="rv">${d.returnsByMonth[m.month]||'—'}</td>
+        </tr>`).join('');
+
+      monthlyHTML = `
+        <div class="monthly-wrap">
+          <div class="monthly-inner">
+            <div class="monthly-title">Monthly breakdown</div>
+            <div class="tbl-scroll">
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Apps</th>
+                    <th>Approv</th>
+                    <th>Counter</th>
+                    <th>Pending</th>
+                    <th>Denial</th>
+                    <th>Funded</th>
+                    <th>Returns</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+                <tfoot>
+                  <tr>
+                    <td>YTD Total</td>
+                    <td>${fmt(d.apps)}</td>
+                    <td class="bv">${fmt(d.approved)}</td>
+                    <td>${fmt(d.counter)}</td>
+                    <td>${fmt(d.pending)}</td>
+                    <td class="rv">${fmt(d.denial)}</td>
+                    <td class="gv">${fmt(d.funded)}</td>
+                    <td class="rv">${d.returnsYtd||'—'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="dealer-card">
+        <div class="card-hdr" onclick="toggleCard(this)">
+          <div style="flex:1;min-width:0">
+            <div class="dealer-name">${d.name}</div>
+            <div class="dealer-meta">${d.state}${d.cif?' · '+d.cif:''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="funded-pill">${fmt(d.funded)} funded</span>
+            <span class="chevron">▼</span>
+          </div>
+        </div>
+        ${statsHTML}
+        ${curHTML}
+        ${monthlyHTML}
+      </div>`;
+  }).join('')||'<div class="loading-wrap">No dealers found.</div>';
 
   renderPagination(pages);
 }
 
-function renderPagination(pages) {
-  const el = document.getElementById('pagination');
-  if (pages <= 1) { el.innerHTML = ''; return; }
-
-  let html = `<button class="pg-btn" onclick="goPage(${curPage-1})" ${curPage===1?'disabled':''}>← Prev</button>`;
-
-  // Show page numbers with ellipsis
-  const range = [];
-  for (let p = 1; p <= pages; p++) {
-    if (p === 1 || p === pages || (p >= curPage-1 && p <= curPage+1)) range.push(p);
-    else if (range[range.length-1] !== '…') range.push('…');
+function renderPagination(pages){
+  const el=document.getElementById('pagination');
+  if(pages<=1){el.innerHTML='';return;}
+  let html=`<button class="pg-btn" onclick="goPage(${curPage-1})" ${curPage===1?'disabled':''}>← Prev</button>`;
+  const range=[];
+  for(let p=1;p<=pages;p++){
+    if(p===1||p===pages||(p>=curPage-1&&p<=curPage+1)) range.push(p);
+    else if(range[range.length-1]!=='…') range.push('…');
   }
-  range.forEach(p => {
-    if (p === '…') html += `<span class="pg-info">…</span>`;
-    else html += `<button class="pg-btn ${p===curPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  range.forEach(p=>{
+    if(p==='…') html+=`<span style="font-size:12px;color:var(--muted)">…</span>`;
+    else html+=`<button class="pg-btn ${p===curPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
   });
-
-  html += `<button class="pg-btn" onclick="goPage(${curPage+1})" ${curPage===pages?'disabled':''}>Next →</button>`;
-  el.innerHTML = html;
+  html+=`<button class="pg-btn" onclick="goPage(${curPage+1})" ${curPage===pages?'disabled':''}>Next →</button>`;
+  el.innerHTML=html;
 }
 
-function goPage(p) {
-  const pages = Math.ceil(filtered.length / PER_PAGE);
-  if (p < 1 || p > pages) return;
-  curPage = p;
-  window.scrollTo(0, 0);
-  renderPage();
+function goPage(p){
+  const pages=Math.ceil(filtered.length/PER_PAGE);
+  if(p<1||p>pages) return;
+  curPage=p; window.scrollTo(0,0); renderPage();
 }
 
-function toggleCard(header) {
-  const monthly = header.parentElement.querySelector('.monthly-wrap');
-  if (!monthly) return;
-  const chev = header.querySelector('.chevron');
-  const open = monthly.classList.toggle('open');
-  if (chev) chev.classList.toggle('open', open);
+function toggleCard(hdr){
+  const monthly=hdr.parentElement.querySelector('.monthly-wrap');
+  if(!monthly) return;
+  const chev=hdr.querySelector('.chevron');
+  const open=monthly.classList.toggle('open');
+  if(chev) chev.classList.toggle('open',open);
 }
 
 load();

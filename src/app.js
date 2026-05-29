@@ -6200,7 +6200,8 @@ function updateKpiTile(label, value) {
           dealer: (row['Dealer Name'] || row['Dealer'] || '').trim(),
           state:  (row['Dealer State'] || row['State'] || '').trim().toUpperCase(),
           cif:    (row['Dealer Cifnumber'] || '').trim(),
-          ts:     (row['Timestamp Submit'] || '').trim()
+          ts:     (row['Timestamp Submit'] || '').trim(),
+          status: (row['Status Last'] || '').trim()
         }));
 
         // ── CIF Backfill: silently write cifnumber into master_dealers ──
@@ -6810,7 +6811,7 @@ function updateKpiTile(label, value) {
               dateISO = parts[2].padStart(4,'0') + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
             }
           }
-          rdFundedRows.push({ dealer, state, amount, date: dateISO });
+          rdFundedRows.push({ dealer, state, amount, date: dateISO, cif: (row['Dealer Cifnumber'] || '').trim() });
         });
 
         // Update upload card
