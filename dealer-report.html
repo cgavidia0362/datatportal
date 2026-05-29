@@ -82,7 +82,9 @@
   .monthly-wrap.open{display:block}
   .monthly-inner{background:var(--bg);padding:10px 12px 12px}
   .monthly-title{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px;font-family:var(--mono)}
-  .tbl-scroll{overflow-x:auto;border-radius:8px;border:0.5px solid var(--border)}
+  .tbl-outer{position:relative}
+  .tbl-scroll{overflow-x:scroll;border-radius:8px;border:0.5px solid var(--border);-webkit-overflow-scrolling:touch}
+  .scroll-hint{font-size:10px;color:var(--muted);text-align:center;padding:6px 0 2px;font-family:var(--mono);letter-spacing:.04em;opacity:.7}
   .tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:440px}
   .tbl thead tr{background:var(--bg)}
   .tbl th{padding:8px 8px;text-align:right;font-size:8px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:var(--mono);white-space:nowrap;border-bottom:0.5px solid var(--border)}
@@ -373,30 +375,9 @@ function renderPage(){
         <div class="sg b"><div class="sg-val">${d.ltb}%</div><div class="sg-lbl">LTB</div></div>
       </div>`;
 
-    // ── Current month box ──
-    let curHTML = '';
-    if(d.bdApps || d.bdFunded){
-      const ba = d.bdApps||{total:0,approved:0,counter:0,pending:0,denial:0};
-      curHTML = `
-        <div class="cur-wrap">
-          <div class="cur-hdr">
-            <span class="cur-hdr-lbl"><span class="live-dot"></span>${d.bdMonthLabel||'Current month'} — buying daily</span>
-            <span style="font-size:9px;color:var(--blue);font-family:var(--mono);font-weight:500">LIVE</span>
-          </div>
-          <div class="cur-grid">
-            <div class="cg"><div class="cg-val">${fmt(ba.total)}</div><div class="cg-lbl">Apps</div></div>
-            <div class="cg b"><div class="cg-val">${fmt(ba.approved)}</div><div class="cg-lbl">Approved</div></div>
-            <div class="cg a"><div class="cg-val">${fmt(ba.counter)}</div><div class="cg-lbl">Counter</div></div>
-            <div class="cg"><div class="cg-val">${fmt(ba.pending)}</div><div class="cg-lbl">Pending</div></div>
-            <div class="cg r"><div class="cg-val">${fmt(ba.denial)}</div><div class="cg-lbl">Denial</div></div>
-            <div class="cg g"><div class="cg-val">${fmt(d.bdFunded)}</div><div class="cg-lbl">Funded</div></div>
-          </div>
-        </div>`;
-    }
-
-    // ── Monthly breakdown table ──
+    // ── Monthly breakdown (includes current month, shown in dropdown) ──
     let monthlyHTML = '';
-    if(d.months.length){
+    if(d.months.length || d.bdApps || d.bdFunded){
       const rows = d.months.map(m=>`
         <tr>
           <td>${MN[m.month-1]} ${curYear}</td>
@@ -409,27 +390,49 @@ function renderPage(){
           <td class="rv">${d.returnsByMonth[m.month]||'—'}</td>
         </tr>`).join('');
 
+      // Current month block (inside dropdown)
+      let curInner = '';
+      if(d.bdApps || d.bdFunded){
+        const ba = d.bdApps||{total:0,approved:0,counter:0,pending:0,denial:0};
+        curInner = `
+          <div class="cur-wrap" style="margin:0 0 12px 0">
+            <div class="cur-hdr">
+              <span class="cur-hdr-lbl"><span class="live-dot"></span>${d.bdMonthLabel||'Current month'} — buying daily</span>
+              <span style="font-size:9px;color:var(--blue);font-family:var(--mono);font-weight:500">LIVE</span>
+            </div>
+            <div class="cur-grid">
+              <div class="cg"><div class="cg-val">${fmt(ba.total)}</div><div class="cg-lbl">Apps</div></div>
+              <div class="cg b"><div class="cg-val">${fmt(ba.approved)}</div><div class="cg-lbl">Approved</div></div>
+              <div class="cg a"><div class="cg-val">${fmt(ba.counter)}</div><div class="cg-lbl">Counter</div></div>
+              <div class="cg"><div class="cg-val">${fmt(ba.pending)}</div><div class="cg-lbl">Pending</div></div>
+              <div class="cg r"><div class="cg-val">${fmt(ba.denial)}</div><div class="cg-lbl">Denial</div></div>
+              <div class="cg g"><div class="cg-val">${fmt(d.bdFunded)}</div><div class="cg-lbl">Funded</div></div>
+            </div>
+          </div>`;
+      }
+
+      const tblHTML = d.months.length ? `
+        <div class="monthly-title">Monthly breakdown</div>
+        <div class="tbl-outer">
+          <div class="tbl-scroll">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Month</th><th>Apps</th><th>Approv</th><th>Counter</th>
+                  <th>Pending</th><th>Denial</th><th>Funded</th><th>Returns</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <div class="scroll-hint">← swipe to see all columns →</div>
+        </div>` : '';
+
       monthlyHTML = `
         <div class="monthly-wrap">
           <div class="monthly-inner">
-            <div class="monthly-title">Monthly breakdown</div>
-            <div class="tbl-scroll">
-              <table class="tbl">
-                <thead>
-                  <tr>
-                    <th>Month</th>
-                    <th>Apps</th>
-                    <th>Approv</th>
-                    <th>Counter</th>
-                    <th>Pending</th>
-                    <th>Denial</th>
-                    <th>Funded</th>
-                    <th>Returns</th>
-                  </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
+            ${curInner}
+            ${tblHTML}
           </div>
         </div>`;
     }
@@ -447,7 +450,6 @@ function renderPage(){
           </div>
         </div>
         ${statsHTML}
-        ${curHTML}
         ${monthlyHTML}
       </div>`;
   }).join('')||'<div class="loading-wrap">No dealers found.</div>';
