@@ -125,16 +125,6 @@
         <div class="hdr-name" id="hdrName">YTD Dealer Performance</div>
         <div class="hdr-sub" id="hdrSub">Loading…</div>
       </div>
-      <div class="hdr-pills">
-        <div class="hdr-pill">
-          <div class="hdr-pill-val" id="hdrFunded">—</div>
-          <div class="hdr-pill-lbl">Funded</div>
-        </div>
-        <div class="hdr-pill">
-          <div class="hdr-pill-val" id="hdrApps">—</div>
-          <div class="hdr-pill-lbl">Total Apps</div>
-        </div>
-      </div>
     </div>
     <div class="yr-btns" id="yrBtns"></div>
   </div>
@@ -201,11 +191,6 @@ async function loadYear(y) {
     b.className='yr-btn'+(parseInt(b.textContent)===y?' active':'');
   });
   document.getElementById('hdrSub').textContent = y+' · Loading…';
-  document.getElementById('secLbl').textContent = 'Loading dealers…';
-  document.getElementById('dealerList').innerHTML='<div class="loading-wrap"><div class="spinner"></div></div>';
-  document.getElementById('pagination').innerHTML='';
-  document.getElementById('hdrFunded').textContent='—';
-  document.getElementById('hdrApps').textContent='—';
 
   // ── Parallel fetch ──
   const [snapRes, retRes, masterRes, bdRes] = await Promise.all([
@@ -328,8 +313,6 @@ async function loadYear(y) {
   // Update header pills with totals
   const totFunded = allDealers.reduce((s,d)=>s+d.funded,0);
   const totApps   = allDealers.reduce((s,d)=>s+d.apps,0);
-  document.getElementById('hdrFunded').textContent = fmt(totFunded);
-  document.getElementById('hdrApps').textContent   = fmt(totApps);
   document.getElementById('hdrSub').textContent    = y+' · '+allDealers.length+' dealers';
 
   applyFilter();
@@ -441,18 +424,6 @@ function renderPage(){
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
-                <tfoot>
-                  <tr>
-                    <td>YTD Total</td>
-                    <td>${fmt(d.apps)}</td>
-                    <td class="bv">${fmt(d.approved)}</td>
-                    <td>${fmt(d.counter)}</td>
-                    <td>${fmt(d.pending)}</td>
-                    <td class="rv">${fmt(d.denial)}</td>
-                    <td class="gv">${fmt(d.funded)}</td>
-                    <td class="rv">${d.returnsYtd||'—'}</td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           </div>
