@@ -196,29 +196,32 @@ async function loadYear(y) {
   const [snapRes, retRes, masterRes, bdRes] = await Promise.all([
     fetchAllSnaps(y),
     sb.from('funding_returns').select('dealer,dealer_id,year,month').eq('year',y),
-    sb.from('master_dealers').select('dealer_name,state,cifnumber'),
+    sb.from('master_dealers').select('dealer_name,state,cifnumber,dealer_id'),
     sb.from('buying_daily_data').select('app_rows,funded_data').eq('id',1).maybeSingle()
   ]);
 
   // ── Build CIF map: norm(name)|state → cif ──
-  const cifByDealer = new Map();
-  const dealerByCif = new Map();
+  const cifByDealer = new Map();   // norm(name)|state → cif
+  const dealerByCif = new Map();   // cif → norm(name)|state
+  const idByDealer  = new Map();   // norm(name)|state → dealer_id
   (masterRes.data||[]).forEach(d=>{
-    if(!d.cifnumber) return;
     const k = norm(d.dealer_name)+'|'+(d.state||'').toUpperCase();
-    cifByDealer.set(k, d.cifnumber);
-    dealerByCif.set(d.cifnumber, norm(d.dealer_name)+'|'+(d.state||'').toUpperCase());
+    if(d.cifnumber){ cifByDealer.set(k, d.cifnumber); dealerByCif.set(d.cifnumber, k); }
+    if(d.dealer_id)  idByDealer.set(k, d.dealer_id);
   });
 
-  // ── Build returns map: norm(dealer)|state → {ytd, byMonth} ──
-  const returnsMap = new Map();
+  // ── Build returns maps (dealer_id first, name fallback) ──
+  const retById   = new Map(); // dealer_id → {ytd, byMonth}
+  const retByName = new Map(); // norm(dealer) → {ytd, byMonth}
+  function addRet(map, key, month){
+    if(!key) return;
+    if(!map.has(key)) map.set(key,{ytd:0,byMonth:{}});
+    const e=map.get(key); e.ytd++;
+    e.byMonth[month]=(e.byMonth[month]||0)+1;
+  }
   (retRes.data||[]).forEach(r=>{
-    const k = norm(r.dealer)+'|';  // returns don't always have state, match by name only
-    const nk = norm(r.dealer);
-    if(!returnsMap.has(nk)) returnsMap.set(nk,{ytd:0,byMonth:{}});
-    const e=returnsMap.get(nk);
-    e.ytd++;
-    e.byMonth[r.month]=(e.byMonth[r.month]||0)+1;
+    if(r.dealer_id) addRet(retById, r.dealer_id, r.month);
+    addRet(retByName, norm(r.dealer), r.month);
   });
 
   // ── Build buying daily maps by CIF ──
@@ -292,8 +295,9 @@ async function loadYear(y) {
 
   // ── Build final dealer list ──
   allDealers = Array.from(dealerMap.entries()).map(([key, d])=>{
-    const cif = cifByDealer.get(key)||'';
-    const ret = returnsMap.get(norm(d.name)) || {ytd:0,byMonth:{}};
+    const cif      = cifByDealer.get(key)||'';
+    const dealerId = idByDealer.get(key)||null;
+    const ret = (dealerId && retById.get(dealerId)) || retByName.get(norm(d.name)) || {ytd:0,byMonth:{}};
     const bd  = cif ? { apps:bdApps.get(cif)||null, funded:bdFunded.get(cif)||0 } : null;
     // Sort months
     d.months.sort((a,b)=>a.month-b.month);
