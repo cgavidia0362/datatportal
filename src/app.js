@@ -7707,7 +7707,8 @@ function updateKpiTile(label, value) {
       dealer: (r.Dealer||r.dealer||'').trim(),
       dealer_id: r._dealer_id||null,
       vin: String(r['Vin Number']||r['VIN']||r.vin||''),
-      reason: (r.Reason||r.reason||'').trim()
+      reason: (r.Reason||r.reason||'').trim(),
+      amount: parseFloat(String(r['Amount']||r['amount']||0).replace(/[$,]/g,''))||0
     }));
     if(retRows.length) await sb.from('funding_returns').insert(retRows);
   }
