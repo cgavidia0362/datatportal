@@ -1163,6 +1163,7 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
   rows.forEach((r) => {
     const dealer = String(r[mapping.dealer] ?? '').trim() || '(Unknown Dealer)';
     const state  = String(r[mapping.state]  ?? '').trim().toUpperCase() || '??';
+    const cif    = String(r[mapping.cif]    ?? '').trim();
     const status = normStatus(r[mapping.status]);
     const loan   = num(r[mapping.loan]);
     const apr    = num(r[mapping.apr]);
@@ -1173,7 +1174,7 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
     // Dealer tallies
     const key = `${dealer}|${state}|${fi}`;
     if (!dealerMap.has(key)) {
-      dealerMap.set(key, { dealer, state, fi, total:0, approved:0, counter:0, pending:0, denial:0, funded:0 });
+      dealerMap.set(key, { dealer, state, fi, _cif: cif, total:0, approved:0, counter:0, pending:0, denial:0, funded:0 });
     }
     const d = dealerMap.get(key);
     d.total += 1;
@@ -1238,11 +1239,18 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
   // PHASE 1: Add dealer_id to each dealer row (if available from master list)
   if (window.masterDealerIdMap) {
     dealerRows.forEach(dealerRow => {
-      const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
-      const masterData = window.masterDealerIdMap.get(key);
+      // CIF-first: fastest and most reliable match
+      const cif = dealerRow._cif || '';
+      let masterData = null;
+      if (cif && window.masterCifMap?.has(cif)) {
+        masterData = window.masterCifMap.get(cif);
+        console.log('[Match] CIF hit:', cif, '→', masterData?.dealer_id);
+      } else {
+        const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
+        masterData = window.masterDealerIdMap.get(key);
+      }
       if (masterData && masterData.dealer_id) {
         dealerRow.dealer_id = masterData.dealer_id;
-        // Also store rep if available
         if (masterData.rep) {
           dealerRow.rep = masterData.rep;
         }
@@ -1963,6 +1971,7 @@ function guessMapping(fields) {
     fee:    pick([/lender fee|origination|doc(ument)? fee|bank fee|fee\b/]),
     ltv:    pick([/\bltv\b|loan[- ]?to[- ]?value/]),
     fi:     pick([/franchise|independent|fi\b|store type|channel|dealer type/]),
+    cif:    pick([/cif|cifnumber|cif\s*number|dealer\s*cif/]),
   };
 
   // confidence: how many did we fill?
@@ -1984,6 +1993,7 @@ function autoMapFunded(fields=[]) {
     loan:   pick(/loan amount|amount financed|funded|principal|af\b|amt\b/),
     apr:    pick(/\bapr\b|rate|interest/),
     fee:    pick(/lender fee|discount|disc%|origination|doc fee|fee\b/),
+    cif:    pick(/cif|cifnumber|cif\s*number|dealer\s*cif/),
   };
 }
 function guessFundedMapping(fields = []) {
@@ -2127,9 +2137,12 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     }
 
     const mapKey = dealer + '|' + state;
+    const cif    = String(pickFunded(r, 'cif') || '').trim();
 
-    // 1) ID-based match: look up dealer_id from master map, then find snap row
-    const masterData = window.masterDealerIdMap?.get(mapKey);
+    // 1) CIF-first: most reliable match — check masterCifMap before name+state
+    const masterData = (cif && window.masterCifMap?.has(cif))
+      ? window.masterCifMap.get(cif)
+      : window.masterDealerIdMap?.get(mapKey);
     if (masterData?.dealer_id) {
       const snapRow = byDealerId.get(masterData.dealer_id);
       if (snapRow) {

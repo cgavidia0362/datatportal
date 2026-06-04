@@ -892,7 +892,7 @@ if (exportBtn && !window.exportButtonAttached) {
 
       const { data: dealers, error } = await sb
         .from('master_dealers')
-        .select('dealer_id, dealer_name, state, fi, rep')
+        .select('dealer_id, dealer_name, state, fi, rep, cifnumber')
         .order('dealer_name', { ascending: true });
 
       if (error) {
@@ -913,7 +913,8 @@ if (exportBtn && !window.exportButtonAttached) {
         'Dealer Name': d.dealer_name || '',
         'State': d.state || '',
         'FI Type': d.fi || '',
-        'Rep': d.rep || ''
+        'Rep': d.rep || '',
+        'CIF Number': d.cifnumber || ''
       }));
 
       // Load XLSX if not already available
@@ -933,7 +934,8 @@ if (exportBtn && !window.exportButtonAttached) {
         { wch: 40 }, // Dealer Name
         { wch: 10 }, // State
         { wch: 15 }, // FI Type
-        { wch: 20 }  // Rep
+        { wch: 20 }, // Rep
+        { wch: 18 }  // CIF Number
       ];
 
       const wb = XLSX.utils.book_new();
