@@ -8237,7 +8237,7 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
         const mReturns = await matchDealers(returns);
         let year=fCurYear, month=fCurMonth;
         const firstRow = mDelays[0];
-        const firstDate = firstRow?._recv || (firstRow?.Received instanceof Date ? firstRow.Received : null) || parseDate(String(firstRow?.Received||firstRow?.received||''));
+        const firstDate = firstRow?._fund || (firstRow?.Funded instanceof Date ? firstRow.Funded : null) || parseDate(String(firstRow?.Funded||firstRow?.funded||''));
         if(firstDate instanceof Date && !isNaN(firstDate)){ year=firstDate.getFullYear(); month=firstDate.getMonth()+1; }
         console.log('[Funding] Auto-detected year/month:', year, month, 'from date:', firstDate);
         await saveMonth(year, month, mDelays, mReturns);
