@@ -4286,6 +4286,54 @@ async function refreshYearly() {
   
   // Fill the dropdown from Supabase (fallbacks if empty)
   await ensureYearOptionsSB();
+
+  // Inject YoY toggle once
+  if (!document.getElementById('yrViewToggle')) {
+    const yrTab = document.querySelector('#tab-Yearly');
+    if (yrTab) {
+      const toggleWrap = document.createElement('div');
+      toggleWrap.id = 'yrViewToggle';
+      toggleWrap.style.cssText = 'display:flex;gap:2px;background:rgba(0,0,0,.06);border-radius:8px;padding:3px;width:fit-content;margin-bottom:16px;';
+      toggleWrap.innerHTML = `
+        <button id="yrBtnStandard" onclick="window.yrSwitchView('standard')" style="border:none;background:#fff;font-size:13px;padding:6px 18px;border-radius:6px;cursor:pointer;color:#1d4ed8;font-weight:500;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,.1)">Standard</button>
+        <button id="yrBtnYoY" onclick="window.yrSwitchView('yoy')" style="border:none;background:none;font-size:13px;padding:6px 18px;border-radius:6px;cursor:pointer;color:#64748b;font-family:inherit">Year over Year</button>
+      `;
+      // Insert before the first child of the yearly tab
+      const firstChild = yrTab.firstElementChild;
+      if (firstChild) yrTab.insertBefore(toggleWrap, firstChild);
+      else yrTab.appendChild(toggleWrap);
+
+      // Create YoY container
+      const yoyContainer = document.createElement('div');
+      yoyContainer.id = 'yrYoYPanel';
+      yoyContainer.style.display = 'none';
+      yrTab.appendChild(yoyContainer);
+    }
+  }
+
+  window.yrSwitchView = function(view) {
+    const standard = document.getElementById('yrYear')?.closest('div')?.parentElement;
+    const yoyPanel = document.getElementById('yrYoYPanel');
+    const btnStd = document.getElementById('yrBtnStandard');
+    const btnYoY = document.getElementById('yrBtnYoY');
+    const yrTab  = document.querySelector('#tab-Yearly');
+
+    // Toggle visibility of all tab children except toggle + yoyPanel
+    if (yrTab) {
+      Array.from(yrTab.children).forEach(el => {
+        if (el.id === 'yrViewToggle' || el.id === 'yrYoYPanel') return;
+        el.style.display = view === 'standard' ? '' : 'none';
+      });
+    }
+    if (yoyPanel) yoyPanel.style.display = view === 'yoy' ? '' : 'none';
+
+    const activeStyle = 'border:none;background:#fff;font-size:13px;padding:6px 18px;border-radius:6px;cursor:pointer;color:#1d4ed8;font-weight:500;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,.1)';
+    const idleStyle   = 'border:none;background:none;font-size:13px;padding:6px 18px;border-radius:6px;cursor:pointer;color:#64748b;font-family:inherit';
+    if (btnStd) btnStd.style.cssText = view === 'standard' ? activeStyle : idleStyle;
+    if (btnYoY) btnYoY.style.cssText = view === 'yoy'      ? activeStyle : idleStyle;
+
+    if (view === 'yoy') renderYoY();
+  };
   
   // Re-render when the user changes the year
   yearSel.onchange = () => renderYearly();
@@ -4294,6 +4342,221 @@ async function refreshYearly() {
   await renderYearly();
   
 }
+/* ── Year over Year comparison ───────────────────────────────────────────── */
+let yoyChart = null;
+async function renderYoY() {
+  const el = document.getElementById('yrYoYPanel');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:32px;text-align:center;color:#94a3b8;font-size:14px">Loading year over year data…</div>';
+
+  const yearSel = document.getElementById('yrYear');
+  const curYear = Number(yearSel?.value) || new Date().getFullYear();
+  const prevYear = curYear - 1;
+  const now = new Date();
+  const latestMonth = curYear === now.getFullYear() ? now.getMonth() + 1 : 12;
+
+  const fetchYear = async (y) => {
+    const rows = await fetchMonthlyYearListSB(y) || [];
+    const byMonth = Array(12).fill(null).map((_,i) => {
+      const s = rows.find(r => r.month === i+1);
+      if (!s) return null;
+      const apps     = s.totals.totalApps || 0;
+      const approved = (s.totals.approved||0) + (s.totals.counter||0);
+      const funded   = s.totals.funded || 0;
+      const amount   = s.kpis.totalFunded || 0;
+      const lta      = apps ? approved/apps : 0;
+      const ltb      = apps ? funded/apps   : 0;
+      return { apps, approved, funded, amount, lta, ltb };
+    });
+    return { byMonth };
+  };
+
+  const [cur, prev] = await Promise.all([fetchYear(curYear), fetchYear(prevYear)]);
+
+  const ytdSum = (data, key) => data.byMonth.slice(0, latestMonth).reduce((a,m) => a+(m?m[key]:0), 0);
+  const ytdAvg = (data, key) => { const ms=data.byMonth.slice(0,latestMonth).filter(Boolean); return ms.length?ms.reduce((a,m)=>a+m[key],0)/ms.length:0; };
+
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmt$ = n => { const a=Math.abs(n); return (n<0?'-':'')+'$'+(a>=1e6?(a/1e6).toFixed(1)+'M':a>=1e3?(a/1e3).toFixed(0)+'K':Math.round(a).toLocaleString()); };
+  const fmtN = n => Math.round(n).toLocaleString();
+  const fmtP = n => (n*100).toFixed(1)+'%';
+  const pctDelta = (c,p) => p===0?null:(c-p)/p*100;
+
+  // KPI card builder for overview
+  const project = ytd => latestMonth>0?Math.round(ytd/latestMonth*12):0;
+  const fullPrevFunded = prev.byMonth.reduce((a,m)=>a+(m?m.funded:0),0);
+  const fullPrevAmount = prev.byMonth.reduce((a,m)=>a+(m?m.amount:0),0);
+  const fullPrevApps   = prev.byMonth.reduce((a,m)=>a+(m?m.apps:0),0);
+
+  const kpiCard = (label, curV, prevV, fmtFn, projV, fullP, isRate) => {
+    const d = pctDelta(curV, prevV);
+    const ahead = d!==null && d>=0;
+    const badge = d===null?'': `<span style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:99px;background:${ahead?'#dcfce7':'#fee2e2'};color:${ahead?'#15803d':'#b91c1c'}">${d>0?'+':''}${d.toFixed(1)}%</span>`;
+    let pace = '';
+    if (!isRate && projV && fullP) {
+      const on = projV>=fullP; const diff=projV-fullP;
+      pace=`<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid #e2e8f0;font-size:11px;color:#64748b"><span style="font-weight:500;color:${on?'#15803d':'#b91c1c'}">${on?'▲ On pace':'▼ Behind pace'}</span> · Projected ${fmtFn(projV)} vs ${fmtFn(fullP)} full ${prevYear} <span style="color:${on?'#15803d':'#b91c1c'};font-weight:500">(${diff>=0?'+':''}${fmtFn(diff)})</span></div>`;
+    }
+    if (isRate) { const on=curV>=prevV; pace=`<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid #e2e8f0;font-size:11px;color:#64748b"><span style="font-weight:500;color:${on?'#15803d':'#b91c1c'}">${on?'▲ Ahead':'▼ Behind'} same period last year</span></div>`; }
+    return `<div style="background:#f8fafc;border-radius:10px;padding:14px 16px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${label}</div><div style="font-size:20px;font-weight:500;color:#0f172a;line-height:1.1">${fmtFn(curV)}</div><div style="font-size:12px;color:#94a3b8;margin:4px 0 5px">vs ${fmtFn(prevV)} · Jan–${MN[latestMonth-1]} ${prevYear}</div>${badge}${pace}</div>`;
+  };
+
+  el.innerHTML = `
+  <style>
+    .yoy-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .yoy-sel{font-size:13px;padding:6px 12px;border-radius:8px;border:0.5px solid #cbd5e1;background:#fff;color:#0f172a;font-family:inherit;cursor:pointer}
+    .yoy-tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .yoy-tbl th{padding:8px 12px;text-align:right;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#64748b;border-bottom:0.5px solid #e2e8f0}
+    .yoy-tbl th:first-child{text-align:left}
+    .yoy-tbl td{padding:9px 12px;text-align:right;border-bottom:0.5px solid #e2e8f0;color:#64748b}
+    .yoy-tbl td:first-child{text-align:left;font-weight:500;color:#0f172a}
+    .yoy-tbl tr.yoy-future td{color:#cbd5e1}
+    .yoy-tbl tfoot td{background:#f8fafc;font-weight:500;color:#0f172a;border-top:0.5px solid #e2e8f0;border-bottom:none}
+    .yoy-divider{height:0.5px;background:#e2e8f0;margin:22px 0}
+    .yoy-sec{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:12px}
+  </style>
+
+  <div style="font-size:12px;color:#64748b;background:#f1f5f9;border-radius:8px;padding:8px 12px;margin-bottom:18px">
+    Comparing <b>Jan–${MN[latestMonth-1]} ${curYear}</b> (YTD) vs same period in <b>${prevYear}</b>. Pace projection uses current monthly average vs full-year ${prevYear}.
+  </div>
+
+  <div class="yoy-grid">
+    ${kpiCard('Total funded',   ytdSum(cur,'funded'),   ytdSum(prev,'funded'),   fmtN, project(ytdSum(cur,'funded')),   fullPrevFunded)}
+    ${kpiCard('Funded amount',  ytdSum(cur,'amount'),   ytdSum(prev,'amount'),   fmt$, project(ytdSum(cur,'amount')),   fullPrevAmount)}
+    ${kpiCard('Total apps',     ytdSum(cur,'apps'),     ytdSum(prev,'apps'),     fmtN, project(ytdSum(cur,'apps')),     fullPrevApps)}
+    ${kpiCard('Total approved', ytdSum(cur,'approved'), ytdSum(prev,'approved'), fmtN)}
+    ${kpiCard('LTA (avg)',      ytdAvg(cur,'lta'),      ytdAvg(prev,'lta'),      fmtP, undefined, undefined, true)}
+    ${kpiCard('LTB (avg)',      ytdAvg(cur,'ltb'),      ytdAvg(prev,'ltb'),      fmtP, undefined, undefined, true)}
+  </div>
+
+  <div class="yoy-divider"></div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="yoy-sec" style="margin:0">Metric</span>
+      <select class="yoy-sel" id="yoyMetricSel" onchange="window.yoyUpdate()">
+        <option value="funded">Total funded (deals)</option>
+        <option value="amount">Funded amount ($)</option>
+        <option value="apps">Total apps</option>
+        <option value="approved">Total approved</option>
+        <option value="lta">LTA %</option>
+        <option value="ltb">LTB %</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:14px;font-size:12px;color:#64748b">
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#2a78d6;opacity:.8;display:inline-block"></span>${prevYear}</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#1baf7a;opacity:.8;display:inline-block"></span>${curYear}</span>
+    </div>
+  </div>
+
+  <div style="position:relative;width:100%;height:260px;margin-bottom:4px">
+    <canvas id="yoyChartCanvas" role="img" aria-label="Grouped bar chart comparing months for ${prevYear} and ${curYear}">Monthly comparison ${prevYear} vs ${curYear}.</canvas>
+  </div>
+
+  <div class="yoy-divider"></div>
+
+  <div class="yoy-sec">Month by month breakdown</div>
+  <div id="yoyTableBody"></div>`;
+
+  window._yoyData = { cur, prev, prevYear, curYear, latestMonth, MN, fmt$, fmtN, fmtP };
+
+  window.yoyUpdate = function() {
+    window.rebuildYoyChart();
+    window.rebuildYoyTable();
+  };
+
+  window.yoyUpdate();
+}
+
+function buildYoyChart() {}
+
+window.rebuildYoyChart = function() {
+  const d = window._yoyData;
+  if (!d) return;
+  const canvas = document.getElementById('yoyChartCanvas');
+  if (!canvas) return;
+  if (yoyChart) { try { yoyChart.destroy(); } catch {} yoyChart = null; }
+  const metric = document.getElementById('yoyMetricSel')?.value || 'funded';
+  const isRate = metric==='lta'||metric==='ltb';
+  const isAmt  = metric==='amount';
+  const prevData = d.prev.byMonth.map(m => m ? +(isRate?(m[metric]*100).toFixed(2):isAmt?Math.round(m[metric]):m[metric]) : 0);
+  const curData  = d.cur.byMonth.map((m,i) => i<d.latestMonth ? (m?+(isRate?(m[metric]*100).toFixed(2):isAmt?Math.round(m[metric]):m[metric]):0) : null);
+  yoyChart = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels:d.MN,
+      datasets:[
+        {label:String(d.prevYear),data:prevData,backgroundColor:'rgba(42,120,214,.2)',borderColor:'#2a78d6',borderWidth:1.5,borderRadius:3},
+        {label:String(d.curYear), data:curData, backgroundColor:'rgba(27,175,122,.2)',borderColor:'#1baf7a',borderWidth:1.5,borderRadius:3}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        datalabels:{display:false},
+        legend:{display:false},
+        tooltip:{mode:'index',intersect:false,callbacks:{label:ctx=>{
+          const v=ctx.raw; if(v===null) return null;
+          return ctx.dataset.label+': '+(isAmt?d.fmt$(v):isRate?v.toFixed(2)+'%':Math.round(v).toLocaleString());
+        }}}
+      },
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:11},autoSkip:false}},
+        y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{size:11},callback:v=>isAmt?d.fmt$(v):isRate?v+'%':v},beginAtZero:true}
+      }
+    }
+  });
+};
+
+window.rebuildYoyTable = function() {
+  const d = window._yoyData;
+  const el = document.getElementById('yoyTableBody');
+  if (!d||!el) return;
+  const metric = document.getElementById('yoyMetricSel')?.value || 'funded';
+  const isRate = metric==='lta'||metric==='ltb';
+  const isAmt  = metric==='amount';
+  const fmtVal = v => v===null?'—':isAmt?d.fmt$(v):isRate?(v*100).toFixed(2)+'%':Math.round(v).toLocaleString();
+
+  const rows = d.MN.map((mn,i) => {
+    const pRow=d.prev.byMonth[i], cRow=d.cur.byMonth[i];
+    const isFuture = i>=d.latestMonth;
+    const pVal=pRow?pRow[metric]:null, cVal=cRow?cRow[metric]:null;
+    let chg='—', pct='—';
+    if (pVal!==null&&cVal!==null&&!isFuture) {
+      const diff=cVal-pVal, p=pVal!==0?(diff/pVal*100):null;
+      const col=diff>0?'#15803d':diff<0?'#b91c1c':'#64748b', sign=diff>0?'+':'';
+      chg=`<span style="color:${col};font-weight:500">${sign}${fmtVal(diff)}</span>`;
+      pct=p===null?'—':`<span style="color:${col};font-weight:500">${sign}${p.toFixed(1)}%</span>`;
+    }
+    return `<tr class="${isFuture?'yoy-future':''}"><td>${mn}</td><td style="color:#2a78d6">${fmtVal(pVal)}</td><td>${isFuture?'<span style="color:#cbd5e1">Not yet</span>':`<span style="color:#1baf7a">${fmtVal(cVal)}</span>`}</td><td>${chg}</td><td>${pct}</td></tr>`;
+  });
+
+  const ytdP = isRate
+    ? (()=>{const ms=d.prev.byMonth.slice(0,d.latestMonth).filter(Boolean);return ms.length?ms.reduce((a,m)=>a+m[metric],0)/ms.length:0;})()
+    : d.prev.byMonth.slice(0,d.latestMonth).reduce((a,m)=>a+(m?m[metric]:0),0);
+  const ytdC = isRate
+    ? (()=>{const ms=d.cur.byMonth.slice(0,d.latestMonth).filter(Boolean);return ms.length?ms.reduce((a,m)=>a+m[metric],0)/ms.length:0;})()
+    : d.cur.byMonth.slice(0,d.latestMonth).reduce((a,m)=>a+(m?m[metric]:0),0);
+  const ytdD=ytdC-ytdP, ytdPct=ytdP!==0?(ytdD/ytdP*100):null;
+  const ytdCol=ytdD>0?'#15803d':ytdD<0?'#b91c1c':'#64748b', ytdSign=ytdD>0?'+':'';
+
+  el.innerHTML=`<table class="yoy-tbl">
+    <thead><tr>
+      <th style="text-align:left">Month</th><th>${d.prevYear}</th><th>${d.curYear}</th><th>Change</th><th>% change</th>
+    </tr></thead>
+    <tbody>${rows.join('')}</tbody>
+    <tfoot><tr>
+      <td>YTD total</td>
+      <td style="color:#2a78d6;font-weight:500">${fmtVal(ytdP)}</td>
+      <td style="color:#1baf7a;font-weight:500">${fmtVal(ytdC)}</td>
+      <td><span style="color:${ytdCol};font-weight:600">${ytdSign}${fmtVal(ytdD)}</span></td>
+      <td><span style="color:${ytdCol};font-weight:600">${ytdPct===null?'—':ytdSign+ytdPct.toFixed(1)+'%'}</span></td>
+    </tr></tfoot>
+  </table>`;
+};
+
+
+
 /* Build Yearly month list from Supabase (same shape your UI uses) */
 async function fetchMonthlyYearListSB(year) {
   var sb = window.sb;
