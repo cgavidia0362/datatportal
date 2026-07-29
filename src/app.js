@@ -7696,7 +7696,7 @@ function updateKpiTile(label, value) {
         funded_date:   fund instanceof Date ? fund.toISOString().split('T')[0] : null,
         days_to_fund: typeof r['Days to fund']==='number' ? r['Days to fund'] : (calcBizDays(recv,fund)||0),
         delay_reason: (r['Reason For Delay']||r.reason||r.Reason||'').trim(),
-        funded_amount: parseFloat(String(r['Amount']||r['Funded Amount']||r.funded_amount||0).replace(/[$,]/g,''))||0
+        funded_amount: parseFloat(String(r['Amount']||r['Funded Amount']||r['Amt Finance']||r['Amt']||r.funded_amount||0).replace(/[$,]/g,''))||0
       };
     });
     console.log('[Funding] Saving', dealRows.length, 'deals, sample:', JSON.stringify(dealRows[0]));
