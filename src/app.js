@@ -8123,15 +8123,8 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
     </div>`;
     window._fndDealerMap = dMap;
 
-    if(!fYearlyInsight){
-      generateYearlyInsight(yDeals, yReturns, curYear).then(txt=>{
-        const e2=document.getElementById('fnd-yearly-insight-txt');
-        if(e2){ e2.innerHTML=''; e2.textContent=txt; } fYearlyInsight=txt;
-      }).catch(e=>{ const e2=document.getElementById('fnd-yearly-insight-txt'); if(e2) e2.textContent='Could not generate: '+e.message; });
-    } else {
-      const e2=document.getElementById('fnd-yearly-insight-txt');
-      if(e2) e2.textContent=fYearlyInsight;
-    }
+    const e2=document.getElementById('fnd-yearly-insight-txt');
+    if(e2 && !fYearlyInsight) e2.textContent='Click Regenerate to generate AI insight.';
   }
   
   // ── Regenerate handlers ──
@@ -8220,10 +8213,6 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
     fMonthlyInsight=null;
     await loadMonth(fCurYear,fCurMonth);
     render();
-    generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
-      const el=document.getElementById('fnd-monthly-insight-txt');
-      if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
-    }).catch(()=>{});
   };
   
   window.fndHandleUpload = async function(input){
@@ -8246,10 +8235,6 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
         await loadAvailMonths();
         await loadMonth(fCurYear, fCurMonth);
         render();
-        generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
-          const el=document.getElementById('fnd-monthly-insight-txt');
-          if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
-        }).catch(()=>{});
         alert('Uploaded '+mDelays.length+' deals and '+mReturns.length+' returns for '+MN[month-1]+' '+year);
       });
     } catch(e){ alert('Upload failed: '+e.message); }
@@ -8265,12 +8250,6 @@ In 4-5 sentences, identify: (1) the most recurring causes of funding delays acro
       await loadAvailMonths();
       if(fAvailMonths.length) await loadMonth(fCurYear,fCurMonth);
       render();
-      if(fDeals.length){
-        generateMonthlyInsight(fDeals,fReturns,fCurYear,fCurMonth).then(txt=>{
-          const el=document.getElementById('fnd-monthly-insight-txt');
-          if(el){el.innerHTML='';el.textContent=txt;} fMonthlyInsight=txt;
-        }).catch(()=>{});
-      }
     } catch(e){ app.innerHTML='<div style="padding:48px;color:#b91c1c">Error loading: '+e.message+'</div>'; }
   };
   
