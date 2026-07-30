@@ -4352,8 +4352,6 @@ async function renderYoY() {
   const yearSel = document.getElementById('yrYear');
   const curYear = Number(yearSel?.value) || new Date().getFullYear();
   const prevYear = curYear - 1;
-  const now = new Date();
-  const latestMonth = curYear === now.getFullYear() ? now.getMonth() + 1 : 12;
 
   const fetchYear = async (y) => {
     const rows = await fetchMonthlyYearListSB(y) || [];
@@ -4368,10 +4366,14 @@ async function renderYoY() {
       const ltb      = apps ? funded/apps   : 0;
       return { apps, approved, funded, amount, lta, ltb };
     });
-    return { byMonth };
+    const latestUploaded = rows.length ? Math.max(...rows.map(r=>r.month)) : 0;
+    return { byMonth, latestUploaded };
   };
 
   const [cur, prev] = await Promise.all([fetchYear(curYear), fetchYear(prevYear)]);
+
+  // Use the latest month we actually have data for in curYear — not the calendar month
+  const latestMonth = cur.latestUploaded || 0;
 
   const ytdSum = (data, key) => data.byMonth.slice(0, latestMonth).reduce((a,m) => a+(m?m[key]:0), 0);
   const ytdAvg = (data, key) => { const ms=data.byMonth.slice(0,latestMonth).filter(Boolean); return ms.length?ms.reduce((a,m)=>a+m[key],0)/ms.length:0; };
