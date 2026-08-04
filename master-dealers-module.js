@@ -1051,12 +1051,69 @@ function filterMasterDealers() {
         </span>
       </td>
       <td class="px-3 py-2">${dealer.rep || '—'}</td>
+      <td class="px-3 py-2" id="cif-cell-${dealer.id}">
+        ${dealer.cifnumber
+          ? `<span class="font-mono text-xs text-gray-700">${dealer.cifnumber}</span>
+             <button class="ml-2 text-xs text-blue-500 hover:underline" onclick="window.editCif(${dealer.id},'${dealer.cifnumber}')">Edit</button>`
+          : `<button class="text-xs text-orange-500 hover:underline font-medium" onclick="window.editCif(${dealer.id},'')">+ Add CIF</button>`
+        }
+      </td>
       <td class="px-3 py-2 text-right">
         <button class="text-sm text-blue-600 hover:underline mr-2" onclick="editDealer(${dealer.id})">Edit</button>
         <button class="text-sm text-red-600 hover:underline" onclick="confirmDeleteDealer(${dealer.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="5" class="px-3 py-6 text-center text-gray-500">No dealers found</td></tr>';
+  `).join('') || '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">No dealers found</td></tr>';
+
+  // Inject CIF column header if not already present
+  const thead = document.querySelector('#masterDealersTable thead tr, .master-dealers-table thead tr');
+  if (thead && !document.getElementById('masterCifHeader')) {
+    const actionsHeader = thead.querySelector('th:last-child');
+    if (actionsHeader) {
+      const cifTh = document.createElement('th');
+      cifTh.id = 'masterCifHeader';
+      cifTh.className = 'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+      cifTh.textContent = 'CIF Number';
+      thead.insertBefore(cifTh, actionsHeader);
+    }
+  }
+
+  // Inline CIF editor
+  window.editCif = async function(dealerId, current) {
+    const cell = document.getElementById('cif-cell-'+dealerId);
+    if (!cell) return;
+    cell.innerHTML = `
+      <input id="cif-input-${dealerId}" type="text" value="${current}"
+        class="border border-gray-300 rounded px-2 py-1 text-xs font-mono w-28 focus:outline-none focus:border-blue-400"
+        placeholder="e.g. D-151" />
+      <button class="ml-1 text-xs text-blue-600 hover:underline font-medium" onclick="window.saveCif(${dealerId})">Save</button>
+      <button class="ml-1 text-xs text-gray-400 hover:underline" onclick="window.renderMasterDealersList ? window.renderMasterDealersList() : renderMasterDealersList()">Cancel</button>`;
+    document.getElementById('cif-input-'+dealerId)?.focus();
+  };
+
+  window.saveCif = async function(dealerId) {
+    const input = document.getElementById('cif-input-'+dealerId);
+    if (!input) return;
+    const newCif = input.value.trim();
+    const cell = document.getElementById('cif-cell-'+dealerId);
+    if (cell) cell.innerHTML = '<span class="text-xs text-gray-400">Saving…</span>';
+    try {
+      const sb = window.sb || (window.supabase && window.supabase.createClient ? null : window._sb);
+      const { error } = await (sb||window.sb).from('master_dealers').update({ cifnumber: newCif }).eq('id', dealerId);
+      if (error) throw error;
+      // Update local cache
+      if (window.currentMasterDealers) {
+        const d = window.currentMasterDealers.find(x=>x.id===dealerId);
+        if (d) d.cifnumber = newCif;
+      }
+      if (cell) cell.innerHTML = newCif
+        ? `<span class="font-mono text-xs text-gray-700">${newCif}</span>
+           <button class="ml-2 text-xs text-blue-500 hover:underline" onclick="window.editCif(${dealerId},'${newCif}')">Edit</button>`
+        : `<button class="text-xs text-orange-500 hover:underline font-medium" onclick="window.editCif(${dealerId},'')">+ Add CIF</button>`;
+    } catch(e) {
+      if (cell) cell.innerHTML = `<span class="text-red-500 text-xs">Error: ${e.message}</span>`;
+    }
+  };
 }
 
 

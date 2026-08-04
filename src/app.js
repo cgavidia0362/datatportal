@@ -1256,6 +1256,31 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
         }
       }
     });
+
+    // CIF backfill: write CIFs back to master_dealers for any dealer matched by name
+    // that has a CIF in the CSV but not yet saved in the master list
+    const sb = window.sb;
+    if (sb) {
+      const cifUpdates = new Map(); // dealer_id → cifnumber
+      dealerRows.forEach(row => {
+        const cif = (row._cif || '').trim();
+        if (!cif || !row.dealer_id) return;
+        // Only update if not already in masterCifMap (means it's new)
+        if (!window.masterCifMap?.has(cif)) {
+          cifUpdates.set(row.dealer_id, cif);
+        }
+      });
+      if (cifUpdates.size > 0) {
+        console.log('[CIF] Backfilling', cifUpdates.size, 'CIFs from monthly upload into master_dealers...');
+        cifUpdates.forEach(async (cifnumber, dealer_id) => {
+          try {
+            await sb.from('master_dealers').update({ cifnumber }).eq('dealer_id', dealer_id);
+            if (window.masterCifMap) window.masterCifMap.set(cifnumber, { dealer_id });
+            console.log('[CIF] Backfilled:', dealer_id, '→', cifnumber);
+          } catch(e) { console.warn('[CIF] Backfill error:', e.message); }
+        });
+      }
+    }
   }
 
   // FI rows array
@@ -7924,23 +7949,44 @@ function updateKpiTile(label, value) {
       if(d.cifnumber) fndCifMap.set(String(d.cifnumber).trim(), d.dealer_id);
     });
     console.log('[Funding] matchDealers: loaded', fndDealerMap.size, 'dealers,', fndCifMap.size, 'CIFs');
-    return rows.map(r=>{
+
+    const matched = rows.map(r=>{
       const cif    = String(r['Dealer Cifnumber'] || r['Dealer CifNumber'] || r['cifnumber'] || '').trim();
       const name   = (r.Dealer || r.dealer || '').trim();
       const state  = (r['Dealer State'] || r.State || r.state || '').toUpperCase();
       const nameKey = normName(name) + '|' + state;
-  
+
       // CIF-first: fastest and most reliable match
       let dealer_id = cif ? (fndCifMap.get(cif) || null) : null;
-  
+
       // Fallback to name+state if CIF not found or not present
       if(!dealer_id) dealer_id = fndDealerMap.get(nameKey) || null;
-  
+
       if(!dealer_id) console.warn('[Funding] No match for:', name, state, 'CIF:', cif||'(none)');
       else           console.log('[Funding] Matched via', cif&&fndCifMap.get(cif)?'CIF':'name+state', ':', name, '→', dealer_id);
-  
-      return {...r, _dealer_id: dealer_id};
+
+      return {...r, _dealer_id: dealer_id, _cif: cif};
     });
+
+    // CIF backfill: write new CIFs back to master_dealers
+    const cifUpdates = new Map(); // dealer_id → cifnumber
+    matched.forEach(r => {
+      const cif = (r._cif||'').trim();
+      if (!cif || !r._dealer_id) return;
+      if (!fndCifMap.has(cif)) cifUpdates.set(r._dealer_id, cif); // only new ones
+    });
+    if (cifUpdates.size > 0) {
+      console.log('[Funding] Backfilling', cifUpdates.size, 'new CIFs into master_dealers...');
+      cifUpdates.forEach(async (cifnumber, dealer_id) => {
+        try {
+          await sb.from('master_dealers').update({ cifnumber }).eq('dealer_id', dealer_id);
+          fndCifMap.set(cifnumber, dealer_id);
+          console.log('[Funding] Backfilled CIF:', dealer_id, '→', cifnumber);
+        } catch(e) { console.warn('[Funding] CIF backfill error:', e.message); }
+      });
+    }
+
+    return matched;
   }
   
   // ── Save to Supabase ──
