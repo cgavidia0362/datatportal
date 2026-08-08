@@ -4428,9 +4428,61 @@ async function renderYoY() {
     return `<div style="background:#f8fafc;border-radius:10px;padding:14px 16px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${label}</div><div style="font-size:20px;font-weight:500;color:#0f172a;line-height:1.1">${fmtFn(curV)}</div><div style="font-size:12px;color:#94a3b8;margin:4px 0 5px">vs ${fmtFn(prevV)} · Jan–${MN[latestMonth-1]} ${prevYear}</div>${badge}${pace}</div>`;
   };
 
+  // ── Computed values for summary card ──
+  const cApps     = ytdSum(cur,'apps'),     pApps     = ytdSum(prev,'apps');
+  const cApproved = ytdSum(cur,'approved'), pApproved = ytdSum(prev,'approved');
+  const cFunded   = ytdSum(cur,'funded'),   pFunded   = ytdSum(prev,'funded');
+  const cAmount   = ytdSum(cur,'amount'),   pAmount   = ytdSum(prev,'amount');
+
+  // Aggregate rates (total ÷ total apps) — not monthly averages
+  const cAprRate = cApps > 0 ? cApproved/cApps : 0;
+  const pAprRate = pApps > 0 ? pApproved/pApps : 0;
+  const cFndRate = cApps > 0 ? cFunded/cApps   : 0;
+  const pFndRate = pApps > 0 ? pFunded/pApps   : 0;
+
+  const pct  = (c,p) => p===0?null:((c-p)/p*100);
+  const sign = n => n>=0?'+':'';
+
+  // Badge for count/amount metrics — shows relative % change
+  const badgePct = (c,p) => {
+    const d=pct(c,p);
+    if(d===null) return `<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;background:#f1f5f9;color:#64748b;border:0.5px solid #e2e8f0">— flat</span>`;
+    const up=d>=0, col=up?'#15803d':'#b91c1c', bg=up?'#dcfce7':'#fee2e2';
+    return `<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;background:${bg};color:${col}">${up?'▲':'▼'} ${sign(d)}${Math.abs(d).toFixed(1)}%</span>`;
+  };
+
+  // Badge for rate metrics — shows absolute percentage-point change
+  const badgePP = (c,p) => {
+    const diff = (c-p)*100;
+    if(Math.abs(diff)<0.05) return `<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;background:#f1f5f9;color:#64748b;border:0.5px solid #e2e8f0">— flat</span>`;
+    const up=diff>=0, col=up?'#15803d':'#b91c1c', bg=up?'#dcfce7':'#fee2e2';
+    return `<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;background:${bg};color:${col}">${up?'▲':'▼'} ${sign(diff)}${Math.abs(diff).toFixed(1)} pp</span>`;
+  };
+
+  const kpiTile = (label, valStr, prevStr, badge) => `
+    <div style="background:var(--surface-1,#f8fafc);border:0.5px solid #e2e8f0;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;justify-content:space-between;min-width:0">
+      <div>
+        <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+        <div style="font-size:18px;font-weight:500;color:#0f172a;line-height:1.1;margin-bottom:3px">${valStr}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">vs ${prevStr} in ${prevYear}</div>
+      </div>
+      ${badge}
+    </div>`;
+
+  // Fixed takeaway text as specified
+  const appsPct = pct(cApps, pApps);
+  const aprPtDiff = (cAprRate - pAprRate)*100;
+  const fundPct  = pct(cFunded, pFunded);
+  const amtPct   = pct(cAmount, pAmount);
+  const takeaway = (appsPct!==null && fundPct!==null)
+    ? `Applications increased ${Math.abs(appsPct).toFixed(1)}%, but the approval rate declined by ${Math.abs(aprPtDiff).toFixed(1)} percentage points, resulting in ${Math.abs(pct(cApproved,pApproved)).toFixed(1)}% fewer approvals. Despite this, funded deals increased ${Math.abs(fundPct).toFixed(1)}% and funded volume increased ${Math.abs(amtPct).toFixed(1)}%.`
+    : '';
+
   el.innerHTML = `
   <style>
-    .yoy-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .yoy-kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    @media(max-width:640px){.yoy-kgrid{grid-template-columns:1fr}}
+    @media(min-width:641px) and (max-width:900px){.yoy-kgrid{grid-template-columns:repeat(2,1fr)}}
     .yoy-sel{font-size:13px;padding:6px 12px;border-radius:8px;border:0.5px solid #cbd5e1;background:#fff;color:#0f172a;font-family:inherit;cursor:pointer}
     .yoy-tbl{width:100%;border-collapse:collapse;font-size:13px}
     .yoy-tbl th{padding:8px 12px;text-align:right;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#64748b;border-bottom:0.5px solid #e2e8f0}
@@ -4443,20 +4495,26 @@ async function renderYoY() {
     .yoy-sec{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:12px}
   </style>
 
-  <div style="font-size:12px;color:#64748b;background:#f1f5f9;border-radius:8px;padding:8px 12px;margin-bottom:18px">
-    Comparing <b>Jan–${MN[latestMonth-1]} ${curYear}</b> (YTD) vs same period in <b>${prevYear}</b>. Pace projection uses current monthly average vs full-year ${prevYear}.
-  </div>
+  <div style="background:var(--surface-1,#f8fafc);border:0.5px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin-bottom:22px">
+    <div style="margin-bottom:14px">
+      <div style="font-size:15px;font-weight:500;color:#0f172a;margin-bottom:2px">Year over year summary</div>
+      <div style="font-size:12px;color:#64748b">Jan–${MN[latestMonth-1]} ${prevYear} vs Jan–${MN[latestMonth-1]} ${curYear} · same period comparison</div>
+    </div>
 
-  <div class="yoy-grid">
-    ${kpiCard('Total funded',   ytdSum(cur,'funded'),   ytdSum(prev,'funded'),   fmtN, project(ytdSum(cur,'funded')),   fullPrevFunded)}
-    ${kpiCard('Funded amount',  ytdSum(cur,'amount'),   ytdSum(prev,'amount'),   fmt$, project(ytdSum(cur,'amount')),   fullPrevAmount)}
-    ${kpiCard('Total apps',     ytdSum(cur,'apps'),     ytdSum(prev,'apps'),     fmtN, project(ytdSum(cur,'apps')),     fullPrevApps)}
-    ${kpiCard('Total approved', ytdSum(cur,'approved'), ytdSum(prev,'approved'), fmtN)}
-    ${kpiCard('LTA (avg)',      ytdAvg(cur,'lta'),      ytdAvg(prev,'lta'),      fmtP, undefined, undefined, true)}
-    ${kpiCard('LTB (avg)',      ytdAvg(cur,'ltb'),      ytdAvg(prev,'ltb'),      fmtP, undefined, undefined, true)}
-  </div>
+    <div class="yoy-kgrid" style="margin-bottom:16px;align-items:stretch">
+      ${kpiTile('Applications',   fmtN(cApps),     fmtN(pApps),     badgePct(cApps,pApps))}
+      ${kpiTile('Total approved', fmtN(cApproved), fmtN(pApproved), badgePct(cApproved,pApproved))}
+      ${kpiTile('Total funded',   fmtN(cFunded),   fmtN(pFunded),   badgePct(cFunded,pFunded))}
+      ${kpiTile('Funded amount',  fmt$(cAmount),   fmt$(pAmount),   badgePct(cAmount,pAmount))}
+      ${kpiTile('Approval rate',  fmtP(cAprRate),  fmtP(pAprRate),  badgePP(cAprRate,pAprRate))}
+      ${kpiTile('Funding rate',   fmtP(cFndRate),  fmtP(pFndRate),  badgePP(cFndRate,pFndRate))}
+    </div>
 
-  <div class="yoy-divider"></div>
+    ${takeaway ? `
+    <div style="border-left:2px solid #bfdbfe;padding:10px 14px;margin-top:4px;font-size:13px;color:#64748b;line-height:1.6;border-radius:0">
+      <b style="color:#0f172a">Key takeaway:</b> ${takeaway}
+    </div>` : ''}
+  </div>
 
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px">
@@ -4464,10 +4522,10 @@ async function renderYoY() {
       <select class="yoy-sel" id="yoyMetricSel" onchange="window.yoyUpdate()">
         <option value="funded">Total funded (deals)</option>
         <option value="amount">Funded amount ($)</option>
-        <option value="apps">Total apps</option>
+        <option value="apps">Applications</option>
         <option value="approved">Total approved</option>
-        <option value="lta">LTA %</option>
-        <option value="ltb">LTB %</option>
+        <option value="lta">Approval rate %</option>
+        <option value="ltb">Funding rate %</option>
       </select>
     </div>
     <div style="display:flex;gap:14px;font-size:12px;color:#64748b">
