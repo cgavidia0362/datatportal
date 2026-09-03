@@ -2617,37 +2617,45 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
 
   console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
 
-  // Find dealers who funded deals but have NO apps in the app CSV at all
+  // Build a fast lookup of ALL dealer names from app CSV (normalized, no state needed)
+  const allAppNormNames = new Set(
+    (snap.dealerRows || []).map(r => normalizeDealerName(r.dealer).trim()).filter(Boolean)
+  );
+  // Also build by CIF for fastest match when funded CSV has CIF
+  const appCifSet = new Set(
+    (snap.dealerRows || []).map(r => (r._cif||'').trim()).filter(Boolean)
+  );
+
+  console.log('[Funded-Only] App CSV dealer names (normalized):', allAppNormNames.size, 'unique');
+
   fundedByDealer.forEach(function(entry, key) {
-    // 1) Try exact name+state match
-    let appData = appDealerMap.get(key);
+    const normName = entry.dealerName.trim(); // already normalized
+    const cif      = (entry.cif || '').trim();
 
-    // 2) Try CIF → dealer_id → snap row
-    if (!appData && entry.cif && window.masterCifMap?.has(entry.cif)) {
-      const md = window.masterCifMap.get(entry.cif);
-      if (md?.dealer_id) appData = appDealerMapById.get(md.dealer_id);
+    // Match by CIF first (most reliable)
+    if (cif && appCifSet.has(cif)) return;
+
+    // Match by normalized name (handles #, &, punctuation differences)
+    if (allAppNormNames.has(normName)) return;
+
+    // Also try CIF → masterCifMap → check if dealer_id is in appDealerMapById
+    if (cif && window.masterCifMap?.has(cif)) {
+      const md = window.masterCifMap.get(cif);
+      if (md?.dealer_id && (snap.dealerRows||[]).some(r => r.dealer_id === md.dealer_id)) return;
     }
 
-    // 3) Try name-only match (handles state mismatches)
-    if (!appData) {
-      const nameOnly = entry.dealerName.trim();
-      appData = appDealerMapByName.get(nameOnly);
-    }
-
-    // Only flag if truly absent from app CSV
-    if (!appData) {
-      console.log('[Debug] Funded-only dealer found:', key, '(not in app CSV)');
-      orphansForModal.push({
-        dealer: entry.dealerName,
-        state: entry.state,
-        fi: 'Independent',
-        count: entry.fundedCount,
-        amount: entry.fundedAmount,
-        inAppCSV: false,
-        appCount: 0,
-        action: 'create-row'
-      });
-    }
+    // Truly not found in app CSV — flag it
+    console.log('[Funded-Only] Truly absent from app CSV:', normName, entry.state);
+    orphansForModal.push({
+      dealer: entry.dealerName,
+      state: entry.state,
+      fi: 'Independent',
+      count: entry.fundedCount,
+      amount: entry.fundedAmount,
+      inAppCSV: false,
+      appCount: 0,
+      action: 'create-row'
+    });
   });
   
   console.log('[Funded-Only] Found', orphansForModal.length, 'funded-only dealers (funded but no apps)');
