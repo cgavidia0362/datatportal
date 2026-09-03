@@ -2013,7 +2013,7 @@ function autoMapFunded(fields=[]) {
     return '';
   };
   return {
-    dealer: pick(/dealer|store|merchant|client|account/),
+    dealer: pick(/^dealer name$|^dealer$|\bdealer name\b|\bdealer\b/),
     state:  pick(/state\b|^st\b|state code|region/),
     loan:   pick(/loan amount|amount financed|funded|principal|af\b|amt\b/),
     apr:    pick(/\bapr\b|rate|interest/),
@@ -2578,17 +2578,28 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   });
 
   fundedParsed.rows.forEach(function(row) {
-    const dealerCol = fundedMapping.dealer || '';
-    const stateCol  = fundedMapping.state  || '';
-    const loanCol   = fundedMapping.loan   || '';
-    const cifCol    = fundedMapping.cif    || '';
+    // Read directly from known column names — robust fallback chain, no fundedMapping dependency
+    const rawDealer = String(
+      row[fundedMapping.dealer] || row['Dealer'] || row['Dealer Name'] ||
+      row['dealer'] || row['dealer name'] || ''
+    ).trim();
+    const rawState = String(
+      row[fundedMapping.state] || row['Dealer State'] || row['State'] ||
+      row['state'] || ''
+    ).trim();
+    const rawAmount = String(
+      row[fundedMapping.loan] || row['Loan Amount'] || row['Amount'] ||
+      row['Amt Finance'] || row['Funded Amount'] || '0'
+    ).trim();
 
-    if (!dealerCol || !stateCol || !loanCol) return;
-
-    const dealer = normalizeDealerName(String(row[dealerCol] || '').trim());
-    const state  = normalizeState(String(row[stateCol]  || '').trim());
-    const amount = parseFloat(String(row[loanCol] || '0').replace(/[^0-9.-]/g, '')) || 0;
-    const cif    = cifCol ? String(row[cifCol] || '').trim() : '';
+    const dealer = normalizeDealerName(rawDealer);
+    const state  = normalizeState(rawState);
+    const amount = parseFloat(rawAmount.replace(/[^0-9.-]/g, '')) || 0;
+    // Read CIF directly — bypasses fundedMapping.cif which may not be set via UI
+    const cif = String(
+      row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] ||
+      row['cifnumber']  || row['CIF']              || ''
+    ).trim();
 
     if (!dealer || !state || amount <= 0) return;
 
