@@ -2578,18 +2578,18 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   });
 
   fundedParsed.rows.forEach(function(row) {
-    // Read directly from known column names — robust fallback chain, no fundedMapping dependency
+    // Try direct column names FIRST — don't let a wrong fundedMapping block us
     const rawDealer = String(
-      row[fundedMapping.dealer] || row['Dealer'] || row['Dealer Name'] ||
-      row['dealer'] || row['dealer name'] || ''
+      row['Dealer'] || row['Dealer Name'] || row['dealer'] || row['dealer name'] ||
+      row[fundedMapping.dealer] || ''
     ).trim();
     const rawState = String(
-      row[fundedMapping.state] || row['Dealer State'] || row['State'] ||
-      row['state'] || ''
+      row['Dealer State'] || row['State'] || row['state'] ||
+      row[fundedMapping.state] || ''
     ).trim();
     const rawAmount = String(
-      row[fundedMapping.loan] || row['Loan Amount'] || row['Amount'] ||
-      row['Amt Finance'] || row['Funded Amount'] || '0'
+      row['Loan Amount'] || row['Amount'] || row['Amt Finance'] || row['Funded Amount'] ||
+      row[fundedMapping.loan] || '0'
     ).trim();
 
     const dealer = normalizeDealerName(rawDealer);
