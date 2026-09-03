@@ -1430,7 +1430,7 @@ function switchTab(id) {
 let parsed = { fields: [], rows: [] };
 // Funded file (optional)
 let fundedParsed = { fields: [], rows: [] };
-let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'' };
+let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'', cif:'' };
 // pending merge context from the review modal
 let _pendingMerge = null;
 const dropArea = $('#dropArea');
@@ -2018,7 +2018,7 @@ function autoMapFunded(fields=[]) {
     loan:   pick(/loan amount|amount financed|funded|principal|af\b|amt\b/),
     apr:    pick(/\bapr\b|rate|interest/),
     fee:    pick(/lender fee|discount|disc%|origination|doc fee|fee\b/),
-    cif:    pick(/cif|cifnumber|cif\s*number|dealer\s*cif/),
+    cif:    pick(/cif number|cifnumber|cif\s*number|dealer\s*cif|\bcif\b/),
   };
 }
 function guessFundedMapping(fields = []) {
@@ -2566,46 +2566,67 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   
   // Build a map of funded deals by dealer
   const fundedByDealer = new Map();
-  
+
+  // Also build appDealerMap keyed by dealer_id and by name-only (no state) for fallbacks
+  const appDealerMapById   = new Map(); // dealer_id → appData
+  const appDealerMapByName = new Map(); // normName only → appData
+  (snap.dealerRows || []).forEach(function(r) {
+    const appData = { funded: r.funded || 0, totalApps: r.total || 0 };
+    if (r.dealer_id) appDealerMapById.set(r.dealer_id, appData);
+    const nameOnly = normalizeDealerName(r.dealer).trim();
+    if (!appDealerMapByName.has(nameOnly)) appDealerMapByName.set(nameOnly, appData);
+  });
+
   fundedParsed.rows.forEach(function(row) {
     const dealerCol = fundedMapping.dealer || '';
-    const stateCol = fundedMapping.state || '';
-    const loanCol = fundedMapping.loan || '';
-    
+    const stateCol  = fundedMapping.state  || '';
+    const loanCol   = fundedMapping.loan   || '';
+    const cifCol    = fundedMapping.cif    || '';
+
     if (!dealerCol || !stateCol || !loanCol) return;
-    
+
     const dealer = normalizeDealerName(String(row[dealerCol] || '').trim());
-    const state = normalizeState(String(row[stateCol] || '').trim());
+    const state  = normalizeState(String(row[stateCol]  || '').trim());
     const amount = parseFloat(String(row[loanCol] || '0').replace(/[^0-9.-]/g, '')) || 0;
-    
+    const cif    = cifCol ? String(row[cifCol] || '').trim() : '';
+
     if (!dealer || !state || amount <= 0) return;
-    
+
     const key = dealer.trim() + '|' + state.trim();
-    
+
     if (!fundedByDealer.has(key)) {
-      fundedByDealer.set(key, {
-        dealerName: dealer,
-        state: state,
-        fundedCount: 0,
-        fundedAmount: 0
-      });
+      fundedByDealer.set(key, { dealerName: dealer, state, fundedCount: 0, fundedAmount: 0, cif });
     }
-    
+
     const entry = fundedByDealer.get(key);
     entry.fundedCount += 1;
     entry.fundedAmount += amount;
+    if (cif && !entry.cif) entry.cif = cif;
   });
-  
+
   console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
-  
+
   // Find dealers who funded deals but have NO apps in the app CSV at all
   fundedByDealer.forEach(function(entry, key) {
-    const appData = appDealerMap.get(key);
-    
-    // Only flag if truly absent from app CSV (has zero total apps, not just zero funded status)
+    // 1) Try exact name+state match
+    let appData = appDealerMap.get(key);
+
+    // 2) Try CIF → dealer_id → snap row
+    if (!appData && entry.cif && window.masterCifMap?.has(entry.cif)) {
+      const md = window.masterCifMap.get(entry.cif);
+      if (md?.dealer_id) appData = appDealerMapById.get(md.dealer_id);
+    }
+
+    // 3) Try name-only match (handles state mismatches)
+    if (!appData) {
+      const nameOnly = entry.dealerName.trim();
+      appData = appDealerMapByName.get(nameOnly);
+    }
+
+    // Only flag if truly absent
     if (!appData || appData.totalApps === 0) {
-      console.log('[Debug] Funded-only dealer found:', key, 
-                  appData ? '(in app CSV with ' + appData.totalApps + ' total apps)' : '(not in app CSV)');
+      console.log('[Debug] Funded-only dealer found:', key,
+        appData ? '(in app CSV with ' + appData.totalApps + ' total apps)' : '(not in app CSV)');
       orphansForModal.push({
         dealer: entry.dealerName,
         state: entry.state,
@@ -6560,7 +6581,7 @@ function updateKpiTile(label, value) {
         }).map(row => ({
           dealer: (row['Dealer Name'] || row['Dealer'] || '').trim(),
           state:  (row['Dealer State'] || row['State'] || '').trim().toUpperCase(),
-          cif:    (row['Dealer Cifnumber'] || '').trim(),
+          cif:    (row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] || '').trim(),
           ts:     (row['Timestamp Submit'] || '').trim(),
           status: (row['Status Last'] || '').trim()
         }));
@@ -7172,7 +7193,7 @@ function updateKpiTile(label, value) {
               dateISO = parts[2].padStart(4,'0') + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
             }
           }
-          rdFundedRows.push({ dealer, state, amount, date: dateISO, cif: (row['Dealer Cifnumber'] || '').trim() });
+          rdFundedRows.push({ dealer, state, amount, date: dateISO, cif: (row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] || '').trim() });
         });
 
         // Update upload card
@@ -8009,7 +8030,7 @@ function updateKpiTile(label, value) {
     console.log('[Funding] matchDealers: loaded', fndDealerMap.size, 'dealers,', fndCifMap.size, 'CIFs');
 
     const matched = rows.map(r=>{
-      const cif    = String(r['Dealer Cifnumber'] || r['Dealer CifNumber'] || r['cifnumber'] || '').trim();
+      const cif    = String(r['CIF Number'] || r['Dealer Cifnumber'] || r['Dealer CifNumber'] || r['cifnumber'] || '').trim();
       const name   = (r.Dealer || r.dealer || '').trim();
       const state  = (r['Dealer State'] || r.State || r.state || '').toUpperCase();
       const nameKey = normName(name) + '|' + state;
