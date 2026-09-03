@@ -2634,18 +2634,17 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
       appData = appDealerMapByName.get(nameOnly);
     }
 
-    // Only flag if truly absent
-    if (!appData || appData.totalApps === 0) {
-      console.log('[Debug] Funded-only dealer found:', key,
-        appData ? '(in app CSV with ' + appData.totalApps + ' total apps)' : '(not in app CSV)');
+    // Only flag if truly absent from app CSV
+    if (!appData) {
+      console.log('[Debug] Funded-only dealer found:', key, '(not in app CSV)');
       orphansForModal.push({
         dealer: entry.dealerName,
         state: entry.state,
         fi: 'Independent',
         count: entry.fundedCount,
         amount: entry.fundedAmount,
-        inAppCSV: !!appData,
-        appCount: appData ? appData.totalApps : 0,
+        inAppCSV: false,
+        appCount: 0,
         action: 'create-row'
       });
     }
