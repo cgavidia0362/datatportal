@@ -40,25 +40,38 @@ async function fetchMasterDealers() {
   }
 }
 
-async function addMasterDealer(name, state, fi, rep) {
+async function addMasterDealer(name, state, fi, rep, cif) {
   if (!window.sb) return { success: false, error: 'No database connection' };
   
   try {
+    const cifVal = String(cif ?? '').trim();
+    const row = {
+      dealer_name: name.trim(),
+      state: state.trim().toUpperCase(),
+      fi: fi.trim(),
+      rep: rep ? rep.trim() : null
+    };
+    if (cifVal) row.cifnumber = cifVal;
+
     const { data, error } = await window.sb
       .from('master_dealers')
-      .insert([{
-        dealer_name: name.trim(),
-        state: state.trim().toUpperCase(),
-        fi: fi.trim(),
-        rep: rep ? rep.trim() : null
-      }])
+      .insert([row])
       .select();
     
     if (error) {
       console.error('[master] add error:', error);
       return { success: false, error: error.message };
     }
-    return { success: true, data: data[0] };
+    const created = data[0];
+    if (created && cifVal) {
+      if (!window.masterCifMap) window.masterCifMap = new Map();
+      window.masterCifMap.set(cifVal, {
+        dealer_id: created.dealer_id,
+        fi: created.fi,
+        rep: created.rep
+      });
+    }
+    return { success: true, data: created };
   } catch (e) {
     console.error('[master] add exception:', e);
     return { success: false, error: e.message };
@@ -225,6 +238,7 @@ async function validateSnapshot(snap) {
       state: state,
       csvState: state,
       csvFI: fi,
+      cif: cif || '',
       action: 'add-to-master'
     });
   });
@@ -630,7 +644,7 @@ window.fundedParsed = originalFundedParsed;
   // Process new dealers
   for (const newDealer of window.uploadReviewData.newDealers) {
     if (newDealer.action === 'add-to-master') {
-      await addMasterDealer(newDealer.name, newDealer.csvState, newDealer.csvFI);
+      await addMasterDealer(newDealer.name, newDealer.csvState, newDealer.csvFI, '', newDealer.cif || '');
     } else if (newDealer.action === 'skip') {
       // Remove from snapshot
       removeSnapshotDealer(snapshot, newDealer.name);

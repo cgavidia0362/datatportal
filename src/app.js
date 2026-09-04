@@ -2527,7 +2527,8 @@ async function validateSnapshot(snapshot) {
       validationIssues.newDealers.push({
         dealer: dealerRow.dealer,
         state: dealerRow.state,
-        fi_type: dealerRow.fi || 'Independent'
+        fi_type: dealerRow.fi || 'Independent',
+        cif: cif || ''
       });
     });
     console.log('[validateSnapshot] newDealers sample:', JSON.stringify(validationIssues.newDealers.slice(0,2)));
@@ -3007,8 +3008,9 @@ try {
           );
           if (action === 'add') {
             const dn = d.dealer||d.name||''; const ds = d.state||d.csvState||''; const dfi = d.fi||d.csvFI||'Independent';
-            console.log('[Review] Adding new dealer to master:', dn, ds);
-            const result = await addMasterDealer(dn, ds, dfi, '');
+            const dcif = String(d.cif || dealerRow?._cif || '').trim();
+            console.log('[Review] Adding new dealer to master:', dn, ds, 'cif:', dcif || '(none)');
+            const result = await addMasterDealer(dn, ds, dfi, '', dcif);
             if (result.success && result.data?.dealer_id && dealerRow) {
               dealerRow.dealer_id = result.data.dealer_id;
               console.log('[Review] Assigned new dealer_id:', result.data.dealer_id, 'to', dn);
