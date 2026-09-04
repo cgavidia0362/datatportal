@@ -1419,11 +1419,11 @@ function buildSidebar() {
   if (nav.children.length) return; // skip if already filled
   TABS.forEach((t,i) => {
     const b = document.createElement('button');
-    b.className = 'w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50';
+    b.className = 'nav-link w-full text-left px-3 py-2';
     b.textContent = t.label;
     b.dataset.tab = t.id;
     b.addEventListener('click', () => switchTab(t.id));
-    if (i===0) b.classList.add('bg-blue-50','text-blue-700','font-semibold');
+    if (i===0) b.classList.add('is-active');
     nav.appendChild(b);
   });
 }
@@ -1432,8 +1432,8 @@ function switchTab(id) {
   const panel = $('#tab-' + id);
   if (panel) panel.classList.remove('hidden');
   $$('#sidebar-nav button').forEach(b => {
-    if (b.dataset.tab === id) b.classList.add('bg-blue-50','text-blue-700','font-semibold');
-    else                      b.classList.remove('bg-blue-50','text-blue-700','font-semibold');
+    if (b.dataset.tab === id) b.classList.add('is-active');
+    else                      b.classList.remove('is-active');
   });
   if (id === 'Monthly') refreshMonthlyGrid();
   if (id === 'Yearly') {

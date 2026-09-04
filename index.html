@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Buying Analysis Portal — Preview (Sidebar)</title>
+    <title>Buying Analysis Portal</title>
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -26,8 +26,20 @@ console.log('[sb] url =', window.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 40) + '...')
 
    <style>
       :root {
-        color-scheme: light; 
+        color-scheme: light;
+        --navy: #0f172a;
+        --navy-hover: #1e293b;
+        --accent: #1e3a5f;
+        --canvas: #f4f5f7;
+        --card: #ffffff;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        --radius: 8px;
+        --focus: #1e3a5f;
       }
+      body { background: var(--canvas); color: var(--text); }
       /* Make all native form controls light & readable */
 input[type="text"],
 input[type="number"],
@@ -37,14 +49,21 @@ input[type="email"],
 input[type="date"],
 select,
 textarea {
-  background-color: #ffffff !important;   /* white */
-  color: #111827 !important;              /* gray-900 text */
-  border-color: rgba(0,0,0,0.15);         /* subtle border */
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius);
   outline: none;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--focus) !important;
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
 }
 input::placeholder,
 textarea::placeholder {
-  color: #6b7280 !important;              /* gray-500 */
+  color: #94a3b8 !important;
 }
 
 /* Base UI polish (untouched structure) */
@@ -79,10 +98,10 @@ th, td {
 
 /* Cards / sections visual lift (no structural change) */
 .section-card {
-  background: #ffffff;
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 1rem;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
 }
 
 /* small chips for state/FI */
@@ -110,7 +129,7 @@ th, td {
 }
 .pbar > i {
   position: absolute; left: 0; top: 0; bottom: 0;
-  width: var(--w, 0%); background:#3b82f6;
+  width: var(--w, 0%); background: var(--accent);
 }
 
 /* simple tabs (State Performance) */
@@ -122,7 +141,7 @@ th, td {
   font-size: 0.875rem;
 }
 .tab-btn:last-child { border-right:1px solid rgba(0,0,0,0.08); }
-.tab-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+.tab-btn.active { background: var(--navy); color:#fff; border-color: var(--navy); }
 
 /* ═══════════ BUYING DAILY STYLES (bd- prefix) ═══════════ */
 /* Upload strip */
@@ -147,12 +166,12 @@ th, td {
 .bd-upload-text span   { font-size: .82rem; color: #64748b; }
 .bd-upload-status { font-size: .78rem; color: #22c55e; font-weight: 600; margin-top: 4px; }
 .bd-btn-upload {
-  background: #3b82f6; color: #fff; border: none;
-  padding: 10px 22px; border-radius: 8px;
+  background: var(--navy); color: #fff; border: none;
+  padding: 10px 22px; border-radius: var(--radius);
   font-size: .88rem; font-weight: 600; cursor: pointer;
   white-space: nowrap; transition: background .2s;
 }
-.bd-btn-upload:hover { background: #2563eb; }
+.bd-btn-upload:hover { background: var(--navy-hover); }
 
 /* Controls bar */
 .bd-controls-bar {
@@ -170,7 +189,7 @@ th, td {
   color: #64748b; cursor: pointer; transition: all .2s;
 }
 .bd-toggle-group button.active {
-  background: #fff; color: #3b82f6;
+  background: #fff; color: var(--navy);
   box-shadow: 0 1px 3px rgba(0,0,0,.12);
 }
 .bd-date-range { display: flex; align-items: center; gap: 6px; }
@@ -202,7 +221,7 @@ th, td {
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
 }
 .bd-kpi-card.bd-highlight {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  background: linear-gradient(135deg, #0f172a, #1e3a5f);
   color: #fff; border-color: transparent;
 }
 .bd-kpi-label {
@@ -564,15 +583,123 @@ th, td {
 }
 /* ═══════════ END REP PERFORMANCE STYLES ═══════════ */
 
+/* ═══════════ PORTAL THEME ═══════════ */
+.sidebar {
+  background: var(--navy);
+  color: #e2e8f0;
+  border-right: 1px solid #1e293b;
+}
+.sidebar .brand {
+  padding: 1.1rem 1.15rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.sidebar .brand-title {
+  font-weight: 650;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+.sidebar .brand-sub {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+.sidebar .nav-link {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+}
+.sidebar .nav-link:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+.sidebar .nav-link.is-active {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-weight: 600;
+}
+.sticky-header {
+  background: rgba(255,255,255,0.92);
+  border-bottom: 1px solid var(--border);
+}
+.sticky-header h1 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--navy);
+}
+main { padding: 1.25rem 1.5rem; }
+
+#btnAnalyze,
+#btnApplyReview,
+#btnAddDealer,
+#yrChartDeals,
+button.bg-blue-600 {
+  background: var(--navy) !important;
+  border-color: var(--navy);
+}
+#btnAnalyze:hover,
+#btnApplyReview:hover,
+#btnAddDealer:hover,
+#yrChartDeals:hover,
+button.bg-blue-600:hover {
+  background: var(--navy-hover) !important;
+}
+#btnSaveMonth,
+#btnExportRawAll,
+#btnExportFunded,
+#btnCancelReview,
+#btnCancelDealer {
+  border-color: var(--border);
+  background: #fff;
+  color: var(--text);
+}
+.bg-white.rounded-2xl,
+.rounded-2xl.border {
+  border-radius: var(--radius) !important;
+  box-shadow: var(--card-shadow);
+  border-color: var(--border);
+}
+table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f8fafc;
+}
+table tbody td {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+#uploadReviewModal > div,
+#mergeModal .absolute.inset-x-0 {
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  border: 1px solid var(--border);
+}
+#dropArea,
+#fundedDropArea {
+  border-color: #cbd5e1;
+  background: #fafbfc;
+}
+#dropArea:hover,
+#fundedDropArea:hover {
+  border-color: var(--accent);
+  background: #f1f5f9;
+}
+/* ═══════════ END PORTAL THEME ═══════════ */
+
     </style>
   </head>
-  <body class="bg-slate-50 text-slate-900 antialiased">
+  <body class="text-slate-900 antialiased">
     <div class="min-h-screen flex">
       <!-- Sidebar -->
-      <aside class="sidebar flex-shrink-0 bg-white border-r border-gray-200 hidden md:flex md:flex-col">
-        <div class="p-4 border-b">
-          <div class="font-bold text-lg">Buying Analysis</div>
-          <div class="text-xs text-gray-500">Client-side preview</div>
+      <aside class="sidebar flex-shrink-0 hidden md:flex md:flex-col">
+        <div class="brand">
+          <div class="brand-title">Buying Analysis</div>
+          <div class="brand-sub">Dealer performance</div>
         </div>
 
         <!-- Sidebar nav will be populated by JavaScript -->
@@ -584,12 +711,11 @@ th, td {
       <!-- Main -->
       <div class="flex-1 flex flex-col">
         <!-- Top header -->
-        <header class="sticky-header bg-white/80 backdrop-blur border-b border-gray-200">
+        <header class="sticky-header backdrop-blur">
           <div class="px-4 py-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <button id="mobileMenuBtn" class="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm">☰</button>
-              <h1 class="text-xl font-semibold">Buying Analysis Portal</h1>
-              <span class="ml-2 text-xs text-gray-500">Preview — Sidebar</span>
+              <h1>Buying Analysis Portal</h1>
             </div>
           </div>
         </header>
