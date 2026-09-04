@@ -148,6 +148,24 @@ function findMasterDealer(dealerName, masterList) {
   return masterList.find(m => normalizeDealerName(m.dealer_name) === normalized);
 }
 
+function findMasterDealerByCif(cif, masterList) {
+  const c = String(cif || '').trim();
+  if (!c) return null;
+  return (masterList || []).find(m => String(m.cifnumber || '').trim() === c) || null;
+}
+
+function findMasterDealerByNameState(dealerName, state, masterList) {
+  const st = String(state || '').trim().toUpperCase();
+  const nameFn = (typeof _normNameForFundedCheck === 'function')
+    ? _normNameForFundedCheck
+    : normalizeDealerName;
+  const normalized = nameFn(dealerName);
+  return (masterList || []).find(m =>
+    nameFn(m.dealer_name) === normalized &&
+    String(m.state || '').trim().toUpperCase() === st
+  ) || null;
+}
+
 // ============================================
 // UPLOAD VALIDATION
 // ============================================
@@ -166,34 +184,49 @@ async function validateSnapshot(snap) {
     const dealerName = String(row.dealer || '').trim();
     const state = String(row.state || '').trim().toUpperCase();
     const fi = String(row.fi || '').trim();
+    const cif = String(row._cif || row.cif || '').trim();
     
     if (!dealerName) return;
     
     // Avoid duplicates in review
-    const key = `${normalizeDealerName(dealerName)}|${state}|${fi}`;
+    const key = `${normalizeDealerName(dealerName)}|${state}|${fi}|${cif}`;
     if (seen.has(key)) return;
     seen.add(key);
     
-    const master = findMasterDealer(dealerName, masterList);
-    
-    if (!master) {
-      issues.newDealers.push({
-        name: dealerName,
-        csvState: state,
-        csvFI: fi,
-        action: 'add-to-master'
-      });
-    } else if (master.state !== state || master.fi !== fi) {
-      issues.mismatches.push({
-        name: dealerName,
-        csvState: state,
-        csvFI: fi,
-        masterState: master.state,
-        masterFI: master.fi,
-        masterId: master.id,
-        action: 'use-master'
-      });
+    // CIF-first: a hit means this row is already on the master list
+    let master = findMasterDealerByCif(cif, masterList);
+    if (master) {
+      if (master.dealer_id && !row.dealer_id) row.dealer_id = master.dealer_id;
+      return;
     }
+
+    // No CIF (or unknown CIF): match name + state so IL/WI twins stay separate
+    master = findMasterDealerByNameState(dealerName, state, masterList);
+    if (master) {
+      if (master.dealer_id && !row.dealer_id) row.dealer_id = master.dealer_id;
+      const masterFI = String(master.fi || '').trim();
+      if (masterFI && fi && masterFI !== fi) {
+        issues.mismatches.push({
+          name: dealerName,
+          csvState: state,
+          csvFI: fi,
+          masterState: master.state,
+          masterFI: master.fi,
+          masterId: master.dealer_id || master.id,
+          action: 'use-master'
+        });
+      }
+      return;
+    }
+
+    issues.newDealers.push({
+      name: dealerName,
+      dealer: dealerName,
+      state: state,
+      csvState: state,
+      csvFI: fi,
+      action: 'add-to-master'
+    });
   });
   
   return issues;

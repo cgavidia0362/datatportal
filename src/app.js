@@ -1034,6 +1034,48 @@ function _normNameForMatch(s) {
     .trim();
 }
 
+// Funded-vs-app name match: turn #, &, punctuation into spaces (do not
+// delete them, or "MOTORS#2" becomes "motors2"). Do not strip "auto"/"inc".
+function _normNameForFundedCheck(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/&/g, ' ')
+    .replace(/#/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\band\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normCif(s) {
+  return String(s ?? '').trim();
+}
+
+function pickCifFromRow(row, mappedCol) {
+  if (!row) return '';
+  if (mappedCol && row[mappedCol] != null) {
+    const v = normCif(row[mappedCol]);
+    if (v) return v;
+  }
+  const keys = [
+    'CIF Number', 'Dealer Cifnumber', 'Dealer CifNumber', 'Dealer CIF',
+    'Dealer Cif', 'cifnumber', 'CIF', 'Cif Number', 'cif', 'CifNumber'
+  ];
+  for (const k of keys) {
+    if (row[k] != null) {
+      const v = normCif(row[k]);
+      if (v) return v;
+    }
+  }
+  for (const k of Object.keys(row)) {
+    if (/cif/i.test(k)) {
+      const v = normCif(row[k]);
+      if (v) return v;
+    }
+  }
+  return '';
+}
+
 // Lightweight Jaro-Winkler style similarity (0..1)
 function _jwSim(a, b) {
   a = _normNameForMatch(a); b = _normNameForMatch(b);
@@ -1163,7 +1205,7 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
   rows.forEach((r) => {
     const dealer = String(r[mapping.dealer] ?? '').trim() || '(Unknown Dealer)';
     const state  = String(r[mapping.state]  ?? '').trim().toUpperCase() || '??';
-    const cif    = String(r[mapping.cif]    ?? '').trim();
+    const cif    = pickCifFromRow(r, mapping.cif);
     const status = normStatus(r[mapping.status]);
     const loan   = num(r[mapping.loan]);
     const apr    = num(r[mapping.apr]);
@@ -1177,6 +1219,7 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
       dealerMap.set(key, { dealer, state, fi, _cif: cif, total:0, approved:0, counter:0, pending:0, denial:0, funded:0 });
     }
     const d = dealerMap.get(key);
+    if (cif && !d._cif) d._cif = cif;
     d.total += 1;
     if (status === 'approved') d.approved += 1;
     if (status === 'counter')  d.counter  += 1;
@@ -1240,7 +1283,7 @@ function buildSnapshotFromRows(mapping, rows, year, month) {
   if (window.masterDealerIdMap) {
     dealerRows.forEach(dealerRow => {
       // CIF-first: fastest and most reliable match
-      const cif = dealerRow._cif || '';
+      const cif = normCif(dealerRow._cif);
       let masterData = null;
       if (cif && window.masterCifMap?.has(cif)) {
         masterData = window.masterCifMap.get(cif);
@@ -2162,7 +2205,7 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     }
 
     const mapKey = dealer + '|' + state;
-    const cif    = String(pickFunded(r, 'cif') || '').trim();
+    const cif    = pickCifFromRow(r, fundedMapping.cif);
 
     // 1) CIF-first: most reliable match — check masterCifMap before name+state
     const masterData = (cif && window.masterCifMap?.has(cif))
@@ -2435,7 +2478,7 @@ async function validateSnapshot(snapshot) {
     
     const { data: masterDealers, error } = await window.sb
       .from('master_dealers')
-      .select('dealer_id, dealer_name, state, fi, rep');
+      .select('dealer_id, dealer_name, state, fi, rep, cifnumber');
     
     if (error) {
       console.error('[Validation] Error fetching master dealers:', error);
@@ -2446,8 +2489,9 @@ async function validateSnapshot(snapshot) {
     window.masterDealersWithIds = masterDealers || [];
     console.log('[Validation] Loaded', masterDealers?.length || 0, 'master dealers with IDs');
     
-    // Build a map for fast lookup: "dealer_name|state" -> dealer_id
+    // Build maps: CIF first, then name|state fallback
     window.masterDealerIdMap = new Map();
+    window.masterCifMap = window.masterCifMap || new Map();
     (masterDealers || []).forEach(d => {
       const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
       window.masterDealerIdMap.set(key, {
@@ -2455,24 +2499,36 @@ async function validateSnapshot(snapshot) {
         fi: d.fi,
         rep: d.rep
       });
+      const cifKey = normCif(d.cifnumber);
+      if (cifKey) window.masterCifMap.set(cifKey, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep, state: d.state });
     });
     
-    console.log('[Validation] Built dealer ID map with', window.masterDealerIdMap.size, 'entries');
+    console.log('[Validation] Built dealer ID map with', window.masterDealerIdMap.size, 'entries,', window.masterCifMap.size, 'CIFs');
     
-    // Check snapshot dealers against master list
+    // Check snapshot dealers against master list — CIF first, then name+state
     console.log('[validateSnapshot] dealerRows count:', (snapshot.dealerRows||[]).length);
     console.log('[validateSnapshot] first row sample:', JSON.stringify((snapshot.dealerRows||[])[0]));
     (snapshot.dealerRows || []).forEach(dealerRow => {
+      const cif = normCif(dealerRow._cif);
       const key = normalizeDealerName(dealerRow.dealer) + '|' + normalizeState(dealerRow.state);
-      
-      // Check if dealer exists in master list
-      if (!window.masterDealerIdMap.has(key)) {
-        validationIssues.newDealers.push({
-          dealer: dealerRow.dealer,
-          state: dealerRow.state,
-          fi_type: dealerRow.fi || 'Independent'
-        });
+
+      if (cif && window.masterCifMap.has(cif)) {
+        const md = window.masterCifMap.get(cif);
+        if (md?.dealer_id && !dealerRow.dealer_id) dealerRow.dealer_id = md.dealer_id;
+        return;
       }
+
+      const nameStateHit = window.masterDealerIdMap.get(key);
+      if (nameStateHit?.dealer_id) {
+        if (!dealerRow.dealer_id) dealerRow.dealer_id = nameStateHit.dealer_id;
+        return;
+      }
+
+      validationIssues.newDealers.push({
+        dealer: dealerRow.dealer,
+        state: dealerRow.state,
+        fi_type: dealerRow.fi || 'Independent'
+      });
     });
     console.log('[validateSnapshot] newDealers sample:', JSON.stringify(validationIssues.newDealers.slice(0,2)));
     
@@ -2494,6 +2550,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     alert('Please enter a valid Year and Month (1–12).');
     return;
   }
+  const guessedCif = (guessMapping(parsed.fields || []).mapping || {}).cif || '';
   const mapping = {
     dealer: $('#mapDealer')?.value || '',
     state:  $('#mapState')?.value  || '',
@@ -2503,6 +2560,7 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     fee:    $('#mapFee')?.value    || '',
     ltv:    $('#mapLtv')?.value    || '',
     fi:     $('#mapFI')?.value     || '',
+    cif:    $('#mapCif')?.value || guessedCif || '',
   };
   console.log('[Analyze] Mapping:', mapping);
   console.log('[Analyze] Fields available:', parsed.fields);
@@ -2530,7 +2588,8 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
           masterDealers.forEach(d => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
-            if (d.cifnumber) window.masterCifMap.set(d.cifnumber, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
+            const cifKey = normCif(d.cifnumber);
+            if (cifKey) window.masterCifMap.set(cifKey, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
           });
           console.log('[Phase 1] Loaded', masterDealers.length, 'master dealers with IDs');
           console.log('[Phase 1] Built dealer ID map with', window.masterDealerIdMap.size, 'entries,', window.masterCifMap.size, 'CIFs');
@@ -2542,8 +2601,10 @@ $('#btnAnalyze')?.addEventListener('click', async () => {
     
     const snap = buildSnapshotFromRows(mapping, parsed.rows || [], y, m);
 lastBuiltSnapshot = snap;
-console.log('[Analyze] snap.dealerRows sample:', (snap.dealerRows||[]).slice(0,2).map(r=>({dealer:r.dealer,state:r.state})));
+console.log('[Analyze] snap.dealerRows sample:', (snap.dealerRows||[]).slice(0,2).map(r=>({dealer:r.dealer,state:r.state,cif:r._cif,dealer_id:r.dealer_id})));
 console.log('[Analyze] total dealerRows:', (snap.dealerRows||[]).length);
+console.log('[Analyze] CIF column mapped to:', mapping.cif || '(auto-scan)');
+console.log('[Analyze] App rows with CIF:', (snap.dealerRows||[]).filter(r => r._cif).length, '/', (snap.dealerRows||[]).length);
 // ===== DETECT FUNDED-ONLY DEALERS =====
 // Find dealers who funded deals but had NO applications OR 0 funded apps this month
 let orphansForModal = [];
@@ -2595,18 +2656,14 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
     const dealer = normalizeDealerName(rawDealer);
     const state  = normalizeState(rawState);
     const amount = parseFloat(rawAmount.replace(/[^0-9.-]/g, '')) || 0;
-    // Read CIF directly — bypasses fundedMapping.cif which may not be set via UI
-    const cif = String(
-      row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] ||
-      row['cifnumber']  || row['CIF']              || ''
-    ).trim();
+    const cif = pickCifFromRow(row, fundedMapping.cif);
 
     if (!dealer || !state || amount <= 0) return;
 
-    const key = dealer.trim() + '|' + state.trim();
+    const key = cif || (dealer.trim() + '|' + state.trim());
 
     if (!fundedByDealer.has(key)) {
-      fundedByDealer.set(key, { dealerName: dealer, state, fundedCount: 0, fundedAmount: 0, cif });
+      fundedByDealer.set(key, { dealerName: dealer, rawDealer, state, fundedCount: 0, fundedAmount: 0, cif });
     }
 
     const entry = fundedByDealer.get(key);
@@ -2618,34 +2675,65 @@ if (fundedParsed && fundedParsed.rows && fundedParsed.rows.length > 0) {
   console.log('[Funded-Only] Found', fundedByDealer.size, 'unique dealers in funded CSV');
 
   // Build a fast lookup of ALL dealer names from app CSV (normalized, no state needed)
-  const allAppNormNames = new Set(
-    (snap.dealerRows || []).map(r => normalizeDealerName(r.dealer).trim()).filter(Boolean)
-  );
+  // Include several encodings so #, &, periods, and suffix-stripping cannot miss a hit
+  const allAppNormNames = new Set();
+  (snap.dealerRows || []).forEach(function(r) {
+    const raw = String(r.dealer || '').trim();
+    if (!raw) return;
+    const fundedNorm = _normNameForFundedCheck(raw);
+    const oldNorm = normalizeDealerName(raw);
+    const matchNorm = _normNameForMatch(raw);
+    if (fundedNorm) allAppNormNames.add(fundedNorm);
+    if (oldNorm) allAppNormNames.add(oldNorm);
+    if (matchNorm) allAppNormNames.add(matchNorm);
+  });
   // Also build by CIF for fastest match when funded CSV has CIF
   const appCifSet = new Set(
-    (snap.dealerRows || []).map(r => (r._cif||'').trim()).filter(Boolean)
+    (snap.dealerRows || []).map(r => normCif(r._cif)).filter(Boolean)
   );
 
   console.log('[Funded-Only] App CSV dealer names (normalized):', allAppNormNames.size, 'unique');
+  console.log('[Funded-Only] App CSV CIFs:', Array.from(appCifSet));
+  console.log('[Funded-Only] allAppNormNames:', Array.from(allAppNormNames));
+  console.log('[Funded-Only] allAppNormNames raw app dealers:', (snap.dealerRows || []).map(r => ({ dealer: r.dealer, cif: r._cif, dealer_id: r.dealer_id })));
 
   fundedByDealer.forEach(function(entry, key) {
-    const normName = entry.dealerName.trim(); // already normalized
-    const cif      = (entry.cif || '').trim();
+    const rawFunded = String(entry.rawDealer || entry.dealerName || '').trim();
+    const normName = _normNameForFundedCheck(rawFunded);
+    const oldNorm  = normalizeDealerName(rawFunded);
+    const matchNorm = _normNameForMatch(rawFunded);
+    const cif      = normCif(entry.cif);
+
+    const inSet = allAppNormNames.has(normName)
+      || allAppNormNames.has(oldNorm)
+      || allAppNormNames.has(matchNorm);
+
+    const cifInApps = !!(cif && appCifSet.has(cif));
+    const cifMaster = (cif && window.masterCifMap?.has(cif)) ? window.masterCifMap.get(cif) : null;
+    const cifDealerInApps = !!(cifMaster?.dealer_id && (
+      appDealerMapById.has(cifMaster.dealer_id) ||
+      (snap.dealerRows || []).some(r => r.dealer_id === cifMaster.dealer_id)
+    ));
+
+    console.log('[Funded-Only] funded dealer:', {
+      raw: rawFunded,
+      normName: normName,
+      cif: cif,
+      cifInApps: cifInApps,
+      cifDealerInApps: cifDealerInApps,
+      nameInSet: inSet,
+      state: entry.state
+    });
 
     // Match by CIF first (most reliable)
-    if (cif && appCifSet.has(cif)) return;
+    if (cifInApps) return;
+    if (cifDealerInApps) return;
 
-    // Match by normalized name (handles #, &, punctuation differences)
-    if (allAppNormNames.has(normName)) return;
-
-    // Also try CIF → masterCifMap → check if dealer_id is in appDealerMapById
-    if (cif && window.masterCifMap?.has(cif)) {
-      const md = window.masterCifMap.get(cif);
-      if (md?.dealer_id && (snap.dealerRows||[]).some(r => r.dealer_id === md.dealer_id)) return;
-    }
+    // Name fallback only when CIF did not link
+    if (inSet) return;
 
     // Truly not found in app CSV — flag it
-    console.log('[Funded-Only] Truly absent from app CSV:', normName, entry.state);
+    console.log('[Funded-Only] Truly absent from app CSV:', normName, entry.state, 'cif:', cif || '(none)');
     orphansForModal.push({
       dealer: entry.dealerName,
       state: entry.state,
@@ -7313,7 +7401,8 @@ function updateKpiTile(label, value) {
           data.forEach(d => {
             const key = normalizeDealerName(d.dealer_name) + '|' + normalizeState(d.state);
             window.masterDealerIdMap.set(key, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
-            if (d.cifnumber) window.masterCifMap.set(d.cifnumber, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
+            const cifKey = normCif(d.cifnumber);
+            if (cifKey) window.masterCifMap.set(cifKey, { dealer_id: d.dealer_id, fi: d.fi, rep: d.rep });
           });
           console.log('[RepsDaily] Loaded', data.length, 'master dealers,', window.masterCifMap.size, 'with CIFs');
           renderRepsDaily();
