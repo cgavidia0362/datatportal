@@ -1565,26 +1565,48 @@ const avgDiscountPctFunded = _avgFrom(fundedRawRows, ['Discount', 'Lender Fee', 
 
 /* ---------- Sidebar & tab switching ---------- */
 const TABS = [
-  { id: 'Upload',  label: 'Upload' },
-  { id: 'Monthly', label: 'Monthly' },
-  { id: 'Yearly',  label: 'Yearly' },
-  { id: 'ILReps',  label: '📊 Rep Performance' },
-  { id: 'BuyingDaily', label: '📊 Buying Daily' },
-  { id: 'Funding',     label: '💰 Funding' },
-  { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
-  { id: 'Users', label: 'Users', adminOnly: true },
+  { id: 'Upload',  label: 'Upload', group: 'Workspace' },
+  { id: 'Monthly', label: 'Monthly', group: 'Reports' },
+  { id: 'Yearly',  label: 'Yearly', group: 'Reports' },
+  { id: 'ILReps',  label: 'Rep Performance', group: 'Reports' },
+  { id: 'BuyingDaily', label: 'Buying Daily', group: 'Reports' },
+  { id: 'Funding',     label: 'Funding', group: 'Reports' },
+  { id: 'Settings',  label: 'Settings', group: 'Admin' },
+  { id: 'Users', label: 'Users', adminOnly: true, group: 'Admin' },
 ];
+const PAGE_META = {
+  Upload: 'Upload',
+  Monthly: 'Monthly',
+  Yearly: 'Yearly',
+  ILReps: 'Rep Performance',
+  BuyingDaily: 'Buying Daily',
+  Funding: 'Funding',
+  Settings: 'Settings',
+  Users: 'Users'
+};
+function closeMobileNav() {
+  document.getElementById('appSidebar')?.classList.remove('is-open');
+  document.getElementById('sidebarOverlay')?.classList.remove('is-open');
+}
 function buildSidebar() {
   const nav = $('#sidebar-nav');
   if (!nav) return;
   nav.innerHTML = '';
   const tabs = TABS.filter((t) => !t.adminOnly || window._isAdmin);
+  let lastGroup = '';
   tabs.forEach((t,i) => {
+    if (t.group && t.group !== lastGroup) {
+      const g = document.createElement('div');
+      g.className = 'nav-group';
+      g.textContent = t.group;
+      nav.appendChild(g);
+      lastGroup = t.group;
+    }
     const b = document.createElement('button');
     b.className = 'nav-link w-full text-left px-3 py-2';
     b.textContent = t.label;
     b.dataset.tab = t.id;
-    b.addEventListener('click', () => switchTab(t.id));
+    b.addEventListener('click', () => { switchTab(t.id); closeMobileNav(); });
     if (i===0) b.classList.add('is-active');
     nav.appendChild(b);
   });
@@ -1593,6 +1615,8 @@ function switchTab(id) {
   $$('.tab-panel').forEach(el => el.classList.add('hidden'));
   const panel = $('#tab-' + id);
   if (panel) panel.classList.remove('hidden');
+  const titleEl = document.getElementById('headerPageTitle');
+  if (titleEl) titleEl.textContent = PAGE_META[id] || 'Buying Analysis';
   $$('#sidebar-nav button').forEach(b => {
     if (b.dataset.tab === id) b.classList.add('is-active');
     else                      b.classList.remove('is-active');
@@ -3804,12 +3828,18 @@ console.warn('[monthly refresh] KPI reload failed:', e);
     const yearSel = document.getElementById('monthlyYearFilter');
     if (yearSel) {
       const years = [...new Set(snaps.map(s => String(s.year)))].sort().reverse();
-      const curYear = yearSel.value;
+      const thisYear = String(new Date().getFullYear());
+      const initialized = yearSel.dataset.initialized === '1';
+      let curYear = yearSel.value;
+      if (!initialized) {
+        curYear = years.includes(thisYear) ? thisYear : (years[0] || 'ALL');
+      }
       yearSel.innerHTML = '<option value="ALL">All Years</option>' +
         years.map(y => '<option value="' + y + '"' + (curYear === y ? ' selected' : '') + '>' + y + '</option>').join('');
       // Always replace handler to keep snaps reference fresh
       const newSel = yearSel.cloneNode(true);
       yearSel.parentNode.replaceChild(newSel, yearSel);
+      newSel.dataset.initialized = '1';
       newSel.value = curYear;
       newSel.addEventListener('change', function() { renderCards(snaps); });
     }
@@ -3821,7 +3851,7 @@ console.warn('[monthly refresh] KPI reload failed:', e);
 
     var cards = filtered.map(function (s) {
       return (
-        '<button class="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:shadow transition-colors hover:bg-indigo-50/30" data-id="'+s.id+'">' +
+        '<button class="month-card" data-id="'+s.id+'">' +
           '<div class="text-sm text-slate-500">'+monthName(s.month)+' '+s.year+'</div>' +
           '<div class="mt-1 grid grid-cols-3 gap-3 text-xs">' +
             '<div><div class="text-slate-500">Apps</div><div class="font-semibold tabular-nums">'+s.totals.totalApps+'</div></div>' +
@@ -3831,7 +3861,7 @@ console.warn('[monthly refresh] KPI reload failed:', e);
         '</button>'
       );
     }).join('');
-    grid.innerHTML = cards || '<div class="text-sm text-gray-500">No months yet.</div>';
+        grid.innerHTML = cards || '<div class="empty-state">No months saved yet.</div>';
 
     var snapsById = new Map(snaps.map(function (s) { return [s.id, s]; }));
     grid.querySelectorAll('button[data-id]').forEach(function (btn) {
@@ -5029,16 +5059,16 @@ if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
       const d = document.createElement('div');
       if (isBig) {
         // Big green tile (wider highlight)
-        d.className = 'rounded-2xl border p-4 bg-emerald-50 border-emerald-200 xl:col-span-2';
+        d.className = 'kpi-tile kpi-tile-hero xl:col-span-2';
         d.innerHTML =
-          `<div class="text-xs font-medium text-emerald-700">${L}</div>
-           <div class="text-3xl font-bold text-emerald-900">${V}</div>`;
+          `<div class="kpi-label">${L}</div>
+           <div class="text-3xl font-bold mt-1">${V}</div>`;
       } else {
         // Regular white tiles
-        d.className = 'rounded-xl border p-3 bg-white';
+        d.className = 'kpi-tile';
         d.innerHTML =
-          `<div class="text-xs text-gray-500">${L}</div>
-           <div class="text-xl font-semibold">${V}</div>`;
+          `<div class="kpi-label">${L}</div>
+           <div class="text-xl font-semibold mt-1">${V}</div>`;
       }      
       yrSummary.appendChild(d);
     });    
@@ -5889,16 +5919,13 @@ document.getElementById('clearStorageBtn')?.addEventListener('click', () => {
 });
 
 document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
-  const sidebar = document.querySelector('aside.sidebar');
+  const sidebar = document.getElementById('appSidebar') || document.querySelector('aside.sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
   if (!sidebar) return;
-  if (sidebar.classList.contains('hidden')) {
-    sidebar.classList.remove('hidden');
-    sidebar.classList.add('fixed','inset-y-0','z-40');
-  } else {
-    sidebar.classList.add('hidden');
-    sidebar.classList.remove('fixed','inset-y-0','z-40');
-  }
+  sidebar.classList.toggle('is-open');
+  overlay?.classList.toggle('is-open');
 });
+document.getElementById('sidebarOverlay')?.addEventListener('click', closeMobileNav);
 
 /* ---------- Demo generator (used by seed button) ---------- */
 function makeDemoMonth(year, month) {

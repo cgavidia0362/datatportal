@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Buying Analysis Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet" />
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -30,16 +33,18 @@ console.log('[sb] url =', window.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 40) + '...')
         --navy: #0f172a;
         --navy-hover: #1e293b;
         --accent: #1e3a5f;
-        --canvas: #f4f5f7;
+        --canvas: #f3f4f6;
         --card: #ffffff;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --muted: #64748b;
-        --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-        --radius: 8px;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --card-shadow: 0 1px 2px rgba(17, 24, 39, 0.05);
+        --radius: 10px;
+        --radius-sm: 8px;
         --focus: #1e3a5f;
+        --font: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-      body { background: var(--canvas); color: var(--text); }
+      body { background: var(--canvas); color: var(--text); font-family: var(--font); }
       /* Make all native form controls light & readable */
 input[type="text"],
 input[type="number"],
@@ -584,13 +589,103 @@ th, td {
 /* ═══════════ END REP PERFORMANCE STYLES ═══════════ */
 
 /* ═══════════ PORTAL THEME ═══════════ */
+.page-head { margin-bottom: 1.25rem; }
+.page-kicker {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.page-title {
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+  line-height: 1.2;
+  margin: 0;
+}
+.page-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.page-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.page-toolbar .page-head { margin-bottom: 0; }
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+.panel-pad { padding: 1.25rem 1.35rem; }
+.empty-state {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 2.25rem 1rem;
+  text-align: center;
+}
+.month-card {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  text-align: left;
+  box-shadow: var(--card-shadow);
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.month-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  background: #fff;
+}
+.kpi-tile {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.95rem 1.05rem;
+  box-shadow: var(--card-shadow);
+}
+.kpi-tile .kpi-label,
+.kpi-tile > div:first-child {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kpi-tile-hero {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.kpi-tile-hero .kpi-label,
+.kpi-tile-hero > div:first-child { color: rgba(255,255,255,0.7); }
+.kpi-tile-hero > div:last-child { color: #fff; }
+
+.sidebar-overlay {
+  display: none;
+}
 .sidebar {
+  width: 248px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--navy);
   color: #e2e8f0;
   border-right: 1px solid #1e293b;
+  min-height: 100vh;
 }
 .sidebar .brand {
-  padding: 1.1rem 1.15rem;
+  padding: 1.2rem 1.15rem 1.05rem;
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 .sidebar .brand-title {
@@ -604,18 +699,27 @@ th, td {
   color: #94a3b8;
   margin-top: 0.15rem;
 }
+.sidebar .nav-group {
+  padding: 0.95rem 0.9rem 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
 .sidebar .nav-link {
   color: #cbd5e1;
-  font-size: 0.875rem;
+  font-size: 0.86rem;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
 }
 .sidebar .nav-link:hover {
   background: rgba(255,255,255,0.06);
   color: #fff;
 }
 .sidebar .nav-link.is-active {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.12);
   color: #fff;
   font-weight: 600;
 }
@@ -624,47 +728,73 @@ th, td {
   border-bottom: 1px solid var(--border);
 }
 .sticky-header h1 {
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   color: var(--navy);
 }
-main { padding: 1.25rem 1.5rem; }
+main { padding: 1.35rem 1.6rem 2.25rem; }
+#appShell > .flex-1 { min-width: 0; }
+#tab-Funding .fnd-h1 { display: none; }
 
 #btnAnalyze,
 #btnApplyReview,
 #btnAddDealer,
+#btnInviteUser,
 #yrChartDeals,
-button.bg-blue-600 {
+#spViewMatrix,
+button.bg-blue-600,
+button.bg-indigo-600,
+.fnd-upload-btn {
   background: var(--navy) !important;
-  border-color: var(--navy);
+  border-color: var(--navy) !important;
+  color: #fff !important;
 }
 #btnAnalyze:hover,
 #btnApplyReview:hover,
 #btnAddDealer:hover,
+#btnInviteUser:hover,
 #yrChartDeals:hover,
-button.bg-blue-600:hover {
+button.bg-blue-600:hover,
+button.bg-indigo-600:hover {
   background: var(--navy-hover) !important;
 }
 #btnSaveMonth,
 #btnExportRawAll,
 #btnExportFunded,
 #btnCancelReview,
-#btnCancelDealer {
-  border-color: var(--border);
-  background: #fff;
-  color: var(--text);
+#btnCancelDealer,
+#btnExportDealers,
+#btnExportYrDealers,
+#btnDealerReportLink,
+#detailExportAll,
+#detailExportFunded,
+#backToGrid,
+#yrChartAmount,
+#spViewSpark,
+label[for="btnUploadDealersCSV"] {
+  border-color: var(--border) !important;
+  background: #fff !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+label[for="btnUploadDealersCSV"]:hover,
+#btnExportDealers:hover,
+#btnExportYrDealers:hover {
+  background: #f8fafc !important;
 }
 .bg-white.rounded-2xl,
-.rounded-2xl.border {
+.rounded-2xl.border,
+.bg-white.rounded-lg.shadow,
+.bg-white.rounded-lg.shadow-sm {
   border-radius: var(--radius) !important;
   box-shadow: var(--card-shadow);
-  border-color: var(--border);
+  border: 1px solid var(--border);
 }
 table thead th {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
   color: var(--muted);
   background: #f8fafc;
@@ -673,9 +803,10 @@ table tbody td {
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
+table tbody tr:hover { background: #f8fafc; }
 #uploadReviewModal > div,
 #mergeModal .absolute.inset-x-0 {
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
   border: 1px solid var(--border);
 }
@@ -688,6 +819,52 @@ table tbody td {
 #fundedDropArea:hover {
   border-color: var(--accent);
   background: #f1f5f9;
+}
+.rp-kpi-card.rp-highlight {
+  background: var(--navy) !important;
+}
+.rp-badge, .bd-badge {
+  background: #f1f5f9 !important;
+  color: var(--navy) !important;
+}
+#spViewMatrix { background: var(--navy) !important; }
+#yrChartAmount.bg-blue-600,
+#spViewSpark.bg-indigo-600 {
+  background: var(--navy) !important;
+  color: #fff !important;
+}
+.fnd-tab.on {
+  color: var(--navy) !important;
+  border-bottom-color: var(--navy) !important;
+  background: #f8fafc !important;
+}
+.fnd-upload-btn:hover { background: var(--navy-hover) !important; }
+#saveStatus {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  min-height: 2.25rem;
+}
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    z-index: 50;
+    min-height: 100%;
+  }
+  .sidebar.is-open { transform: translateX(0); }
+  .sidebar-overlay.is-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 40;
+  }
+  main { padding: 1rem 1rem 2rem; }
+  .page-title { font-size: 1.15rem; }
 }
 /* ═══════════ END PORTAL THEME ═══════════ */
 
@@ -766,7 +943,8 @@ table tbody td {
   <body class="text-slate-900 antialiased">
     <div id="loginScreen">
       <form id="loginForm" class="login-card" autocomplete="on">
-        <h1>Buying Analysis Portal</h1>
+        <div class="page-kicker">Internal workspace</div>
+        <h1>Buying Analysis</h1>
         <p>Sign in with the account your admin created. New users cannot self-register.</p>
         <div id="loginError" class="login-error"></div>
         <label for="loginEmail">Email</label>
@@ -777,8 +955,9 @@ table tbody td {
       </form>
     </div>
     <div id="appShell" class="min-h-screen flex hidden">
+      <div id="sidebarOverlay" class="sidebar-overlay"></div>
       <!-- Sidebar -->
-      <aside class="sidebar flex-shrink-0 hidden md:flex md:flex-col">
+      <aside class="sidebar" id="appSidebar">
         <div class="brand">
           <div class="brand-title">Buying Analysis</div>
           <div class="brand-sub">Dealer performance</div>
@@ -797,7 +976,7 @@ table tbody td {
           <div class="px-4 py-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <button id="mobileMenuBtn" class="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm">☰</button>
-              <h1>Buying Analysis Portal</h1>
+              <h1 id="headerPageTitle">Upload</h1>
             </div>
             <div id="headerUser" class="header-user hidden">
               <span id="headerUserEmail"></span>
@@ -810,10 +989,15 @@ table tbody td {
         <main class="p-4">
           <!-- Upload Data -->
           <div id="tab-Upload" class="tab-panel">
+            <div class="page-head">
+              <div class="page-kicker">Workspace</div>
+              <h2 class="page-title">Upload</h2>
+              <p class="page-sub">Import monthly applications, map columns, then analyze and save.</p>
+            </div>
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <!-- Ingest Card -->
               <section class="xl:col-span-1 bg-white rounded-2xl shadow-sm border p-4">
-                <h2 class="text-lg font-semibold mb-3">Upload & Map</h2>
+                <h2 class="text-base font-semibold mb-3">Upload &amp; map</h2>
 
                 <div class="mb-3 grid grid-cols-2 gap-3">
                   <div>
@@ -951,11 +1135,11 @@ table tbody td {
 
               <!-- Results Card -->
               <section class="xl:col-span-2 bg-white rounded-2xl shadow-sm border p-4">
-                <h2 class="text-lg font-semibold mb-3">Results</h2>
-                <div id="resultsArea" class="text-sm text-gray-500">Upload a CSV and map columns to see analysis here.</div>
+                <h2 class="text-base font-semibold mb-3">Results</h2>
+                <div id="resultsArea" class="empty-state">Upload a file and map columns to see analysis here.</div>
                 <!-- Save Status (Debug) — shows what Save Month is doing -->
 <div class="mt-3">
-  <h3 class="text-sm font-semibold mb-1">Save Status</h3>
+  <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Save status</h3>
   <pre id="saveStatus"
        class="text-xs text-gray-700 bg-gray-50 border rounded p-2 whitespace-pre-wrap min-h-[2.5rem]">
   </pre>
@@ -966,10 +1150,14 @@ table tbody td {
 
           <!-- Monthly Report -->
           <div id="tab-Monthly" class="tab-panel hidden">
-            <div class="flex items-center justify-between mb-3">
-              <h2 class="text-lg font-semibold">Monthly Report</h2>
+            <div class="page-toolbar">
+              <div class="page-head">
+                <div class="page-kicker">Reports</div>
+                <h2 class="page-title">Monthly</h2>
+                <p class="page-sub">Open a saved month to review dealer results.</p>
+              </div>
               <div class="flex items-center gap-2">
-                <label class="text-sm text-gray-500">Year:</label>
+                <label class="text-sm text-gray-500">Year</label>
                 <select id="monthlyYearFilter" class="rounded-lg border px-3 py-2 text-sm bg-white">
                   <option value="ALL">All Years</option>
                 </select>
@@ -999,8 +1187,12 @@ table tbody td {
 
           <!-- Yearly Report -->
           <div id="tab-Yearly" class="tab-panel hidden">
-            <div class="flex items-center gap-3 mb-3">
-              <h2 class="text-lg font-semibold">Yearly Report</h2>
+            <div class="page-toolbar">
+              <div class="page-head">
+                <div class="page-kicker">Reports</div>
+                <h2 class="page-title">Yearly</h2>
+                <p class="page-sub">Year-to-date totals, trends, and dealer performance.</p>
+              </div>
               <select id="yrYear" class="rounded-lg border px-3 py-2 text-sm"></select>
             </div>
 
@@ -1009,7 +1201,7 @@ table tbody td {
 
             <!-- MoM table -->
             <div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
-              <h3 class="font-semibold mb-2">Month-over-Month</h3>
+              <h3 class="font-semibold mb-2">Month-over-month</h3>
               <div class="overflow-x-auto scroll-shadow-x">
                 <table class="min-w-full text-sm">
                   <thead class="bg-gray-50 text-left">
@@ -1204,7 +1396,11 @@ table tbody td {
 
           <!-- IL Reps (placeholder) -->
           <div id="tab-ILReps" class="tab-panel hidden">
-            
+            <div class="page-head">
+              <div class="page-kicker">Reports</div>
+              <h2 class="page-title">Rep performance</h2>
+              <p class="page-sub">Compare reps and drill into assigned dealer results.</p>
+            </div>
             <!-- Controls -->
             <div class="rp-controls-bar">
               <div>
@@ -1260,7 +1456,7 @@ table tbody td {
               <!-- Month-over-Month Chart -->
               <div class="rp-section-card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                  <h3 style="margin: 0;">📈 Performance Trend – Last 6 Months</h3>
+                  <h3 style="margin: 0;">Performance trend — last 6 months</h3>
                   <select id="rpChartMetric" class="rp-select" style="width: auto; padding: 8px 32px 8px 12px;">
                     <option value="apps">Applications</option>
                     <option value="funded">Funded Deals</option>
@@ -1274,7 +1470,7 @@ table tbody td {
 
               <!-- Dealer Performance Table -->
               <div class="rp-section-card">
-                <h3>🏢 Dealer Performance <span class="rp-badge" id="rpDealerBadge">–</span></h3>
+                <h3>Dealer performance <span class="rp-badge" id="rpDealerBadge">–</span></h3>
                 <div class="rp-table-wrap">
                   <table class="rp-table">
                     <thead>
@@ -1298,7 +1494,7 @@ table tbody td {
             <div id="rpAllView" class="hidden">
               
               <div class="rp-section-card">
-                <h3>📊 Rep Comparison <span class="rp-badge" id="rpComparisonBadge">–</span></h3>
+                <h3>Rep comparison <span class="rp-badge" id="rpComparisonBadge">–</span></h3>
                 <div class="rp-table-wrap">
                   <table class="rp-table">
                     <thead>
@@ -1319,7 +1515,7 @@ table tbody td {
 
               <!-- YTD Totals for All Reps -->
               <div class="rp-section-card">
-                <h3>📅 Year-to-Date Totals</h3>
+                <h3>Year-to-date totals</h3>
                 <div class="rp-table-wrap">
                   <table class="rp-table">
                     <thead>
@@ -1342,6 +1538,11 @@ table tbody td {
 
           <!-- ═══════════ BUYING DAILY TAB ═══════════ -->
           <div id="tab-BuyingDaily" class="tab-panel hidden">
+            <div class="page-head">
+              <div class="page-kicker">Reports</div>
+              <h2 class="page-title">Buying daily</h2>
+              <p class="page-sub">Daily, weekly, and monthly application activity.</p>
+            </div>
 
             <!-- Upload Strip -->
             <div class="upload-strip-bd" id="bdUploadStrip">
@@ -1363,7 +1564,7 @@ table tbody td {
                 <button class="active" data-bd-view="daily">Daily</button>
                 <button data-bd-view="weekly">Weekly</button>
                 <button data-bd-view="monthly">Monthly</button>
-                <button data-bd-view="reps">👥 Reps Daily</button>
+                <button data-bd-view="reps">Reps daily</button>
               </div>
               <select id="bdStateFilter" class="bd-state-select">
                 <option value="ALL">All States</option>
@@ -1423,7 +1624,7 @@ table tbody td {
             <!-- ── DAILY PANEL ── -->
             <div class="bd-view-panel active" id="bd-panel-daily">
               <div class="bd-section-card">
-                <h3>📅 Daily Breakdown <span class="bd-badge" id="bdDailyBadge">–</span></h3>
+                <h3>Daily breakdown <span class="bd-badge" id="bdDailyBadge">–</span></h3>
                 <div class="bd-table-wrap">
                   <table class="bd-table">
                     <thead>
@@ -1483,11 +1684,11 @@ table tbody td {
               </div>
               <div class="bd-compare-strip" id="bdMonthlyCompare"></div>
               <div class="bd-section-card">
-                <h3>📈 Monthly Totals – Applications by Status</h3>
+                <h3>Monthly totals — applications by status</h3>
                 <div class="bd-chart-wrap"><canvas id="bdMonthlyChart"></canvas></div>
               </div>
               <div class="bd-section-card">
-                <h3>📊 Monthly Summary</h3>
+                <h3>Monthly summary</h3>
                 <div class="bd-table-wrap">
                   <table class="bd-table">
                     <thead>
@@ -1574,29 +1775,35 @@ table tbody td {
           <!-- Settings Tab - MOVED TO CORRECT LOCATION -->
           <!-- Funding Tab -->
           <div id="tab-Funding" class="tab-panel hidden">
+            <div class="page-head">
+              <div class="page-kicker">Reports</div>
+              <h2 class="page-title">Funding</h2>
+              <p class="page-sub">Funding activity, returns, and summaries.</p>
+            </div>
             <div id="fundingApp" style="font-family:inherit"></div>
           </div>
 
           <div id="tab-Settings" class="tab-panel hidden">
-            <div class="mb-6">
-              <h2 class="text-2xl font-bold text-gray-900">Settings</h2>
-              <p class="text-sm text-gray-600 mt-1">Manage your master dealer list and upload preferences</p>
+            <div class="page-head">
+              <div class="page-kicker">Admin</div>
+              <h2 class="page-title">Settings</h2>
+              <p class="page-sub">Master dealer list and upload preferences.</p>
             </div>
 
             <!-- Master Dealers Section -->
             <div class="bg-white rounded-lg shadow p-6">
-              <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Master Dealer List</h3>
-                <div class="flex gap-2">
-                  <button id="btnExportDealers" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
-                    📊 Export to Excel
+              <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+                <h3 class="text-lg font-semibold">Master dealer list</h3>
+                <div class="flex gap-2 flex-wrap">
+                  <button id="btnExportDealers" class="px-4 py-2 rounded-lg border bg-white">
+                    Export to Excel
                   </button>
-                  <label for="btnUploadDealersCSV" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition cursor-pointer inline-flex items-center">
-                    📤 Upload CSV
+                  <label for="btnUploadDealersCSV" class="px-4 py-2 rounded-lg border bg-white cursor-pointer inline-flex items-center">
+                    Upload CSV
                   </label>
                   <input type="file" id="btnUploadDealersCSV" accept=".csv" class="hidden">
-                  <button id="btnAddDealer" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                    + Add Dealer
+                  <button id="btnAddDealer" class="px-4 py-2 bg-blue-600 text-white rounded-lg">
+                    Add dealer
                   </button>
                 </div>
               </div>
@@ -1631,10 +1838,10 @@ table tbody td {
                 </label>
                 <div class="flex gap-2">
                   <button id="btnAddRep" class="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 text-sm font-medium transition">
-                    + Add Rep
+                    Add rep
                   </button>
                   <button id="btnDeleteRep" class="px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 text-sm font-medium transition">
-                    🗑 Delete Rep
+                    Delete rep
                   </button>
                 </div>
               </div>
@@ -1665,9 +1872,10 @@ table tbody td {
           </div>
 
           <div id="tab-Users" class="tab-panel hidden">
-            <div class="mb-6">
-              <h2 class="text-2xl font-bold text-gray-900">Users</h2>
-              <p class="text-sm text-gray-600 mt-1">Invite-only accounts. Only admins can add or disable users.</p>
+            <div class="page-head">
+              <div class="page-kicker">Admin</div>
+              <h2 class="page-title">Users</h2>
+              <p class="page-sub">Invite-only accounts. Only admins can add or disable users.</p>
             </div>
             <div class="bg-white rounded-lg shadow p-6 mb-6">
               <h3 class="text-lg font-semibold mb-3">Invite user</h3>
