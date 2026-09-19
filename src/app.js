@@ -51,10 +51,12 @@ function initSupabase() {
   try {
     var url = window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL;
     var key = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY;
+    if (window.sb) return window.sb;
     if (window.supabase && window.supabase.createClient && url && key) {
-      if (window.sb) { window.sb = null; } // <-- ADD THIS LINE
-      window.sb = window.supabase.createClient(url, key, { auth: { persistSession: false } });
-      console.log('[sb] client (RE)initialized'); // <-- EDIT THIS LINE
+      window.sb = window.supabase.createClient(url, key, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      console.log('[sb] client initialized (session persisted)');
     } else {
       window.sb = null;
       console.log('[sb] not configured — using localStorage fallback');
@@ -62,8 +64,179 @@ function initSupabase() {
   } catch (e) {
     window.sb = null;
   }
+  return window.sb;
 }
 initSupabase();
+
+window._isAdmin = false;
+window._authUser = null;
+
+function showLoginScreen(msg) {
+  const login = document.getElementById('loginScreen');
+  const shell = document.getElementById('appShell');
+  if (login) login.classList.remove('hidden');
+  if (shell) shell.classList.add('hidden');
+  const err = document.getElementById('loginError');
+  if (err) err.textContent = msg || '';
+}
+
+function showAppShell() {
+  const login = document.getElementById('loginScreen');
+  const shell = document.getElementById('appShell');
+  if (login) login.classList.add('hidden');
+  if (shell) shell.classList.remove('hidden');
+}
+
+async function loadAuthProfile() {
+  window._isAdmin = false;
+  window._authUser = null;
+  if (!window.sb) return null;
+  const { data: sess } = await window.sb.auth.getSession();
+  const user = sess?.session?.user;
+  if (!user) return null;
+  window._authUser = user;
+  try {
+    const { data } = await window.sb.from('profiles').select('email,role').eq('user_id', user.id).maybeSingle();
+    window._isAdmin = data?.role === 'admin';
+    return data;
+  } catch (e) {
+    console.warn('[auth] profile lookup failed:', e.message);
+    return null;
+  }
+}
+
+async function enterApp() {
+  await loadAuthProfile();
+  showAppShell();
+  const emailEl = document.getElementById('headerUserEmail');
+  const headerUser = document.getElementById('headerUser');
+  if (emailEl) emailEl.textContent = window._authUser?.email || '';
+  if (headerUser) headerUser.classList.remove('hidden');
+  try { buildSidebar(); } catch (e) { console.error(e); }
+  try { switchTab('Upload'); } catch (e) { console.error(e); }
+}
+
+async function startAuthGate() {
+  initSupabase();
+  const form = document.getElementById('loginForm');
+  const errEl = document.getElementById('loginError');
+  const submitBtn = document.getElementById('loginSubmit');
+  document.getElementById('btnSignOut')?.addEventListener('click', async () => {
+    try { await window.sb?.auth.signOut(); } catch {}
+    window._isAdmin = false;
+    window._authUser = null;
+    const nav = document.getElementById('sidebar-nav');
+    if (nav) nav.innerHTML = '';
+    showLoginScreen('');
+  });
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!window.sb) { if (errEl) errEl.textContent = 'Supabase is not configured.'; return; }
+    const email = document.getElementById('loginEmail')?.value?.trim();
+    const password = document.getElementById('loginPassword')?.value || '';
+    if (errEl) errEl.textContent = '';
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const { error } = await window.sb.auth.signInWithPassword({ email, password });
+      if (error) { if (errEl) errEl.textContent = error.message; return; }
+      await enterApp();
+    } catch (err) {
+      if (errEl) errEl.textContent = err.message || 'Sign in failed';
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+  if (!window.sb) { showLoginScreen('Supabase is not configured.'); return; }
+  const { data } = await window.sb.auth.getSession();
+  if (data?.session) await enterApp();
+  else showLoginScreen('');
+}
+
+async function usersApi(method, body) {
+  const { data } = await window.sb.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) throw new Error('Not signed in');
+  const res = await fetch('/api/users', {
+    method,
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await res.text();
+  let json = {};
+  try { json = text ? JSON.parse(text) : {}; } catch { json = {}; }
+  if (!res.ok) {
+    throw new Error(json.error || (res.status === 404
+      ? 'User API is not running on this server. Restart the local app or use the deployed site.'
+      : ('Request failed (' + res.status + ')')));
+  }
+  return json;
+}
+
+async function refreshUsersTable() {
+  const tbody = document.getElementById('usersTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td class="p-3 text-gray-500" colspan="4">Loading…</td></tr>';
+  try {
+    const { users } = await usersApi('GET');
+    if (!users?.length) {
+      tbody.innerHTML = '<tr><td class="p-3 text-gray-500" colspan="4">No users yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map((u) => `
+      <tr class="border-t">
+        <td class="p-3">${u.email || ''}</td>
+        <td class="p-3">
+          <select class="user-role-select border rounded px-2 py-1 text-xs" data-id="${u.id}">
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </td>
+        <td class="p-3">${u.banned ? 'Disabled' : 'Active'}</td>
+        <td class="p-3">
+          <button type="button" class="user-ban-btn text-xs border rounded px-2 py-1" data-id="${u.id}" data-banned="${u.banned ? '1' : '0'}">
+            ${u.banned ? 'Enable' : 'Disable'}
+          </button>
+        </td>
+      </tr>`).join('');
+    tbody.querySelectorAll('.user-role-select').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        try { await usersApi('PATCH', { id: sel.dataset.id, role: sel.value }); refreshUsersTable(); }
+        catch (e) { alert(e.message); }
+      });
+    });
+    tbody.querySelectorAll('.user-ban-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try { await usersApi('PATCH', { id: btn.dataset.id, banned: btn.dataset.banned !== '1' }); refreshUsersTable(); }
+        catch (e) { alert(e.message); }
+      });
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td class="p-3 text-red-600" colspan="4">${e.message}</td></tr>`;
+  }
+}
+
+function wireUsersTab() {
+  if (window._usersTabWired) return;
+  window._usersTabWired = true;
+  document.getElementById('btnInviteUser')?.addEventListener('click', async () => {
+    const status = document.getElementById('inviteStatus');
+    const email = document.getElementById('inviteEmail')?.value?.trim();
+    const password = document.getElementById('invitePassword')?.value || '';
+    const role = document.getElementById('inviteRole')?.value || 'user';
+    if (status) status.textContent = 'Creating…';
+    try {
+      await usersApi('POST', { email, password, role });
+      if (status) status.textContent = 'User added. They can sign in with that password.';
+      const em = document.getElementById('inviteEmail');
+      const pw = document.getElementById('invitePassword');
+      if (em) em.value = '';
+      if (pw) pw.value = '';
+      refreshUsersTable();
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    }
+  });
+}
 
 /**
  * Fetch the last 12 month tiles from Supabase monthly_snapshots.
@@ -85,26 +258,13 @@ initSupabase();
 async function fetchMonthlySummariesSB() {
   console.log('[sb] fetchMonthlySummariesSB: START');
   
-  // Create a completely fresh client every time
-  var sb = null;
+  var sb = initSupabase();
   try {
-    var url = "https://zhquyedaxszsnswaimza.supabase.co";
-    var key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4";
-    
-    sb = window.supabase.createClient(url, key, {
-      auth: { 
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false
-      },
-      global: {
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`
-        }
-      }
-    });
-    console.log('[sb] fetchMonthlySummariesSB: Fresh client created');
+    if (!sb) {
+      console.error('[sb] fetchMonthlySummariesSB: no client');
+      return null;
+    }
+    console.log('[sb] fetchMonthlySummariesSB: using shared client');
   } catch (e) {
     console.error('[sb] fetchMonthlySummariesSB: FAILED to create client', e);
     return null;
@@ -1412,12 +1572,14 @@ const TABS = [
   { id: 'BuyingDaily', label: '📊 Buying Daily' },
   { id: 'Funding',     label: '💰 Funding' },
   { id: 'Settings',  label: '⚙️ Settings' },  // ← ADD THIS LINE
+  { id: 'Users', label: 'Users', adminOnly: true },
 ];
 function buildSidebar() {
   const nav = $('#sidebar-nav');
   if (!nav) return;
-  if (nav.children.length) return; // skip if already filled
-  TABS.forEach((t,i) => {
+  nav.innerHTML = '';
+  const tabs = TABS.filter((t) => !t.adminOnly || window._isAdmin);
+  tabs.forEach((t,i) => {
     const b = document.createElement('button');
     b.className = 'nav-link w-full text-left px-3 py-2';
     b.textContent = t.label;
@@ -1447,6 +1609,11 @@ function switchTab(id) {
   if (id === 'ILReps') { if (typeof window.initRepPerformance === 'function') window.initRepPerformance(); }
   if (id === 'BuyingDaily') { if (typeof window.initBuyingDaily === 'function') window.initBuyingDaily(); }
   if (id === 'Funding') { if (typeof window.initFunding === 'function') window.initFunding(); }
+  if (id === 'Users') {
+    if (!window._isAdmin) { switchTab('Upload'); return; }
+    wireUsersTab();
+    refreshUsersTable();
+  }
   if (id === 'tab-Settings' || id === 'Settings') {
     // CRITICAL FIX: Ensure Settings tab is in the right place before showing
     const settingsTab = document.getElementById('tab-Settings');
@@ -5915,9 +6082,7 @@ function migrateSnapshots() {
 document.addEventListener('DOMContentLoaded', () => {
   try {
     try { migrateSnapshots(); } catch {}
-    buildSidebar();
-    // If no snapshots yet, leave it empty; user can seed or upload.
-    switchTab('Upload');
+    startAuthGate();
   } catch (e) {
     console.error('Boot error:', e);
   }
@@ -8002,7 +8167,8 @@ function updateKpiTile(label, value) {
   let fOvSearch  = '', fDtfSearch = '', fRetSearch = '';
   
   function getSb(){
-    if(!fSb) fSb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false}});
+    if (window.sb) return window.sb;
+    if(!fSb) fSb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false, storageKey: 'sb-funding-anon'}});
     return fSb;
   }
   

@@ -691,10 +691,92 @@ table tbody td {
 }
 /* ═══════════ END PORTAL THEME ═══════════ */
 
+#loginScreen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy);
+  padding: 24px;
+}
+#loginScreen.hidden { display: none !important; }
+#appShell.hidden { display: none !important; }
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 32px 28px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+}
+.login-card h1 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--navy);
+  margin: 0 0 4px;
+}
+.login-card p {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.login-card label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 4px;
+}
+.login-card input {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+}
+.login-card button[type="submit"] {
+  width: 100%;
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-card button[type="submit"]:hover { background: var(--navy-hover); }
+.login-error { color: #b91c1c; font-size: 0.8rem; min-height: 1.2em; margin: 0 0 10px; }
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.header-user button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.header-user button:hover { background: #f8fafc; }
+
     </style>
   </head>
   <body class="text-slate-900 antialiased">
-    <div class="min-h-screen flex">
+    <div id="loginScreen">
+      <form id="loginForm" class="login-card" autocomplete="on">
+        <h1>Buying Analysis Portal</h1>
+        <p>Sign in with the account your admin created. New users cannot self-register.</p>
+        <div id="loginError" class="login-error"></div>
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" name="email" type="email" required autocomplete="username" />
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" name="password" type="password" required autocomplete="current-password" />
+        <button type="submit" id="loginSubmit">Sign in</button>
+      </form>
+    </div>
+    <div id="appShell" class="min-h-screen flex hidden">
       <!-- Sidebar -->
       <aside class="sidebar flex-shrink-0 hidden md:flex md:flex-col">
         <div class="brand">
@@ -716,6 +798,10 @@ table tbody td {
             <div class="flex items-center gap-3">
               <button id="mobileMenuBtn" class="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm">☰</button>
               <h1>Buying Analysis Portal</h1>
+            </div>
+            <div id="headerUser" class="header-user hidden">
+              <span id="headerUserEmail"></span>
+              <button type="button" id="btnSignOut">Sign out</button>
             </div>
           </div>
         </header>
@@ -1575,6 +1661,50 @@ table tbody td {
                 </svg>
                 <p class="mt-2">Loading dealers...</p>
               </div>
+            </div>
+          </div>
+
+          <div id="tab-Users" class="tab-panel hidden">
+            <div class="mb-6">
+              <h2 class="text-2xl font-bold text-gray-900">Users</h2>
+              <p class="text-sm text-gray-600 mt-1">Invite-only accounts. Only admins can add or disable users.</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+              <h3 class="text-lg font-semibold mb-3">Invite user</h3>
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div>
+                  <label class="text-xs text-gray-600">Email</label>
+                  <input id="inviteEmail" type="email" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="name@company.com" />
+                </div>
+                <div>
+                  <label class="text-xs text-gray-600">Temporary password</label>
+                  <input id="invitePassword" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="At least 8 characters" />
+                </div>
+                <div>
+                  <label class="text-xs text-gray-600">Role</label>
+                  <select id="inviteRole" class="w-full rounded-lg border px-3 py-2 text-sm">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <button type="button" id="btnInviteUser" class="px-4 py-2 bg-blue-600 text-white rounded-lg">Add user</button>
+              </div>
+              <p id="inviteStatus" class="text-sm text-gray-600 mt-2"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="bg-gray-50 text-left">
+                    <th class="p-3">Email</th>
+                    <th class="p-3">Role</th>
+                    <th class="p-3">Status</th>
+                    <th class="p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                  <tr><td class="p-3 text-gray-500" colspan="4">Loading…</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
