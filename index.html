@@ -736,6 +736,20 @@ th, td {
 main { padding: 1.35rem 1.6rem 2.25rem; }
 #appShell > .flex-1 { min-width: 0; }
 #tab-Funding .fnd-h1 { display: none; }
+.funded-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--navy);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+  font-size: inherit;
+}
+.funded-link:hover { color: #1d4ed8; }
 
 #btnAnalyze,
 #btnApplyReview,
@@ -1061,6 +1075,10 @@ table tbody tr:hover { background: #f8fafc; }
     <label class="text-xs text-gray-500">Lender Fee / Discount % (optional)</label>
     <select id="fMapFee" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
   </div>
+  <div>
+    <label class="text-xs text-gray-500">LTV (optional)</label>
+    <select id="fMapLtv" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
 </div>
 <div id="fundedMapTip" class="mt-2 text-xs text-gray-600"></div>
 <!-- Merge Review Modal -->
@@ -1197,7 +1215,7 @@ table tbody tr:hover { background: #f8fafc; }
             </div>
 
             <!-- YTD tiles -->
-            <div id="yrSummary" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4"></div>
+            <div id="yrSummary" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4"></div>
 
             <!-- MoM table -->
             <div class="bg-white rounded-2xl shadow-sm border p-3 mb-4">
@@ -1917,6 +1935,35 @@ table tbody tr:hover { background: #f8fafc; }
           </div>
 
         </main>
+      </div>
+    </div>
+
+    <div id="fundedDealsModal" class="fixed inset-0 z-[110] hidden">
+      <div class="absolute inset-0 bg-black/40" id="fundedDealsBackdrop"></div>
+      <div class="absolute inset-x-0 top-12 mx-auto w-[min(960px,94%)] rounded-2xl border bg-white shadow-2xl">
+        <div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div>
+            <h3 id="fundedDealsTitle" class="font-semibold text-slate-900">Funded deals</h3>
+            <p id="fundedDealsSub" class="text-xs text-slate-500 mt-0.5"></p>
+          </div>
+          <button type="button" id="fundedDealsClose" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Close</button>
+        </div>
+        <div class="max-h-[65vh] overflow-auto p-4">
+          <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 text-left sticky top-0">
+              <tr>
+                <th class="px-3 py-2">Dealer</th>
+                <th class="px-3 py-2">State</th>
+                <th class="px-3 py-2">FI</th>
+                <th class="px-3 py-2 text-right">Loan Amount</th>
+                <th class="px-3 py-2 text-right">APR</th>
+                <th class="px-3 py-2 text-right">Lender Fee</th>
+                <th class="px-3 py-2 text-right">LTV</th>
+              </tr>
+            </thead>
+            <tbody id="fundedDealsBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 

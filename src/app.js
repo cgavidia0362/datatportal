@@ -1158,6 +1158,101 @@ function formatPct(x) {
   if (x == null || !isFinite(x)) return '-';
   return (x*100).toFixed(2) + '%';
 }
+
+function fundedRowDealer(r) { return String(r.Dealer ?? r.dealer ?? '').trim(); }
+function fundedRowState(r) { return String(r.State ?? r.state ?? '').trim(); }
+function fundedRowFi(r) { return String(r.FI ?? r.fi ?? '').trim(); }
+function filterFundedRowsForDealer(rows, dealer, state, fi) {
+  const list = Array.isArray(rows) ? rows : [];
+  const kFull = dealerKey(dealer, state, fi);
+  const kNoFi = dealerKey(dealer, state);
+  const matched = list.filter((r) => {
+    const rk = dealerKey(fundedRowDealer(r), fundedRowState(r), fundedRowFi(r) || undefined);
+    const rk2 = dealerKey(fundedRowDealer(r), fundedRowState(r));
+    return rk === kFull || rk === kNoFi || rk2 === kNoFi;
+  });
+  if (matched.length) return matched;
+  const d = String(dealer || '').trim().toLowerCase();
+  const s = String(state || '').trim().toUpperCase();
+  return list.filter((r) =>
+    fundedRowDealer(r).toLowerCase() === d &&
+    fundedRowState(r).toUpperCase() === s
+  );
+}
+function formatFundedCell(v, kind) {
+  if (v == null || v === '') return '–';
+  const n = Number(String(v).replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(n)) return '–';
+  if (kind === 'money') return formatMoney(n);
+  if (kind === 'pct') return n.toFixed(2) + '%';
+  return String(n);
+}
+function fundedFeeAsPct(r) {
+  const raw = r?.['Lender Fee'] ?? r?.lender_fee_pct;
+  if (raw == null || raw === '') return null;
+  const n = Number(String(raw).replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n <= 1 ? n * 100 : n;
+}
+function closeFundedDealsModal() {
+  document.getElementById('fundedDealsModal')?.classList.add('hidden');
+}
+function openFundedDealsModal({ title, subtitle, rows }) {
+  const modal = document.getElementById('fundedDealsModal');
+  const body = document.getElementById('fundedDealsBody');
+  const titleEl = document.getElementById('fundedDealsTitle');
+  const subEl = document.getElementById('fundedDealsSub');
+  if (!modal || !body) return;
+  if (titleEl) titleEl.textContent = title || 'Funded deals';
+  if (subEl) subEl.textContent = subtitle || '';
+  const list = Array.isArray(rows) ? rows : [];
+  body.innerHTML = list.length
+    ? list.map((r) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${fundedRowDealer(r) || '–'}</td>
+        <td class="px-3 py-2">${fundedRowState(r) || '–'}</td>
+        <td class="px-3 py-2">${fundedRowFi(r) || '–'}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatFundedCell(r['Loan Amount'] ?? r.loan_amount, 'money')}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatFundedCell(r.APR ?? r.apr, 'pct')}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatFundedCell(r['Lender Fee'] ?? r.lender_fee_pct, 'pct')}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatFundedCell(r.LTV ?? r.ltv, 'pct')}</td>
+      </tr>`).join('')
+    : '<tr><td class="px-3 py-6 text-gray-500" colspan="7">No funded deals found for this selection.</td></tr>';
+  modal.classList.remove('hidden');
+}
+document.getElementById('fundedDealsClose')?.addEventListener('click', closeFundedDealsModal);
+document.getElementById('fundedDealsBackdrop')?.addEventListener('click', closeFundedDealsModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeFundedDealsModal();
+});
+
+let _yrFundedCache = { year: null, rows: null };
+async function fetchYearlyFundedDealsSB(year) {
+  const y = Number(year);
+  if (_yrFundedCache.year === y && Array.isArray(_yrFundedCache.rows)) return _yrFundedCache.rows;
+  if (!window.sb || !y) return [];
+  const { data, error } = await window.sb
+    .from('funded_deals')
+    .select('dealer,state,fi,loan_amount,apr,lender_fee_pct,ltv,month')
+    .eq('year', y)
+    .limit(20000);
+  if (error) {
+    console.warn('[sb] yearly funded_deals:', error.message);
+    return [];
+  }
+  const rows = (data || []).map((r) => ({
+    Dealer: r.dealer,
+    State: r.state,
+    FI: r.fi,
+    'Loan Amount': Number(r.loan_amount) || 0,
+    APR: r.apr,
+    'Lender Fee': r.lender_fee_pct,
+    LTV: r.ltv,
+    Month: r.month
+  }));
+  _yrFundedCache = { year: y, rows };
+  return rows;
+}
 function pctBar(x) {
   if (!isFinite(x)) x = 0;
   const pct = Math.max(0, Math.min(100, x*100));
@@ -1664,7 +1759,7 @@ function switchTab(id) {
 let parsed = { fields: [], rows: [] };
 // Funded file (optional)
 let fundedParsed = { fields: [], rows: [] };
-let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'', cif:'' };
+let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'', ltv:'', cif:'' };
 // pending merge context from the review modal
 let _pendingMerge = null;
 const dropArea = $('#dropArea');
@@ -2252,6 +2347,7 @@ function autoMapFunded(fields=[]) {
     loan:   pick(/loan amount|amount financed|funded|principal|af\b|amt\b/),
     apr:    pick(/\bapr\b|rate|interest/),
     fee:    pick(/lender fee|discount|disc%|origination|doc fee|fee\b/),
+    ltv:    pick(/\bltv\b|loan to value|loan-to-value/),
     cif:    pick(/cif number|cifnumber|cif\s*number|dealer\s*cif|\bcif\b/),
   };
 }
@@ -2267,11 +2363,12 @@ function setupFundedMappingUI() {
   const loanSel   = document.getElementById('fMapLoan');
   const aprSel    = document.getElementById('fMapApr');
   const feeSel    = document.getElementById('fMapFee');
+  const ltvSel    = document.getElementById('fMapLtv');
 
-  const sels = [dealerSel, stateSel, loanSel, aprSel, feeSel].filter(Boolean);
+  const sels = [dealerSel, stateSel, loanSel, aprSel, feeSel, ltvSel].filter(Boolean);
   if (!sels.length) return; // HTML not on this tab yet
 
-  // rebuild options in all 5 selects
+  // rebuild options in all funded-mapping selects
   sels.forEach((el) => {
     el.innerHTML = '';
     const o0 = document.createElement('option');
@@ -2293,6 +2390,7 @@ function setupFundedMappingUI() {
   if (loanSel)   loanSel.value   = fundedMapping.loan   || '';
   if (aprSel)    aprSel.value    = fundedMapping.apr    || '';
   if (feeSel)    feeSel.value    = fundedMapping.fee    || '';
+  if (ltvSel)    ltvSel.value    = fundedMapping.ltv    || '';
 
   // keep mapping in sync if user changes dropdowns
   dealerSel?.addEventListener('change', e => fundedMapping.dealer = e.target.value);
@@ -2300,6 +2398,7 @@ function setupFundedMappingUI() {
   loanSel  ?.addEventListener('change', e => fundedMapping.loan   = e.target.value);
   aprSel   ?.addEventListener('change', e => fundedMapping.apr    = e.target.value);
   feeSel   ?.addEventListener('change', e => fundedMapping.fee    = e.target.value);
+  ltvSel   ?.addEventListener('change', e => fundedMapping.ltv    = e.target.value);
 }
 
 function setupMappingUI() {
@@ -2554,6 +2653,7 @@ function mergeFundedIntoSnapshot(snap, fundedParsed, fundedMapping, opts) {
       
       const aprV = parseFloat(String(get(r,'apr')).replace(/[^\d.-]/g,''));
       if (Number.isFinite(aprV)) aprArr.push(aprV);
+      const ltvV = parseFloat(String(get(r,'ltv')).replace(/[^\d.-]/g,''));
 
       // fee % can be like "x%" or just a number
       const s = String(get(r,'fee')||'');
@@ -2573,7 +2673,7 @@ snap.fundedRawRows.push({
   'Loan Amount': amt,
   APR: Number.isFinite(aprV) ? aprV : '',
   'Lender Fee': (feePct != null && Number.isFinite(feePct)) ? (feePct * 100).toFixed(3) + '%' : '',
-  LTV: '',                 // (fill if your funded sheet has it)
+  LTV: Number.isFinite(ltvV) ? ltvV : '',
   FI: target.fi || ''      // reuse FI from the matched dealer
 });
     });
@@ -4427,7 +4527,11 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
         <td class="px-3 py-2 tabular-nums text-right">${r.counter ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.pending ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.denial ?? 0}</td>
-        <td class="px-3 py-2 tabular-nums text-right">${r.funded ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${
+          (Number(r.funded) || 0) > 0
+            ? `<button type="button" class="funded-link js-md-funded" data-dealer="${String(r.dealer ?? '').replace(/"/g, '&quot;')}" data-state="${String(r.state ?? '').replace(/"/g, '&quot;')}" data-fi="${String(r.fi ?? '').replace(/"/g, '&quot;')}">${r.funded}</button>`
+            : (r.funded ?? 0)
+        }</td>
         <td class="px-3 py-2 tabular-nums text-right">${formatMoney(fundedAmount)}</td>
         <td class="px-3 py-2 tabular-nums text-right">
           ${(lta*100).toFixed(2)}%
@@ -4439,6 +4543,22 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
         </td>
       </tr>`;
   }).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="12">No data.</td></tr>';
+
+  body.querySelectorAll('.js-md-funded').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dealer = btn.dataset.dealer || '';
+      const state = btn.dataset.state || '';
+      const fi = btn.dataset.fi || '';
+      const deals = filterFundedRowsForDealer(snap.fundedRawRows || [], dealer, state, fi);
+      openFundedDealsModal({
+        title: 'Funded deals',
+        subtitle: [dealer, state, fi].filter(Boolean).join(' · ') + (deals.length ? ` · ${deals.length} deal${deals.length === 1 ? '' : 's'}` : ''),
+        rows: deals
+      });
+    });
+  });
 }
 
 // Make renderDealerRows globally accessible for event handlers
@@ -4615,12 +4735,28 @@ function paintMonthlyHighValues(snap) {
     return `
       <tr class="border-t">
         <td class="px-3 py-2">≥ ${formatMoney(th)}</td>
-        <td class="px-3 py-2 tabular-nums text-right">${count}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${
+          count > 0
+            ? `<button type="button" class="funded-link js-hi-funded" data-threshold="${th}">${count}</button>`
+            : count
+        }</td>
         <td class="px-3 py-2 tabular-nums text-right">${formatMoney(totalAmt)}</td>
       </tr>`;
   }).join('');
 
   body.innerHTML = rowsHtml || `<tr><td class="px-3 py-6 text-gray-500" colspan="3">No funded rows.</td></tr>`;
+  body.querySelectorAll('.js-hi-funded').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const th = Number(btn.dataset.threshold) || 0;
+      const deals = fundedRaw.filter(r => (parseNumber(r['Loan Amount']) || 0) >= th);
+      openFundedDealsModal({
+        title: 'High-value funded deals',
+        subtitle: `Loan amount ≥ ${formatMoney(th)} · ${deals.length} deal${deals.length === 1 ? '' : 's'}`,
+        rows: deals
+      });
+    });
+  });
 }
 
 /* ---------- Yearly tab ---------- */
@@ -5040,18 +5176,31 @@ if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
   // YTD tiles
   const sum = (arr, sel) => arr.reduce((a,b)=>a+(sel(b)||0), 0);
   const totalApps   = sum(list, s => s.totals.totalApps);
-  const totalApproved = sum(list, s => (s.totals.approved + s.totals.counter));
+  const totalApprovals = sum(list, s => s.totals.approved);
+  const totalCounters = sum(list, s => s.totals.counter);
+  const totalApproved = totalApprovals + totalCounters;
   const funded      = sum(list, s => s.totals.funded);
   const totalFunded = sum(list, s => s.kpis.totalFunded);
+  let yrFundedRows = await fetchYearlyFundedDealsSB(year);
+  if (!yrFundedRows.length) {
+    yrFundedRows = list.flatMap((s) => s.fundedRawRows || []);
+  }
+  const avgLoanFunded = funded ? (totalFunded / funded) : null;
+  const feeVals = (yrFundedRows || []).map(fundedFeeAsPct).filter((n) => n != null);
+  const avgLenderFee = feeVals.length ? (feeVals.reduce((a, b) => a + b, 0) / feeVals.length) : null;
 
   const yrSummary = $('#yrSummary');
   if (yrSummary) {
     yrSummary.innerHTML = '';
     [
-      ['Total Funded (YTD)', formatMoney(totalFunded), true],   // big green
+      ['Total Funded (YTD)', formatMoney(totalFunded), true],
       ['Total Apps (YTD)',  totalApps],
-      ['Total Approved (YTD)', totalApproved],
+      ['Approved + Counter (YTD)', totalApproved],
+      ['Approvals (YTD)', totalApprovals],
+      ['Counters (YTD)', totalCounters],
       ['Funded (YTD)', funded],
+      ['Avg Loan Funded (YTD)', avgLoanFunded != null ? formatMoney(avgLoanFunded) : '–'],
+      ['Avg Lender Fee (YTD)', avgLenderFee != null ? avgLenderFee.toFixed(2) + '%' : '–'],
       ['LTA (YTD)', totalApps ? formatPct(totalApproved/totalApps) : '–'],
       ['LTB (YTD)', totalApps ? formatPct(funded/totalApps) : '–'],
     ]    
@@ -5409,7 +5558,11 @@ if (dBody) {
         <td class="px-3 py-2 tabular-nums text-right">${r.counter ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.pending ?? 0}</td>
         <td class="px-3 py-2 tabular-nums text-right">${r.denial ?? 0}</td>
-        <td class="px-3 py-2 tabular-nums text-right">${r.funded ?? 0}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${
+          (Number(r.funded) || 0) > 0
+            ? `<button type="button" class="funded-link js-yr-funded" data-dealer="${String(r.dealer ?? '').replace(/"/g, '&quot;')}" data-state="${String(r.state ?? '').replace(/"/g, '&quot;')}" data-fi="${String(r.fi ?? '').replace(/"/g, '&quot;')}">${r.funded}</button>`
+            : (r.funded ?? 0)
+        }</td>
         <td class="px-3 py-2 tabular-nums text-right">${formatMoney(r.fundedAmt || 0)}</td>
         <td class="px-3 py-2 text-right">
           <div class="inline-flex items-center gap-2">
@@ -5425,6 +5578,20 @@ if (dBody) {
         </td>
       </tr>
     `).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="12">No data.</td></tr>';
+    dBody.querySelectorAll('.js-yr-funded').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const dealer = btn.dataset.dealer || '';
+        const state = btn.dataset.state || '';
+        const fi = btn.dataset.fi || '';
+        const deals = filterFundedRowsForDealer(yrFundedRows || [], dealer, state, fi);
+        openFundedDealsModal({
+          title: 'Funded deals (YTD)',
+          subtitle: [dealer, state, fi].filter(Boolean).join(' · ') + (deals.length ? ` · ${deals.length} deal${deals.length === 1 ? '' : 's'}` : ''),
+          rows: deals
+        });
+      });
+    });
   }
   function exportYrDealersCSV() {
     // use the current view (sorted + filtered)

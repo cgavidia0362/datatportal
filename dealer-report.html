@@ -6,115 +6,128 @@
 <title>Dealer YTD Report</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   :root{
-    --blue:#1d4ed8;--blue-lt:#eff6ff;
+    --navy:#0f172a;--navy-hover:#1e293b;--accent:#1e3a5f;
+    --blue:#1e3a5f;--blue-lt:#eff6ff;
     --green:#15803d;--green-lt:#dcfce7;
     --red:#b91c1c;--red-lt:#fee2e2;
-    --amber:#d97706;--amber-lt:#fef3c7;
-    --border:#e2e8f0;--bg:#f8fafc;--card:#fff;
-    --text:#0f172a;--muted:#64748b;--mono:'DM Mono',monospace;
+    --amber:#b45309;--amber-lt:#fef3c7;
+    --border:#e5e7eb;--bg:#f3f4f6;--card:#fff;
+    --text:#111827;--muted:#6b7280;
+    --shadow:0 1px 2px rgba(17,24,39,.05);
+    --font:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;
   }
-  html,body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-  .page{max-width:680px;margin:0 auto;padding:12px 12px 48px}
+  html,body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh}
+  .page{max-width:860px;margin:0 auto;padding:20px 16px 56px}
 
   /* ── Header ── */
-  .hdr{border-radius:14px;padding:18px 16px;margin-bottom:10px;background:var(--blue)}
-  .hdr.y2025{background:#d97706}
-  .brand{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:8px;font-family:var(--mono)}
-  .hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-  .hdr-name{font-size:19px;font-weight:500;color:#fff;line-height:1.2}
-  .hdr-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
-  .hdr-pills{display:flex;gap:6px;flex-shrink:0;margin-left:8px}
-  .hdr-pill{background:rgba(255,255,255,.18);border-radius:8px;padding:7px 12px;text-align:center;min-width:56px}
-  .hdr-pill-val{font-size:17px;font-weight:500;color:#fff;line-height:1}
-  .hdr-pill-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.55);margin-top:2px;font-family:var(--mono)}
-  .yr-btns{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
-  .yr-btn{font-size:12px;padding:5px 14px;border-radius:99px;border:1.5px solid rgba(255,255,255,.35);background:transparent;color:rgba(255,255,255,.65);cursor:pointer;font-family:'DM Sans',sans-serif}
-  .yr-btn.active{background:#fff;color:var(--blue);border-color:#fff;font-weight:500}
-  .hdr.y2025 .yr-btn.active{color:#d97706}
+  .hdr{border-radius:12px;padding:22px 20px;margin-bottom:14px;background:var(--navy);box-shadow:var(--shadow)}
+  .brand{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:10px;font-weight:500}
+  .hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .hdr-name{font-size:22px;font-weight:600;color:#fff;line-height:1.25;letter-spacing:-.02em}
+  .hdr-sub{font-size:13px;color:rgba(255,255,255,.62);margin-top:4px}
+  .hdr-pills{display:flex;gap:8px;flex-shrink:0}
+  .hdr-pill{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 14px;text-align:center;min-width:72px}
+  .hdr-pill-val{font-size:18px;font-weight:600;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+  .hdr-pill-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.5);margin-top:4px;font-weight:500}
+  .yr-btns{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap}
+  .yr-btn{font-size:13px;padding:6px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:transparent;color:rgba(255,255,255,.7);cursor:pointer;font-family:var(--font)}
+  .yr-btn.active{background:#fff;color:var(--navy);border-color:#fff;font-weight:600}
 
   /* ── Controls ── */
-  .controls{display:flex;gap:8px;margin-bottom:10px}
-  .search-input{flex:1;padding:10px 14px;border-radius:10px;border:0.5px solid var(--border);font-size:14px;background:var(--card);color:var(--text);font-family:'DM Sans',sans-serif;outline:none}
-  .search-input:focus{border-color:var(--blue)}
+  .controls{display:flex;gap:8px;margin-bottom:12px}
+  .search-input{flex:1;padding:11px 14px;border-radius:10px;border:1px solid var(--border);font-size:14px;background:var(--card);color:var(--text);font-family:var(--font);outline:none;box-shadow:var(--shadow)}
+  .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(30,58,95,.12)}
+  .search-input::placeholder{color:#94a3b8}
 
   /* ── Section label ── */
-  .sec-lbl{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-family:var(--mono)}
+  .sec-lbl{font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin-bottom:10px}
 
   /* ── Dealer card ── */
-  .dealer-list{display:flex;flex-direction:column;gap:8px}
-  .dealer-card{background:var(--card);border:0.5px solid var(--border);border-radius:13px;overflow:hidden}
-  .card-hdr{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;min-height:48px}
-  .dealer-name{font-size:14px;font-weight:500;color:var(--text)}
-  .dealer-meta{font-size:11px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
-  .funded-pill{font-size:11px;font-weight:500;color:var(--green);background:var(--green-lt);padding:4px 10px;border-radius:99px;white-space:nowrap;flex-shrink:0}
-  .chevron{font-size:11px;color:var(--muted);transition:transform .2s;margin-left:6px;flex-shrink:0}
+  .dealer-list{display:flex;flex-direction:column;gap:10px}
+  .dealer-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .card-hdr{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;min-height:56px;transition:background .15s}
+  .card-hdr:hover{background:#f8fafc}
+  .dealer-name{font-size:15px;font-weight:600;color:var(--text);letter-spacing:-.01em}
+  .state-badge{display:inline-flex;align-items:center;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;vertical-align:middle}
+  .dealer-meta{font-size:12px;color:var(--muted);margin-top:3px}
+  .funded-pill{font-size:12px;font-weight:600;color:var(--green);background:var(--green-lt);padding:5px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+  .funded-pill.zero{color:var(--muted);background:#f1f5f9}
+  .chevron{font-size:10px;color:#94a3b8;transition:transform .2s;margin-left:8px;flex-shrink:0}
   .chevron.open{transform:rotate(180deg)}
 
   /* ── Stats grid (YTD) ── */
-  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-top:0.5px solid var(--border)}
-  .sg{background:var(--card);padding:9px 4px;text-align:center}
-  .sg-val{font-size:13px;font-weight:500;color:var(--text)}
-  .sg-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border)}
+  .sg{background:var(--card);padding:12px 6px;text-align:center;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .sg:nth-child(3n){border-right:none}
+  .sg:nth-last-child(-n+3){border-bottom:none}
+  .sg-val{font-size:15px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+  .sg-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;font-weight:500}
   .sg.g .sg-val{color:var(--green)}
-  .sg.b .sg-val{color:var(--blue)}
+  .sg.b .sg-val{color:var(--accent)}
   .sg.r .sg-val{color:var(--red)}
   .sg.a .sg-val{color:var(--amber)}
 
   /* ── Current month box ── */
-  .cur-wrap{margin:8px 10px 10px;border:0.5px solid #bfdbfe;border-radius:9px;overflow:hidden}
-  .cur-hdr{background:var(--blue-lt);padding:8px 12px;display:flex;align-items:center;justify-content:space-between}
-  .cur-hdr-lbl{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);font-family:var(--mono)}
-  .live-dot{display:inline-block;width:6px;height:6px;background:#22c55e;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .cur-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border)}
-  .cg{background:var(--card);padding:9px 4px;text-align:center}
-  .cg-val{font-size:15px;font-weight:500;color:var(--text)}
-  .cg-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .cur-wrap{margin:8px 10px 10px;border:1px solid #dbe4f0;border-radius:10px;overflow:hidden}
+  .cur-hdr{background:#f8fafc;padding:9px 12px;display:flex;align-items:center;justify-content:space-between}
+  .cur-hdr-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+  .live-dot{display:inline-block;width:6px;height:6px;background:#22c55e;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .cur-grid{display:grid;grid-template-columns:repeat(3,1fr)}
+  .cg{background:var(--card);padding:11px 6px;text-align:center;border-top:1px solid var(--border);border-right:1px solid var(--border)}
+  .cg:nth-child(3n){border-right:none}
+  .cg-val{font-size:16px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+  .cg-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;font-weight:500}
   .cg.g .cg-val{color:var(--green)}
-  .cg.b .cg-val{color:var(--blue)}
+  .cg.b .cg-val{color:var(--accent)}
   .cg.r .cg-val{color:var(--red)}
   .cg.a .cg-val{color:var(--amber)}
 
   /* ── Monthly breakdown ── */
-  .monthly-wrap{display:none;border-top:0.5px solid var(--border)}
+  .monthly-wrap{display:none;border-top:1px solid var(--border)}
   .monthly-wrap.open{display:block}
-  .monthly-inner{background:var(--bg);padding:10px 12px 12px}
-  .monthly-title{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px;font-family:var(--mono)}
+  .monthly-inner{background:#f8fafc;padding:14px 14px 16px}
+  .monthly-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
   .tbl-outer{position:relative}
-  .tbl-scroll{overflow-x:scroll;border-radius:8px;border:0.5px solid var(--border);-webkit-overflow-scrolling:touch}
-  .scroll-hint{font-size:10px;color:var(--muted);text-align:center;padding:6px 0 2px;font-family:var(--mono);letter-spacing:.04em;opacity:.7}
-  .tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:440px}
-  .tbl thead tr{background:var(--bg)}
-  .tbl th{padding:8px 8px;text-align:right;font-size:8px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:var(--mono);white-space:nowrap;border-bottom:0.5px solid var(--border)}
-  .tbl th:first-child{text-align:left;padding-left:10px}
-  .tbl td{padding:8px;text-align:right;color:var(--muted);border-bottom:0.5px solid var(--border)}
-  .tbl td:first-child{text-align:left;color:var(--text);font-weight:500;white-space:nowrap;padding-left:10px}
+  .tbl-scroll{overflow-x:auto;border-radius:10px;border:1px solid var(--border);background:#fff;-webkit-overflow-scrolling:touch}
+  .scroll-hint{font-size:11px;color:var(--muted);text-align:center;padding:8px 0 0}
+  .tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:480px}
+  .tbl thead tr{background:#f8fafc}
+  .tbl th{padding:9px 10px;text-align:right;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);white-space:nowrap;border-bottom:1px solid var(--border)}
+  .tbl th:first-child{text-align:left;padding-left:12px}
+  .tbl td{padding:9px 10px;text-align:right;color:#475569;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+  .tbl td:first-child{text-align:left;color:var(--text);font-weight:600;white-space:nowrap;padding-left:12px}
   .tbl tr:last-child td{border-bottom:none}
-  .tbl .gv{color:var(--green);font-weight:500}
-  .tbl .rv{color:var(--red);font-weight:500}
-  .tbl .bv{color:var(--blue)}
-  .tbl tfoot td{background:var(--bg);font-weight:500;color:var(--text);border-top:0.5px solid var(--border);border-bottom:none}
+  .tbl tbody tr:hover td{background:#f8fafc}
+  .tbl .gv{color:var(--green);font-weight:600}
+  .tbl .rv{color:var(--red);font-weight:600}
+  .tbl .bv{color:var(--accent)}
+  .tbl tfoot td{background:#f8fafc;font-weight:600;color:var(--text);border-top:1px solid var(--border);border-bottom:none}
   .tbl tfoot td.gv{color:var(--green)}
   .tbl tfoot td.rv{color:var(--red)}
-  .tbl tfoot td.bv{color:var(--blue)}
+  .tbl tfoot td.bv{color:var(--accent)}
 
   /* ── Pagination ── */
-  .pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
-  .pg-btn{font-size:13px;padding:6px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:'DM Sans',sans-serif;min-height:36px}
+  .pagination{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:18px;flex-wrap:wrap}
+  .pg-btn{font-size:13px;padding:7px 13px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:var(--font);min-height:36px;box-shadow:var(--shadow)}
+  .pg-btn:hover:not(:disabled):not(.active){background:#f8fafc}
   .pg-btn:disabled{opacity:.4;cursor:not-allowed}
-  .pg-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .pg-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 
   /* ── Loading ── */
-  .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+  .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
   @keyframes spin{to{transform:rotate(360deg)}}
   .loading-wrap{text-align:center;padding:48px 0;color:var(--muted);font-size:13px}
 
-  @media(max-width:380px){
-    .hdr-name{font-size:16px}
-    .hdr-pill-val{font-size:15px}
-    .stats-grid{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:640px){
+    .page{padding:12px 12px 48px}
+    .hdr{padding:18px 16px}
+    .hdr-name{font-size:18px}
+    .hdr-pills{width:100%}
+    .hdr-pill{flex:1}
+    .stats-grid{grid-template-columns:repeat(3,1fr)}
   }
 </style>
 </head>
@@ -127,12 +140,13 @@
         <div class="hdr-name" id="hdrName">YTD Dealer Performance</div>
         <div class="hdr-sub" id="hdrSub">Loading…</div>
       </div>
+      <div class="hdr-pills" id="hdrPills"></div>
     </div>
     <div class="yr-btns" id="yrBtns"></div>
   </div>
 
   <div class="controls">
-    <input class="search-input" type="text" placeholder="Search dealers…" id="searchInput" oninput="onSearch()"/>
+    <input class="search-input" type="text" placeholder="Search dealer, state, or CIF…" id="searchInput" oninput="onSearch()"/>
   </div>
 
   <div class="sec-lbl" id="secLbl">Loading dealers…</div>
@@ -188,7 +202,7 @@ function buildYearBtns(){
 async function loadYear(y) {
   curYear=y; curPage=1; searchQ=document.getElementById('searchInput').value.toLowerCase();
   const hdr=document.getElementById('mainHeader');
-  hdr.className='hdr '+(y===2025?'y2025':'');
+  hdr.className='hdr';
   document.querySelectorAll('.yr-btn').forEach(b=>{
     b.className='yr-btn'+(parseInt(b.textContent)===y?' active':'');
   });
@@ -312,7 +326,7 @@ async function loadYear(y) {
       bdFunded: bd?.funded||0,
       bdMonthLabel,
       ltb: d.apps?(d.funded/d.apps*100).toFixed(1):'0.0',
-      lta: d.apps?(d.approved/d.apps*100).toFixed(1):'0.0'
+      lta: d.apps?((d.approved+d.counter)/d.apps*100).toFixed(1):'0.0'
     };
   }).sort((a,b)=>a.name.localeCompare(b.name));
 
@@ -320,6 +334,13 @@ async function loadYear(y) {
   const totFunded = allDealers.reduce((s,d)=>s+d.funded,0);
   const totApps   = allDealers.reduce((s,d)=>s+d.apps,0);
   document.getElementById('hdrSub').textContent    = y+' · '+allDealers.length+' dealers';
+  const pills = document.getElementById('hdrPills');
+  if (pills) {
+    pills.innerHTML =
+      '<div class="hdr-pill"><div class="hdr-pill-val">'+fmt(allDealers.length)+'</div><div class="hdr-pill-lbl">Dealers</div></div>'+
+      '<div class="hdr-pill"><div class="hdr-pill-val">'+fmt(totApps)+'</div><div class="hdr-pill-lbl">Apps YTD</div></div>'+
+      '<div class="hdr-pill"><div class="hdr-pill-val">'+fmt(totFunded)+'</div><div class="hdr-pill-lbl">Funded YTD</div></div>';
+  }
 
   applyFilter();
 }
@@ -348,7 +369,11 @@ function onSearch(){
 }
 
 function applyFilter(){
-  filtered=searchQ?allDealers.filter(d=>d.name.toLowerCase().includes(searchQ)):[...allDealers];
+  filtered=searchQ?allDealers.filter(d=>
+    d.name.toLowerCase().includes(searchQ) ||
+    String(d.state||'').toLowerCase().includes(searchQ) ||
+    String(d.cif||'').toLowerCase().includes(searchQ)
+  ):[...allDealers];
   renderPage();
 }
 
@@ -372,6 +397,7 @@ function renderPage(){
         <div class="sg r"><div class="sg-val">${fmt(d.denial)}</div><div class="sg-lbl">Denial</div></div>
         <div class="sg g"><div class="sg-val">${fmt(d.funded)}</div><div class="sg-lbl">Funded</div></div>
         <div class="sg r"><div class="sg-val">${d.returnsYtd||'—'}</div><div class="sg-lbl">Returns YTD</div></div>
+        <div class="sg b"><div class="sg-val">${d.lta}%</div><div class="sg-lbl">LTA</div></div>
         <div class="sg b"><div class="sg-val">${d.ltb}%</div><div class="sg-lbl">LTB</div></div>
       </div>`;
 
@@ -441,11 +467,11 @@ function renderPage(){
       <div class="dealer-card">
         <div class="card-hdr" onclick="toggleCard(this)">
           <div style="flex:1;min-width:0">
-            <div class="dealer-name">${d.name}</div>
-            <div class="dealer-meta">${d.state}${d.cif?' · '+d.cif:''}</div>
+            <div class="dealer-name">${d.name}${d.state ? ' <span class="state-badge">'+d.state+'</span>' : ''}</div>
+            <div class="dealer-meta">${d.cif?'CIF '+d.cif:''}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <span class="funded-pill">${fmt(d.funded)} funded</span>
+            <span class="${d.funded ? 'funded-pill' : 'funded-pill zero'}">${fmt(d.funded)} funded</span>
             <span class="chevron">▼</span>
           </div>
         </div>
