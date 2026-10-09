@@ -1079,6 +1079,10 @@ table tbody tr:hover { background: #f8fafc; }
     <label class="text-xs text-gray-500">LTV (optional)</label>
     <select id="fMapLtv" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
   </div>
+  <div>
+    <label class="text-xs text-gray-500">Account Number (optional)</label>
+    <select id="fMapAccount" class="w-full border rounded-lg px-2 py-1 text-sm"></select>
+  </div>
 </div>
 <div id="fundedMapTip" class="mt-2 text-xs text-gray-600"></div>
 <!-- Merge Review Modal -->
@@ -1289,6 +1293,7 @@ table tbody tr:hover { background: #f8fafc; }
                 <label class="text-xs text-slate-500">Metric</label>
                 <select id="spMetric" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200">                
                     <option value="funded">Funded (count)</option>
+                    <option value="dealers">Dealers with apps</option>
                     <option value="amount">Funded amount</option>
                     <option value="ltb">LTB %</option>
                   </select>
@@ -1374,28 +1379,31 @@ table tbody tr:hover { background: #f8fafc; }
           Export Dealers (CSV)
         </button>        
                 </div>
-              </div>              
-              <div class="overflow-x-auto scroll-shadow-x rounded-xl border border-slate-200">
-                <table class="min-w-full text-sm">
+              </div>
+              <div id="yrDealerCount" class="text-sm font-medium text-slate-700 mb-2"></div>
+              <div class="rounded-xl border border-slate-200">
+                <table class="w-full text-xs leading-snug">
                 <thead class="bg-slate-50" id="yrDealerHead">
                     <tr>
-                      <th class="px-3 py-2 sortable"                      data-key="dealer">Dealer <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 sortable"                      data-key="state">State <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 sortable"                      data-key="fi">Franchise/Independent <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="total">Total Apps <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="approved">Approved <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="counter">Counter <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="pending">Pending <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="denial">Denial <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 text-right sortable"           data-key="funded">Funded <span class="dir inline-block w-3 text-gray-400"></span>
-                     <th class="px-3 py-2 text-right sortable"           data-key="fundedAmt">Funded $ <span class="dir inline-block w-3 text-gray-400"></span>
-                      <th class="px-3 py-2 sortable" data-key="lta">
+                      <th class="px-2 py-2 sortable"                      data-key="dealer">Dealer <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 sortable"                      data-key="state">State <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 sortable"                      data-key="fi">FI <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="total">Apps <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="approved">Approved <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="counter">Counter <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="pending">Pending <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="denial">Denial <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="funded">Funded <span class="dir inline-block w-3 text-gray-400"></span>
+                     <th class="px-1 py-2 text-right sortable"           data-key="fundedAmt">Funded $ <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="avgFee">Fee % <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-right sortable"           data-key="avgFeeDol">Fee $ <span class="dir inline-block w-3 text-gray-400"></span>
+                      <th class="px-1 py-2 text-center sortable" data-key="lta">
                         <div class="flex items-center justify-center gap-1">
                           <span>LTA</span>
                           <span class="dir inline-block w-3 text-gray-400"></span>
                         </div>
                       </th>
-                      <th class="px-3 py-2 sortable" data-key="ltb">
+                      <th class="px-1 py-2 text-center sortable" data-key="ltb">
                         <div class="flex items-center justify-center gap-1">
                           <span>LTB</span>
                           <span class="dir inline-block w-3 text-gray-400"></span>
@@ -1940,29 +1948,63 @@ table tbody tr:hover { background: #f8fafc; }
 
     <div id="fundedDealsModal" class="fixed inset-0 z-[110] hidden">
       <div class="absolute inset-0 bg-black/40" id="fundedDealsBackdrop"></div>
-      <div class="absolute inset-x-0 top-12 mx-auto w-[min(960px,94%)] rounded-2xl border bg-white shadow-2xl">
+      <div class="absolute inset-x-0 top-12 mx-auto w-[min(1100px,96%)] rounded-2xl border bg-white shadow-2xl">
         <div class="flex items-center justify-between gap-3 border-b px-4 py-3">
           <div>
             <h3 id="fundedDealsTitle" class="font-semibold text-slate-900">Funded deals</h3>
             <p id="fundedDealsSub" class="text-xs text-slate-500 mt-0.5"></p>
           </div>
-          <button type="button" id="fundedDealsClose" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Close</button>
+          <div class="flex items-center gap-2">
+            <button type="button" id="fundedDealsExport" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Export</button>
+            <button type="button" id="fundedDealsClose" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Close</button>
+          </div>
         </div>
         <div class="max-h-[65vh] overflow-auto p-4">
           <table class="min-w-full text-sm">
-            <thead class="bg-gray-50 text-left sticky top-0">
-              <tr>
-                <th class="px-3 py-2">Dealer</th>
-                <th class="px-3 py-2">State</th>
-                <th class="px-3 py-2">FI</th>
-                <th class="px-3 py-2 text-right">Loan Amount</th>
-                <th class="px-3 py-2 text-right">APR</th>
-                <th class="px-3 py-2 text-right">Lender Fee</th>
-                <th class="px-3 py-2 text-right">LTV</th>
-              </tr>
-            </thead>
+            <thead id="fundedDealsHead" class="bg-gray-50 text-left sticky top-0"></thead>
             <tbody id="fundedDealsBody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="analyticsModal" class="fixed inset-0 z-[120] hidden">
+      <div class="absolute inset-0 bg-black/40" id="analyticsBackdrop"></div>
+      <div class="absolute inset-x-0 top-4 mx-auto w-[min(1480px,98vw)] max-h-[94vh] overflow-hidden rounded-2xl border bg-slate-50 shadow-2xl flex flex-col">
+        <div class="flex items-start justify-between gap-3 border-b bg-white px-4 py-3">
+          <div>
+            <h3 id="analyticsTitle" class="font-semibold text-slate-900">Analytics</h3>
+            <p id="analyticsSub" class="text-xs text-slate-500 mt-0.5"></p>
+            <div id="analyticsPeriod" class="hidden mt-2 inline-flex rounded-lg border overflow-hidden"></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="analyticsCopy" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Copy link</button>
+            <button type="button" id="analyticsExport" class="rounded-lg border px-3 py-1.5 text-sm bg-white">Export</button>
+            <button type="button" id="analyticsClose" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">Close</button>
+          </div>
+        </div>
+        <div class="overflow-auto p-4">
+          <div id="analyticsKpis" class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-2 mb-4"></div>
+          <div id="analyticsChartWrap" class="bg-white rounded-xl border p-3 mb-4 hidden">
+            <div id="analyticsChartToggles" class="flex flex-wrap gap-px rounded-lg border overflow-hidden mb-3"></div>
+            <canvas id="analyticsChart" height="70"></canvas>
+          </div>
+          <div id="analyticsTableWrap" class="bg-white rounded-xl border">
+            <table class="w-full text-[11px]">
+              <thead id="analyticsHead" class="bg-slate-50 text-left sticky top-0"></thead>
+              <tbody id="analyticsBody"></tbody>
+            </table>
+          </div>
+          <div id="analyticsDealsWrap" class="bg-white rounded-xl border mt-4 hidden">
+            <div class="flex items-center justify-between gap-3 border-b px-3 py-2">
+              <h4 id="analyticsDealsTitle" class="text-sm font-semibold text-slate-900">Funded deals</h4>
+              <button type="button" id="analyticsDealsExport" class="rounded-lg border px-3 py-1 text-xs bg-white">Export deals</button>
+            </div>
+            <table class="w-full text-[11px]">
+              <thead id="analyticsDealsHead" class="bg-slate-50 text-left"></thead>
+              <tbody id="analyticsDealsBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

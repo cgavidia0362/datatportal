@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>State performance</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;color:#111827}
+  .page{max-width:1040px;margin:0 auto;padding:20px 16px 48px}
+  .hdr{background:#0f172a;color:#fff;border-radius:12px;padding:22px 20px;margin-bottom:14px}
+  .brand{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:8px}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.02em}
+  .sub{color:rgba(255,255,255,.7);font-size:13px;margin-top:4px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+  .kpi,.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 1px 2px rgba(17,24,39,.05)}
+  .kpi{padding:12px}
+  .kpi b{display:block;font-size:18px;margin-top:2px}
+  .muted-val{font-weight:500;font-size:13px;color:#6b7280}
+  .lbl{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#6b7280}
+  .card{padding:14px;margin-bottom:12px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+  .toggles{display:inline-flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+  .toggles button{border:0;background:#fff;padding:7px 12px;font:inherit;cursor:pointer}
+  .toggles button.on{background:#0f172a;color:#fff}
+  button.ghost{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;background:#f8fafc}
+  .muted{color:#6b7280;padding:28px 0;text-align:center}
+  @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)} .toggles{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hdr">
+    <div class="brand">Buying Analysis Portal · State performance</div>
+    <h1 id="title">State</h1>
+    <div class="sub" id="sub">Loading…</div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="card">
+    <div class="row">
+      <div class="toggles" id="toggles"></div>
+      <button class="ghost" id="exportBtn" type="button">Export</button>
+    </div>
+    <canvas id="chart" height="90"></canvas>
+  </div>
+  <div class="card" style="padding:0;overflow:auto">
+    <table>
+      <thead><tr>
+        <th>Month</th><th>Dealers</th><th>Dealers Funded</th><th>Apps</th><th>Approved</th><th>Counter</th><th>Pending</th><th>Denial</th>
+        <th>Funded</th><th>Funded $</th><th>Avg Fee %</th><th>Avg Fee $</th><th>LTB</th><th>Returns</th>
+      </tr></thead>
+      <tbody id="body"><tr><td class="muted" colspan="14">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<script>
+const SB_URL = 'https://zhquyedaxszsnswaimza.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpocXV5ZWRheHN6c25zd2FpbXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTYxNDcsImV4cCI6MjA3NjQ3MjE0N30.-XcpPuh_dexFjI1zSVLQfkDgvCEM6qlDN3ARTJBK3_4';
+const sb = supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: false } });
+const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const q = new URLSearchParams(location.search);
+const year = Number(q.get('year')) || new Date().getFullYear();
+const state = (q.get('state') || '').toUpperCase();
+let chart, rows = [];
+function money(n){ return (Number(n)||0).toLocaleString('en-US',{style:'currency',currency:'USD'}); }
+function pct(x){ return (Number(x)||0).toFixed(2) + '%'; }
+function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
+function feePct(v){ const n = Number(String(v??'').replace(/[^\d.-]/g,'')); if(!Number.isFinite(n)||n<=0) return null; return n<=1?n*100:n; }
+async function allRows(table, select){
+  let out=[], from=0;
+  while(from<80000){
+    const {data,error}=await sb.from(table).select(select).eq('year',year).range(from,from+999);
+    if(error||!data||!data.length) break;
+    out=out.concat(data);
+    if(data.length<1000) break;
+    from+=1000;
+  }
+  return out;
+}
+function draw(metric){
+  const canvas=document.getElementById('chart');
+  if(chart) chart.destroy();
+  chart=new Chart(canvas,{type:'line',data:{labels:rows.map(r=>r.m),datasets:[{data:rows.map(r=>r[metric]),borderColor:'#0f172a',backgroundColor:'rgba(15,23,42,.08)',fill:true,tension:.25,pointRadius:3}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+}
+document.getElementById('toggles').innerHTML=[['funded','Funded'],['apps','Total apps'],['amt','Funded $'],['returns','Returns'],['dealers','Dealers'],['dealersFunded','Dealers funded']].map((m,i)=>`<button type="button" class="${i?'':'on'}" data-k="${m[0]}">${m[1]}</button>`).join('');
+document.getElementById('toggles').onclick=(e)=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#toggles button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw(b.dataset.k);
+};
+document.getElementById('exportBtn').onclick=()=>{
+  const head=['Month','Dealers','Dealers Funded','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Avg Fee %','Avg Fee $','LTB','Returns'];
+  const lines=[head.join(',')].concat(rows.map(r=>[r.label,r.dealers,r.dealersFunded,r.apps,r.approved,r.counter,r.pending,r.denial,r.funded,r.amt,r.feePct,r.feeDol,r.ltbText,r.returns].join(',')));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+  a.download=(state||'state')+'-'+year+'.csv';
+  a.click();
+};
+(async function(){
+  document.getElementById('title').textContent=(state||'State')+' performance';
+  document.getElementById('sub').textContent=String(year);
+  if(!state){ document.getElementById('body').innerHTML='<tr><td class="muted" colspan="14">Missing state.</td></tr>'; return; }
+  const [snaps, returns, funded]=await Promise.all([
+    allRows('monthly_snapshots','month,dealer,state,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount'),
+    allRows('funding_returns','dealer,dealer_id,month'),
+    allRows('funded_deals','state,loan_amount,lender_fee_pct,month')
+  ]);
+  const matched=snaps.filter(r=>String(r.state||'').toUpperCase()===state);
+  const ids=new Set(matched.map(r=>r.dealer_id).filter(Boolean));
+  const names=new Set(matched.map(r=>norm(r.dealer)));
+  const ret={};
+  returns.forEach(r=>{ if((r.dealer_id&&ids.has(r.dealer_id))||names.has(norm(r.dealer))) ret[r.month]=(ret[r.month]||0)+1; });
+  const by=new Map();
+  const dealerSets=new Map();
+  const fundedSets=new Map();
+  matched.forEach(r=>{
+    const m=Number(r.month);
+    const c=by.get(m)||{apps:0,approved:0,counter:0,pending:0,denial:0,funded:0,amt:0};
+    c.apps+=Number(r.total_apps)||0; c.approved+=Number(r.approved)||0; c.counter+=Number(r.counter)||0;
+    c.pending+=Number(r.pending)||0; c.denial+=Number(r.denial)||0; c.funded+=Number(r.funded)||0; c.amt+=Number(r.funded_amount)||0;
+    by.set(m,c);
+    if((Number(r.total_apps)||0)>0){
+      if(!dealerSets.has(m)) dealerSets.set(m, new Set());
+      dealerSets.get(m).add(norm(r.dealer));
+    }
+    if((Number(r.funded)||0)>0){
+      if(!fundedSets.has(m)) fundedSets.set(m, new Set());
+      fundedSets.get(m).add(norm(r.dealer));
+    }
+  });
+  const deals=funded.filter(r=>String(r.state||'').toUpperCase()===state);
+  rows=[];
+  for(let m=1;m<=12;m++){
+    if(!by.get(m)&&!ret[m]) continue;
+    const b=by.get(m)||{apps:0,approved:0,counter:0,pending:0,denial:0,funded:0,amt:0};
+    const monthDeals=deals.filter(d=>Number(d.month)===m);
+    const pcts=monthDeals.map(d=>feePct(d.lender_fee_pct)).filter(n=>n!=null);
+    const dols=monthDeals.map(d=>{ const p=feePct(d.lender_fee_pct); const loan=Number(d.loan_amount)||0; return p&&loan?loan*(p/100):null; }).filter(n=>n!=null);
+    const avgP=pcts.length?pcts.reduce((a,b)=>a+b,0)/pcts.length:null;
+    const avgD=dols.length?dols.reduce((a,b)=>a+b,0)/dols.length:null;
+    const dset=dealerSets.get(m);
+    const fset=fundedSets.get(m);
+    rows.push({...b,dealers:dset?dset.size:0,dealersFunded:fset?fset.size:0,m:MN[m-1],label:MN[m-1]+' '+year,returns:ret[m]||0,ltbText:b.apps?pct(b.funded/b.apps*100):'0.00%',feePct:avgP==null?'':avgP.toFixed(2),feeDol:avgD==null?'':avgD.toFixed(2),feePctText:avgP==null?'–':pct(avgP),feeDolText:avgD==null?'–':money(avgD)});
+  }
+  const apps=rows.reduce((a,r)=>a+r.apps,0), fundedN=rows.reduce((a,r)=>a+r.funded,0);
+  const apc=rows.reduce((a,r)=>a+r.approved+r.counter,0), amt=rows.reduce((a,r)=>a+r.amt,0);
+  const dealers=new Set();
+  const fundedDealers=new Set();
+  dealerSets.forEach(set=>set.forEach(n=>dealers.add(n)));
+  fundedSets.forEach(set=>set.forEach(n=>fundedDealers.add(n)));
+  const dealerN=dealers.size;
+  const fundedNDealers=fundedDealers.size;
+  const allPcts=deals.map(d=>feePct(d.lender_fee_pct)).filter(n=>n!=null);
+  const allDols=deals.map(d=>{ const p=feePct(d.lender_fee_pct); const loan=Number(d.loan_amount)||0; return p&&loan?loan*(p/100):null; }).filter(n=>n!=null);
+  const ytdP=allPcts.length?allPcts.reduce((a,b)=>a+b,0)/allPcts.length:null;
+  const ytdD=allDols.length?allDols.reduce((a,b)=>a+b,0)/allDols.length:null;
+  const feeHtml=ytdP==null?'–':pct(ytdP)+(ytdD!=null?' <span class="muted-val">('+money(ytdD)+')</span>':'');
+  document.getElementById('sub').textContent=year+' · '+dealerN+' dealers with apps';
+  const tiles=[
+    ['Dealers',dealerN.toLocaleString()],
+    ['Dealers Funded',fundedNDealers.toLocaleString()],
+    ['Apps',apps.toLocaleString()],
+    ['Approved + Counter',apps?apc.toLocaleString()+' <span class="muted-val">('+pct(apc/apps*100)+')</span>':apc.toLocaleString()],
+    ['Funded',apps?fundedN.toLocaleString()+' <span class="muted-val">('+pct(fundedN/apps*100)+')</span>':fundedN.toLocaleString()],
+    ['Funded $',money(amt)],
+    ['Avg lender fee',feeHtml],
+    ['LTA',apps?pct(apc/apps*100):'–'],
+    ['LTB',apps?pct(fundedN/apps*100):'–'],
+    ['Returns',String(rows.reduce((a,r)=>a+r.returns,0))]
+  ];
+  document.getElementById('kpis').innerHTML=tiles.map(t=>`<div class="kpi"><div class="lbl">${t[0]}</div><b>${t[1]}</b></div>`).join('');
+  document.getElementById('body').innerHTML=rows.map(r=>`<tr><td>${r.label}</td><td>${r.dealers}</td><td>${r.dealersFunded}</td><td>${r.apps}</td><td>${r.approved}</td><td>${r.counter}</td><td>${r.pending}</td><td>${r.denial}</td><td>${r.funded}</td><td>${money(r.amt)}</td><td>${r.feePctText}</td><td>${r.feeDolText}</td><td>${r.ltbText}</td><td>${r.returns}</td></tr>`).join('')||'<tr><td class="muted" colspan="14">No months found.</td></tr>';
+  if(rows.length) draw('funded');
+})();
+</script>
+</body>
+</html>
