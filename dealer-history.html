@@ -111,17 +111,38 @@ document.getElementById('exportBtn').onclick=()=>{
   document.getElementById('title').textContent=dealer||'Dealer history';
   document.getElementById('sub').textContent=[state,fi,year].filter(Boolean).join(' · ');
   if(!dealer){ document.getElementById('body').innerHTML='<tr><td class="muted" colspan="11">Missing dealer.</td></tr>'; return; }
-  const [snaps, returns, funded]=await Promise.all([
+  const [snaps, returns, funded, masters]=await Promise.all([
     allRows('monthly_snapshots','month,dealer,state,fi,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount'),
     allRows('funding_returns','dealer,dealer_id,month'),
-    allRows('funded_deals','dealer,state,fi,loan_amount,lender_fee_pct,month')
+    allRows('funded_deals','dealer,state,fi,loan_amount,lender_fee_pct,month'),
+    (async()=>{ let out=[],from=0; while(from<20000){ const {data,error}=await sb.from('master_dealers').select('dealer_id,cifnumber').range(from,from+999); if(error||!data||!data.length) break; out=out.concat(data); if(data.length<1000) break; from+=1000; } return out; })()
   ]);
+  const idToCif=new Map(), cifToIds=new Map();
+  masters.forEach(m=>{
+    const cif=String(m.cifnumber||'').trim().toUpperCase();
+    if(!m.dealer_id||!cif) return;
+    idToCif.set(m.dealer_id,cif);
+    if(!cifToIds.has(cif)) cifToIds.set(cif,[]);
+    cifToIds.get(cif).push(m.dealer_id);
+  });
   const want=key(dealer,state,fi), wantLoose=key(dealer,state);
-  const matched=snaps.filter(r=>key(r.dealer,r.state,r.fi)===want || key(r.dealer,r.state)===wantLoose);
-  const ids=new Set(matched.map(r=>r.dealer_id).filter(Boolean));
-  const name=norm(dealer);
+  const nameHit=r=>key(r.dealer,r.state,r.fi)===want || key(r.dealer,r.state)===wantLoose;
+  const seed=snaps.filter(nameHit);
+  const ids=new Set(seed.map(r=>r.dealer_id).filter(Boolean));
+  const extra=[];
+  ids.forEach(id=>{ const cif=idToCif.get(id); (cifToIds.get(cif)||[]).forEach(other=>extra.push(other)); });
+  extra.forEach(id=>ids.add(id));
+  const matched=snaps.filter(r=>((r.dealer_id&&ids.has(r.dealer_id))||nameHit(r)) && (!state || String(r.state||'').toUpperCase()===String(state).toUpperCase()));
+  const names=new Set(matched.map(r=>norm(r.dealer)));
+  names.add(norm(dealer));
+  let latest={m:-1,apps:-1,name:dealer};
+  matched.forEach(r=>{
+    const m=Number(r.month)||0, apps=Number(r.total_apps)||0;
+    if(m>latest.m||(m===latest.m&&apps>latest.apps)) latest={m,apps,name:r.dealer||dealer};
+  });
+  if(latest.name) document.getElementById('title').textContent=latest.name;
   const ret={};
-  returns.forEach(r=>{ if((r.dealer_id&&ids.has(r.dealer_id))||norm(r.dealer)===name) ret[r.month]=(ret[r.month]||0)+1; });
+  returns.forEach(r=>{ if((r.dealer_id&&ids.has(r.dealer_id))||names.has(norm(r.dealer))) ret[r.month]=(ret[r.month]||0)+1; });
   const by=new Map();
   matched.forEach(r=>{
     const m=Number(r.month);
@@ -130,7 +151,7 @@ document.getElementById('exportBtn').onclick=()=>{
     c.denial+=Number(r.denial)||0; c.funded+=Number(r.funded)||0; c.amt+=Number(r.funded_amount)||0;
     by.set(m,c);
   });
-  const deals=funded.filter(r=>key(r.dealer,r.state,r.fi)===want || key(r.dealer,r.state)===wantLoose);
+  const deals=funded.filter(r=>names.has(norm(r.dealer))&&String(r.state||'').toUpperCase()===String(state||'').toUpperCase()&&(!fi||!r.fi||norm(r.fi)===norm(fi)));
   rows=[];
   for(let m=1;m<=12;m++){
     if(!by.get(m)&&!ret[m]) continue;
@@ -153,7 +174,7 @@ document.getElementById('exportBtn').onclick=()=>{
     const fundDays=await allRows('funding_deals','dealer,dealer_id,days_to_fund');
     const vals=[];
     fundDays.forEach(r=>{
-      if((r.dealer_id&&ids.has(r.dealer_id))||norm(r.dealer)===name){
+      if((r.dealer_id&&ids.has(r.dealer_id))||names.has(norm(r.dealer))){
         const n=Number(r.days_to_fund);
         if(Number.isFinite(n)) vals.push(n);
       }

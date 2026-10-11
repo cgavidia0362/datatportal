@@ -128,11 +128,11 @@ document.getElementById('exportBtn').onclick=()=>{
     by.set(m,c);
     if((Number(r.total_apps)||0)>0){
       if(!dealerSets.has(m)) dealerSets.set(m, new Set());
-      dealerSets.get(m).add(norm(r.dealer));
+      dealerSets.get(m).add(r.dealer_id||norm(r.dealer));
     }
     if((Number(r.funded)||0)>0){
       if(!fundedSets.has(m)) fundedSets.set(m, new Set());
-      fundedSets.get(m).add(norm(r.dealer));
+      fundedSets.get(m).add(r.dealer_id||norm(r.dealer));
     }
   });
   const deals=funded.filter(r=>String(r.state||'').toUpperCase()===state);
