@@ -1174,22 +1174,48 @@ function formatPct(x) {
 function fundedRowDealer(r) { return String(r.Dealer ?? r.dealer ?? '').trim(); }
 function fundedRowState(r) { return String(r.State ?? r.state ?? '').trim(); }
 function fundedRowFi(r) { return String(r.FI ?? r.fi ?? '').trim(); }
+function sameDealerIdentity(dealer, state, fi, otherDealer, otherState, otherFi) {
+  if (normDealerName(dealer) !== normDealerName(otherDealer)) return false;
+  if (String(state || '').trim().toUpperCase() !== String(otherState || '').trim().toUpperCase()) return false;
+  const wantFi = normDealerName(fi);
+  const gotFi = normDealerName(otherFi);
+  if (wantFi && gotFi && wantFi !== gotFi) return false;
+  return true;
+}
 function filterFundedRowsForDealer(rows, dealer, state, fi) {
   const list = Array.isArray(rows) ? rows : [];
-  const kFull = dealerKey(dealer, state, fi);
-  const kNoFi = dealerKey(dealer, state);
-  const matched = list.filter((r) => {
-    const rk = dealerKey(fundedRowDealer(r), fundedRowState(r), fundedRowFi(r) || undefined);
-    const rk2 = dealerKey(fundedRowDealer(r), fundedRowState(r));
-    return rk === kFull || rk === kNoFi || rk2 === kNoFi;
+  return list.filter((r) => sameDealerIdentity(dealer, state, fi, fundedRowDealer(r), fundedRowState(r), fundedRowFi(r)));
+}
+function mergeDealerSpellings(rows) {
+  const map = new Map();
+  (rows || []).forEach((r) => {
+    const key = `${normDealerName(r.dealer)}|${String(r.state || '').trim().toUpperCase()}|${normDealerName(r.fi)}`;
+    const cur = map.get(key);
+    if (!cur) {
+      map.set(key, { ...r, _spellApps: Number(r.total) || 0 });
+      return;
+    }
+    ['total', 'approved', 'counter', 'pending', 'denial', 'funded', 'fundedAmt'].forEach((k) => {
+      cur[k] = (Number(cur[k]) || 0) + (Number(r[k]) || 0);
+    });
+    if ((Number(r.total) || 0) > (Number(cur._spellApps) || 0)) {
+      cur.dealer = r.dealer;
+      cur.state = r.state;
+      cur.fi = r.fi;
+      cur._spellApps = Number(r.total) || 0;
+    }
   });
-  if (matched.length) return matched;
-  const d = String(dealer || '').trim().toLowerCase();
-  const s = String(state || '').trim().toUpperCase();
-  return list.filter((r) =>
-    fundedRowDealer(r).toLowerCase() === d &&
-    fundedRowState(r).toUpperCase() === s
-  );
+  return Array.from(map.values()).map((r) => {
+    const total = Number(r.total) || 0;
+    const apc = (Number(r.approved) || 0) + (Number(r.counter) || 0);
+    const rest = { ...r };
+    delete rest._spellApps;
+    return {
+      ...rest,
+      lta: total ? apc / total : 0,
+      ltb: total ? (Number(r.funded) || 0) / total : 0
+    };
+  });
 }
 function formatFundedCell(v, kind) {
   if (v == null || v === '') return '–';
@@ -1700,13 +1726,7 @@ async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) 
   });
   const ctx = await loadYearContext(year);
   const name = normDealerName(dealer);
-  const matched = (ctx.snaps || []).filter((r) => {
-    const full = dealerKey(r.dealer, r.state, r.fi);
-    const want = dealerKey(dealer, state, fi);
-    const loose = dealerKey(r.dealer, r.state);
-    const wantLoose = dealerKey(dealer, state);
-    return full === want || loose === wantLoose;
-  });
+  const matched = (ctx.snaps || []).filter((r) => sameDealerIdentity(dealer, state, fi, r.dealer, r.state, r.fi));
   const ids = new Set(matched.map((r) => r.dealer_id).filter(Boolean));
   const retByMonth = {};
   (ctx.returns || []).forEach((r) => {
@@ -6235,6 +6255,7 @@ if (dBody) {
     });
   }
 
+  rows = mergeDealerSpellings(rows);
   const yrFeeMap = feeIndex(yrFundedRows || []);
   rows = (rows || []).map((r) => {
     const fee = feeFromIndex(yrFeeMap, r.dealer, r.state, r.fi);
