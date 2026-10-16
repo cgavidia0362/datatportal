@@ -184,7 +184,8 @@ th, td {
   gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
 }
 .bd-toggle-group {
-  display: flex; background: #e2e8f0;
+  display: flex; flex-wrap: wrap; max-width: 100%; min-width: 0;
+  background: #e2e8f0;
   border-radius: 10px; padding: 3px; gap: 2px;
 }
 .bd-toggle-group button {
@@ -1587,7 +1588,8 @@ table tbody tr:hover { background: #f8fafc; }
             <!-- Controls Bar -->
             <div class="bd-controls-bar">
               <div class="bd-toggle-group">
-                <button class="active" data-bd-view="daily">Daily</button>
+                <button class="active" data-bd-view="current">Current Month</button>
+                <button data-bd-view="daily">Daily</button>
                 <button data-bd-view="weekly">Weekly</button>
                 <button data-bd-view="monthly">Monthly</button>
                 <button data-bd-view="reps">Reps daily</button>
@@ -1603,8 +1605,8 @@ table tbody tr:hover { background: #f8fafc; }
             </div>
 
 
-            <!-- KPI Tiles -->
-            <div class="bd-kpi-row">
+            <!-- KPI Tiles (hidden on Current Month; that view has its own card) -->
+            <div class="bd-kpi-row" id="bdKpiRow" hidden>
               <div class="bd-kpi-card bd-highlight">
                 <div class="bd-kpi-label">Total Apps</div>
                 <div class="bd-kpi-value" id="bdKpiTotal">–</div>
@@ -1648,7 +1650,7 @@ table tbody tr:hover { background: #f8fafc; }
             </div>
 
             <!-- ── DAILY PANEL ── -->
-            <div class="bd-view-panel active" id="bd-panel-daily">
+            <div class="bd-view-panel" id="bd-panel-daily">
               <div class="bd-section-card">
                 <h3>Daily breakdown <span class="bd-badge" id="bdDailyBadge">–</span></h3>
                 <div class="bd-table-wrap">
@@ -1732,6 +1734,55 @@ table tbody tr:hover { background: #f8fafc; }
                       </tr>
                     </thead>
                     <tbody id="bdMonthlyTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── CURRENT MONTH PANEL ── -->
+            <div class="bd-view-panel active" id="bd-panel-current">
+              <div class="mb-3">
+                <div class="text-sm font-semibold text-gray-800" id="bdCurrentTitle">Current month</div>
+                <div class="text-xs text-gray-500" id="bdCurrentSub">Built from the Buying Daily upload.</div>
+              </div>
+              <div id="bdCurrentKpis" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 mb-4"></div>
+              <div class="bg-white rounded-2xl border p-3 mb-4">
+                <h3 class="font-semibold mb-2 text-sm">States</h3>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50 text-left">
+                      <tr>
+                        <th class="px-3 py-2">State</th>
+                        <th class="px-3 py-2 text-right">Apps</th>
+                        <th class="px-3 py-2 text-right">Approved</th>
+                        <th class="px-3 py-2 text-right">Counter</th>
+                        <th class="px-3 py-2 text-right">Pending</th>
+                        <th class="px-3 py-2 text-right">Denial</th>
+                        <th class="px-3 py-2 text-right">Funded</th>
+                        <th class="px-3 py-2 text-right">LTA</th>
+                        <th class="px-3 py-2 text-right">LTB</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bdCurrentStates"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="bg-white rounded-2xl border p-3">
+                <div class="flex items-center justify-between mb-2 gap-3">
+                  <div class="flex-1 min-w-0">
+                    <input id="bdCurrentSearch" type="search" placeholder="Search dealer…"
+                           class="w-full max-w-sm rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"/>
+                  </div>
+                  <button type="button" id="bdCurrentExport"
+                          class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm shadow-sm shrink-0">
+                    Export CSV
+                  </button>
+                </div>
+                <div id="bdCurrentCount" class="text-sm font-medium text-slate-700 mb-2"></div>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-gray-50 text-left" id="bdCurrentHead"></thead>
+                    <tbody id="bdCurrentDealers"></tbody>
                   </table>
                 </div>
               </div>

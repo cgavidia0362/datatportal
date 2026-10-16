@@ -114,7 +114,7 @@ document.getElementById('exportBtn').onclick=()=>{
   const [snaps, returns, funded, masters]=await Promise.all([
     allRows('monthly_snapshots','month,dealer,state,fi,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount'),
     allRows('funding_returns','dealer,dealer_id,month'),
-    allRows('funded_deals','dealer,state,fi,loan_amount,lender_fee_pct,month'),
+    allRows('funded_deals','dealer,state,fi,loan_amount,apr,lender_fee_pct,month'),
     (async()=>{ let out=[],from=0; while(from<20000){ const {data,error}=await sb.from('master_dealers').select('dealer_id,cifnumber').range(from,from+999); if(error||!data||!data.length) break; out=out.concat(data); if(data.length<1000) break; from+=1000; } return out; })()
   ]);
   const idToCif=new Map(), cifToIds=new Map();
@@ -182,12 +182,18 @@ document.getElementById('exportBtn').onclick=()=>{
     if(vals.length) avgDays=vals.reduce((a,b)=>a+b,0)/vals.length;
   } catch(e) {}
   const feeHtml=ytdP==null?'–':pct(ytdP)+(ytdD!=null?' <span class="muted-val">('+money(ytdD)+')</span>':'');
+  const aprs=deals.map(d=>{ const n=Number(String(d.apr??'').replace(/[^\d.-]/g,'')); if(!Number.isFinite(n)||n<=0) return null; return n<=1?n*100:n; }).filter(n=>n!=null);
+  const loans=deals.map(d=>{ const n=Number(d.loan_amount)||0; return n>0?n:null; }).filter(n=>n!=null);
+  const avgApr=aprs.length?aprs.reduce((a,b)=>a+b,0)/aprs.length:null;
+  const avgLoan=loans.length?loans.reduce((a,b)=>a+b,0)/loans.length:null;
   const tiles=[
     ['Apps',apps.toLocaleString()],
     ['Approved + Counter',apps?apc.toLocaleString()+' <span class="muted-val">('+pct(apc/apps*100)+')</span>':apc.toLocaleString()],
     ['Funded',apps?fundedN.toLocaleString()+' <span class="muted-val">('+pct(fundedN/apps*100)+')</span>':fundedN.toLocaleString()],
     ['Funded $',money(amt)],
     ['Avg lender fee',feeHtml],
+    ['Avg APR',avgApr==null?'–':pct(avgApr)],
+    ['Avg amount to finance',avgLoan==null?'–':money(avgLoan)],
     ['Avg funded days',avgDays==null?'–':avgDays.toFixed(1)],
     ['LTA',apps?pct(apc/apps*100):'–'],
     ['LTB',apps?pct(fundedN/apps*100):'–'],

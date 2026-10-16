@@ -1436,6 +1436,30 @@ function formatFeePct(v) {
 function formatFeeDol(v) {
   return v == null || !Number.isFinite(Number(v)) ? '–' : formatMoney(v);
 }
+function fundedAprPct(r) {
+  const raw = r?.APR ?? r?.apr;
+  if (raw == null || raw === '') return null;
+  const n = Number(String(raw).replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n <= 1 ? n * 100 : n;
+}
+function fundedLoanAmount(r) {
+  const n = Number(String(r?.['Loan Amount'] ?? r?.loan_amount ?? '').replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+function summarizeAprLoan(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const aprs = list.map(fundedAprPct).filter((n) => n != null);
+  const loans = list.map(fundedLoanAmount).filter((n) => n != null);
+  return {
+    avgApr: aprs.length ? aprs.reduce((a, b) => a + b, 0) / aprs.length : null,
+    avgLoan: loans.length ? loans.reduce((a, b) => a + b, 0) / loans.length : null
+  };
+}
+function formatAvgApr(v) {
+  return v == null || !Number.isFinite(Number(v)) ? '–' : Number(v).toFixed(2) + '%';
+}
 function fundedAccount(r) {
   return String(r?.['Account Number'] ?? r?.account_number ?? '').trim();
 }
@@ -1889,13 +1913,17 @@ function rollupHistory(rows) {
   const best = rows.slice().sort((a, b) => (b.funded || 0) - (a.funded || 0))[0];
   return { apps, approved, counter, funded, fundedAmt, returns, best, lta: apps ? (approved + counter) / apps : 0, ltb: apps ? funded / apps : 0 };
 }
-async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) {
+async function openDealerHistory({ dealer, state, fi, year, month, fromMonth, onMonth, overlayMonth }) {
   const shareUrl = dealerHistoryUrl(year, dealer, state, fi);
   const pinnedMonth = Number(fromMonth || month) || 0;
+  const monthView = typeof onMonth === 'function'
+    ? onMonth
+    : () => openDealerHistory({ dealer, state, fi, year, month: pinnedMonth, fromMonth: pinnedMonth });
+  const yearView = () => openDealerHistory({ dealer, state, fi, year, fromMonth: pinnedMonth, onMonth, overlayMonth });
   const periodToggle = pinnedMonth ? {
     active: Number(month) ? 'month' : 'year',
-    onMonth: () => openDealerHistory({ dealer, state, fi, year, month: pinnedMonth, fromMonth: pinnedMonth }),
-    onYear: () => openDealerHistory({ dealer, state, fi, year, fromMonth: pinnedMonth })
+    onMonth: monthView,
+    onYear: yearView
   } : null;
   openAnalyticsModal({
     title: dealer || 'Dealer',
@@ -1944,9 +1972,43 @@ async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) 
   });
   const deals = filterFundedRowsForDealer(ctx.funded || [], canon.dealer, canon.state, canon.fi, canon.names);
   const onlyMonth = Number(month) || 0;
+  if (!onlyMonth && overlayMonth && Array.isArray(overlayMonth.deals)) {
+    const m = Number(overlayMonth.month);
+    const already = deals.some((d) => Number(d.Month || d.month) === m);
+    if (!already) {
+      overlayMonth.deals.forEach((d) => {
+        deals.push({ ...d, Month: m, month: m });
+      });
+    }
+  }
   const rows = [];
+  const overlayM = !onlyMonth && overlayMonth ? Number(overlayMonth.month) : 0;
   for (let m = 1; m <= 12; m++) {
     if (onlyMonth && m !== onlyMonth) continue;
+    if (overlayM === m) {
+      const appsN = Number(overlayMonth.apps) || 0;
+      const fundedN = Number(overlayMonth.funded) || 0;
+      const fundedAmtN = Number(overlayMonth.fundedAmt) || 0;
+      rows.push({
+        _label: monthName(m),
+        label: `${monthName(m)} ${year}`,
+        apps: appsN,
+        approved: Number(overlayMonth.approved) || 0,
+        counter: Number(overlayMonth.counter) || 0,
+        pending: Number(overlayMonth.pending) || 0,
+        denial: Number(overlayMonth.denial) || 0,
+        funded: fundedN,
+        fundedAmt: fundedAmtN,
+        feePct: overlayMonth.feePct,
+        feeDol: overlayMonth.feeDol,
+        ltb: appsN ? fundedN / appsN : 0,
+        returns: retByMonth[m] || 0,
+        chartFunded: fundedN,
+        chartApps: appsN,
+        chartAmt: fundedAmtN
+      });
+      continue;
+    }
     const cur = byMonth.get(m);
     if (!onlyMonth && !cur && !retByMonth[m]) continue;
     const base = cur || { apps: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, fundedAmt: 0 };
@@ -1965,7 +2027,9 @@ async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) 
     });
   }
   const ytd = rollupHistory(rows);
-  const ytdFee = summarizeLenderFee(onlyMonth ? deals.filter((d) => Number(d.Month || d.month) === onlyMonth) : deals);
+  const scopedDeals = onlyMonth ? deals.filter((d) => Number(d.Month || d.month) === onlyMonth) : deals;
+  const ytdFee = summarizeLenderFee(scopedDeals);
+  const aprLoan = summarizeAprLoan(scopedDeals);
   let avgDays = null;
   const fundRows = await fetchYearRows('funding_deals', 'dealer,dealer_id,month,days_to_fund', year);
   const dayVals = [];
@@ -1980,8 +2044,10 @@ async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) 
   const shown = canon.dealer || dealer;
   const loadedToggle = pinnedMonth ? {
     active: Number(month) ? 'month' : 'year',
-    onMonth: () => openDealerHistory({ dealer: shown, state: canon.state || state, fi: canon.fi || fi, year, month: pinnedMonth, fromMonth: pinnedMonth }),
-    onYear: () => openDealerHistory({ dealer: shown, state: canon.state || state, fi: canon.fi || fi, year, fromMonth: pinnedMonth })
+    onMonth: typeof onMonth === 'function'
+      ? onMonth
+      : () => openDealerHistory({ dealer: shown, state: canon.state || state, fi: canon.fi || fi, year, month: pinnedMonth, fromMonth: pinnedMonth }),
+    onYear: () => openDealerHistory({ dealer: shown, state: canon.state || state, fi: canon.fi || fi, year, fromMonth: pinnedMonth, onMonth, overlayMonth })
   } : null;
   openAnalyticsModal({
     title: shown || 'Dealer',
@@ -1994,6 +2060,8 @@ async function openDealerHistory({ dealer, state, fi, year, month, fromMonth }) 
       { label: 'Funded', html: countWithPct(ytd.funded, ytd.apps) },
       { label: 'Funded $', value: formatMoney(ytd.fundedAmt) },
       { label: 'Avg lender fee', html: formatAvgFeeHtml(ytdFee) },
+      { label: 'Avg APR', value: formatAvgApr(aprLoan.avgApr) },
+      { label: 'Avg amount to finance', value: aprLoan.avgLoan == null ? '–' : formatMoney(aprLoan.avgLoan) },
       { label: 'Avg funded days', value: avgDays == null ? '–' : avgDays.toFixed(1) },
       { label: 'LTA', value: formatPct(ytd.lta) },
       { label: 'LTB', value: formatPct(ytd.ltb) },
@@ -5033,6 +5101,13 @@ if (snap && snap.kpis) {
          ${funded} <span class="text-sm text-gray-500">(${formatPct(total ? funded / total : 0)})</span>
        </div>
      </div>
+
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Avg Funded Amount</div>
+       <div class="text-2xl font-semibold tabular-nums">
+         ${funded ? formatMoney((Number(snap?.kpis?.totalFunded) || 0) / funded) : '—'}
+       </div>
+     </div>
    
      <!-- 3) Rest of the tiles... -->
      <div class="rounded-xl border p-3 bg-white">
@@ -6152,6 +6227,7 @@ if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
       ['Denial (YTD)', countWithPct(totalDenial, totalApps)],
       ['Avg Loan Funded (YTD)', avgLoanFunded != null ? formatMoney(avgLoanFunded) : '–'],
       ['Avg Lender Fee (YTD)', formatAvgFeeHtml(ytdFee)],
+      ['Avg APR (YTD)', formatAvgApr(summarizeAprLoan(yrFundedRows || []).avgApr)],
       ['LTA (YTD)', totalApps ? formatPct(totalApproved/totalApps) : '–'],
       ['LTB (YTD)', totalApps ? formatPct(funded/totalApps) : '–'],
     ]    
@@ -7850,6 +7926,34 @@ function updateKpiTile(label, value) {
 
   // ── CONFIG ─────────────────────────────────────────────────────────────────
   const STATUSES = ['Accepted','Approved','Counter','Denial','Duplicate','Funded','Pending Approval'];
+  const BD_LTV_KEYS = ['LTV','LTV Buying','ltv','LTV (Approved)','Approved LTV'];
+  const BD_APR_KEYS = ['APR','Apr','APR %','Apr %','APR(%)','Annual % Rate','Annual Percentage Rate','annual_rate','Funded APR','APR (Funded)'];
+  const BD_FEE_KEYS = ['Discount','Discount %','Lender Fee %','Lender Fee/Discount %','Lender Fee / Discount %','lender_fee_pct','discount_pct','Lender Fee','Lender Discount %'];
+  const BD_LTV_RE = /\bltv\b|loan[- ]?to[- ]?value/i;
+  const BD_APR_RE = /\bapr\b|interest/i;
+  const BD_FEE_RE = /lender\s*fee|\bdiscount\b|disc\s*%|origination/i;
+  const BD_FI_KEYS = ['FI','Franchise/Independent','Franchise / Independent','FI Type','Franchise or Independent'];
+  const BD_ACCT_KEYS = ['Account Number','Account','Acct','Acct Number'];
+  function bdHeaderPick(row, keys, pattern) {
+    if (!row) return '';
+    const wanted = new Set(keys.map((k) => k.toLowerCase()));
+    let regexHit = '';
+    for (const key of Object.keys(row)) {
+      const name = String(key).trim();
+      const low = name.toLowerCase();
+      const v = row[key];
+      if (v == null || String(v).trim() === '') continue;
+      if (wanted.has(low)) return String(v).trim();
+      if (!regexHit && pattern && pattern.test(low)) regexHit = String(v).trim();
+    }
+    return regexHit;
+  }
+  function bdHeaderNum(row, keys, pattern) {
+    const raw = bdHeaderPick(row, keys, pattern);
+    if (!raw) return null;
+    const n = Number(String(raw).replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) ? n : null;
+  }
   const STATUS_COLORS = {
     'Accepted':'#10b981', 'Approved':'#3b82f6', 'Counter':'#f59e0b',
     'Denial':'#ef4444',   'Duplicate':'#8b5cf6', 'Funded':'#06b6d4',
@@ -8034,6 +8138,7 @@ function updateKpiTile(label, value) {
               console.log('[RepsDaily] Restored', rdFundedRows.length, 'funded rows from Supabase.');
             }
           } catch(e) { console.warn('[RepsDaily] Could not restore funded rows:', e); }
+          if (document.getElementById('bd-panel-current')?.classList.contains('active')) renderCurrentMonth();
         } catch(e) { console.warn('[BuyingDaily] Supabase load failed:', e); }
       })();
 
@@ -8117,7 +8222,12 @@ function updateKpiTile(label, value) {
           state:  (row['Dealer State'] || row['State'] || '').trim().toUpperCase(),
           cif:    (row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] || '').trim(),
           ts:     (row['Timestamp Submit'] || '').trim(),
-          status: (row['Status Last'] || '').trim()
+          status: (row['Status Last'] || '').trim(),
+          ltv:    bdHeaderNum(row, BD_LTV_KEYS, BD_LTV_RE),
+          apr:    bdHeaderNum(row, BD_APR_KEYS, BD_APR_RE),
+          fee:    bdHeaderNum(row, BD_FEE_KEYS, BD_FEE_RE),
+          fi:     bdHeaderPick(row, BD_FI_KEYS),
+          account: bdHeaderPick(row, BD_ACCT_KEYS)
         }));
 
         // ── CIF Backfill: silently write cifnumber into master_dealers ──
@@ -8228,6 +8338,7 @@ function updateKpiTile(label, value) {
         statusEl.textContent = '✅ "' + file.name + '" loaded (' + Object.keys(bdData).length + ' days · ' + totalRows.toLocaleString() + ' applications)';
 
         render();
+        renderCurrentMonth();
     })(); // end IIFE
   }
 
@@ -8683,12 +8794,441 @@ function updateKpiTile(label, value) {
     return '<span class="bd-comp-change ' + cls + '">' + (Number(chg) > 0 ? '+' : '') + chg + '%</span>';
   }
 
+  // ── CURRENT MONTH (from the Buying Daily upload, not monthly snapshots) ──
+  let cmSort = { key: 'total', dir: 'desc' };
+  let cmQuery = '';
+  let cmWired = false;
+  let cmCache = { dealers: [], states: [] };
+
+  function bdParts(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return { y: Number(m[3]), m: Number(m[1]), d: Number(m[2]) };
+    return null;
+  }
+  function bdStamp(raw) {
+    const p = bdParts(raw);
+    return p ? p.y * 10000 + p.m * 100 + p.d : 0;
+  }
+  function cmInMonth(raw, year, month) {
+    const p = bdParts(raw);
+    return !!(p && p.y === year && p.m === month);
+  }
+  function cmStatus(status) {
+    const s = String(status || '').trim().toLowerCase();
+    if (s === 'approved') return 'approved';
+    if (s === 'counter') return 'counter';
+    if (s === 'denial' || s === 'denied') return 'denial';
+    if (s.indexOf('pending') === 0) return 'pending';
+    if (s === 'funded') return 'fundedStatus';
+    return 'other';
+  }
+  function cmKey(cif, dealer, state) {
+    const c = normCif(cif).toUpperCase();
+    if (c) return 'cif:' + c;
+    return 'name:' + normDealerName(dealer) + '|' + String(state || '').trim().toUpperCase();
+  }
+  function cmFi(raw, cif) {
+    if (raw) return normFI(raw);
+    const hit = window.masterCifMap && (window.masterCifMap.get(normCif(cif)) || window.masterCifMap.get(String(cif || '').trim()));
+    return hit && hit.fi ? normFI(hit.fi) : '';
+  }
+  async function ensureMasterCifMap() {
+    if (window.masterCifMap && window.masterCifMap.size) return;
+    if (!window.sb) return;
+    const rows = [];
+    let from = 0;
+    while (from < 20000) {
+      const { data, error } = await window.sb.from('master_dealers').select('dealer_id,cifnumber,fi,state').range(from, from + 999);
+      if (error || !data || !data.length) break;
+      rows.push(...data);
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    window.masterCifMap = window.masterCifMap || new Map();
+    rows.forEach((d) => {
+      const k = normCif(d.cifnumber);
+      if (k && !window.masterCifMap.has(k)) window.masterCifMap.set(k, { dealer_id: d.dealer_id, fi: d.fi, state: d.state });
+    });
+  }
+  function cmShapeDeal(d, fi) {
+    return {
+      Dealer: d.dealer,
+      State: d.state,
+      FI: fi || d.fi || '',
+      'Loan Amount': Number(d.amount) || 0,
+      APR: d.apr,
+      'Lender Fee': d.fee,
+      LTV: d.ltv,
+      'Account Number': d.account || ''
+    };
+  }
+  function cmBlankGroup(key, dealer, state, cif) {
+    return {
+      key, cif: cif || '', dealer: dealer || '', state: state || '', fi: '',
+      names: [], nameApps: {}, stamp: 0,
+      total: 0, approved: 0, counter: 0, pending: 0, denial: 0, fundedStatus: 0,
+      ltvSum: 0, ltvN: 0, aprSum: 0, aprN: 0, feeSum: 0, feeN: 0, deals: []
+    };
+  }
+  function cmBuild(year, month) {
+    const apps = (bdAllAppRows || []).filter((r) => cmInMonth(r.ts, year, month));
+    const fundedSheet = Array.isArray(rdFundedRows) && rdFundedRows.length > 0;
+    const deals = fundedSheet ? rdFundedRows.filter((r) => cmInMonth(r.date, year, month)) : [];
+    const groups = new Map();
+    function touch(key, dealer, state, cif) {
+      if (!groups.has(key)) groups.set(key, cmBlankGroup(key, dealer, state, cif));
+      return groups.get(key);
+    }
+    apps.forEach((r) => {
+      const g = touch(cmKey(r.cif, r.dealer, r.state), r.dealer, r.state, r.cif);
+      g.total += 1;
+      const bucket = cmStatus(r.status);
+      if (g[bucket] != null) g[bucket] += 1;
+      if (bucket === 'approved' && r.ltv != null && Number.isFinite(Number(r.ltv)) && Number(r.ltv) > 0) {
+        g.ltvSum += Number(r.ltv);
+        g.ltvN += 1;
+      }
+      if (bucket === 'fundedStatus') {
+        const apr = fundedAprPct({ APR: r.apr });
+        const fee = fundedFeeAsPct({ 'Lender Fee': r.fee });
+        if (apr != null) { g.aprSum += apr; g.aprN += 1; }
+        if (fee != null) { g.feeSum += fee; g.feeN += 1; }
+      }
+      const stamp = bdStamp(r.ts);
+      g.nameApps[r.dealer] = (g.nameApps[r.dealer] || 0) + 1;
+      if (!g.names.includes(r.dealer)) g.names.push(r.dealer);
+      if (stamp > g.stamp || (stamp === g.stamp && (g.nameApps[r.dealer] || 0) >= (g.nameApps[g.dealer] || 0))) {
+        g.stamp = stamp;
+        g.dealer = r.dealer;
+        if (r.state) g.state = r.state;
+      }
+      if (!g.fi) g.fi = cmFi(r.fi, r.cif || g.cif);
+      if (!g.cif && r.cif) g.cif = r.cif;
+    });
+    const findGroup = (d) => {
+      const direct = groups.get(cmKey(d.cif, d.dealer, d.state));
+      if (direct) return direct;
+      const name = normDealerName(d.dealer);
+      const st = String(d.state || '').trim().toUpperCase();
+      for (const g of groups.values()) {
+        if (String(g.state || '').trim().toUpperCase() !== st) continue;
+        if (g.names.some((n) => normDealerName(n) === name)) return g;
+      }
+      return null;
+    };
+    deals.forEach((d) => {
+      let g = findGroup(d);
+      if (!g) g = touch(cmKey(d.cif, d.dealer, d.state), d.dealer, d.state, d.cif);
+      g.deals.push(d);
+      if (!g.names.includes(d.dealer)) g.names.push(d.dealer);
+      if (!g.fi) g.fi = cmFi(d.fi, d.cif || g.cif);
+    });
+    const dealers = Array.from(groups.values()).map((g) => {
+      const shaped = g.deals.map((d) => cmShapeDeal(d, g.fi));
+      const fee = summarizeLenderFee(shaped);
+      const aprLoan = summarizeAprLoan(shaped);
+      const funded = fundedSheet ? g.deals.length : g.fundedStatus;
+      const fundedAmt = shaped.reduce((a, r) => a + (Number(r['Loan Amount']) || 0), 0);
+      const lta = g.total ? (g.approved + g.counter) / g.total : 0;
+      const ltb = g.total ? funded / g.total : 0;
+      return {
+        ...g,
+        fi: g.fi || '',
+        funded,
+        fundedAmt,
+        lta,
+        ltb,
+        avgFee: fee.avgPct != null ? fee.avgPct : (g.feeN ? g.feeSum / g.feeN : null),
+        avgFeeDol: fee.avgDol,
+        avgApr: aprLoan.avgApr != null ? aprLoan.avgApr : (g.aprN ? g.aprSum / g.aprN : null),
+        avgLoan: aprLoan.avgLoan,
+        avgLtv: g.ltvN ? g.ltvSum / g.ltvN : null,
+        shaped
+      };
+    });
+    const states = new Map();
+    function st(name) {
+      const k = String(name || '').trim().toUpperCase() || '—';
+      if (!states.has(k)) states.set(k, { state: k, total: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, fundedStatus: 0 });
+      return states.get(k);
+    }
+    apps.forEach((r) => {
+      const s = st(r.state);
+      s.total += 1;
+      const bucket = cmStatus(r.status);
+      if (s[bucket] != null) s[bucket] += 1;
+    });
+    if (fundedSheet) {
+      deals.forEach((d) => { st(d.state).funded += 1; });
+    } else {
+      states.forEach((s) => { s.funded = s.fundedStatus; });
+    }
+    const stateRows = Array.from(states.values()).map((s) => ({
+      ...s,
+      lta: s.total ? (s.approved + s.counter) / s.total : 0,
+      ltb: s.total ? s.funded / s.total : 0
+    })).sort((a, b) => b.total - a.total);
+    const sum = (k) => dealers.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    const total = apps.length;
+    const approved = sum('approved');
+    const counter = sum('counter');
+    const pending = sum('pending');
+    const denial = sum('denial');
+    const funded = fundedSheet ? deals.length : apps.filter((r) => cmStatus(r.status) === 'fundedStatus').length;
+    const fundedAmt = deals.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const shapedAll = deals.map((d) => cmShapeDeal(d, cmFi(d.fi, d.cif)));
+    const feeFromDeals = summarizeLenderFee(shapedAll);
+    const aprFromDeals = summarizeAprLoan(shapedAll);
+    const fundedApps = apps.filter((r) => cmStatus(r.status) === 'fundedStatus');
+    const feeFromApps = summarizeLenderFee(fundedApps.map((r) => ({ 'Lender Fee': r.fee })));
+    const aprFromApps = summarizeAprLoan(fundedApps.map((r) => ({ APR: r.apr })));
+    const fee = feeFromDeals.avgPct != null ? feeFromDeals : feeFromApps;
+    const aprLoan = {
+      avgApr: aprFromDeals.avgApr != null ? aprFromDeals.avgApr : aprFromApps.avgApr,
+      avgLoan: aprFromDeals.avgLoan
+    };
+    const ltvVals = apps.filter((r) => cmStatus(r.status) === 'approved' && r.ltv != null && Number.isFinite(Number(r.ltv)) && Number(r.ltv) > 0).map((r) => Number(r.ltv));
+    return {
+      year, month, apps: total, approved, counter, pending, denial, funded, fundedAmt,
+      lta: total ? (approved + counter) / total : 0,
+      ltb: total ? funded / total : 0,
+      avgLtv: ltvVals.length ? ltvVals.reduce((a, b) => a + b, 0) / ltvVals.length : null,
+      fee, aprLoan,
+      dealers, stateRows, hasApps: apps.length > 0 || deals.length > 0
+    };
+  }
+  function cmKpi(label, value, hero) {
+    return `<div class="rounded-xl border p-3 ${hero ? 'bg-emerald-50 border-emerald-200 col-span-2' : 'bg-white'}">
+      <div class="text-xs ${hero ? 'font-medium text-emerald-700' : 'text-gray-500'}">${label}</div>
+      <div class="${hero ? 'text-2xl font-extrabold text-emerald-900' : 'text-xl font-semibold'} tabular-nums">${value}</div>
+    </div>`;
+  }
+  function cmVisibleDealers() {
+    const q = cmQuery.trim().toLowerCase();
+    const rows = (cmCache.dealers || []).filter((r) => !q || String(r.dealer || '').toLowerCase().includes(q));
+    const { key, dir } = cmSort;
+    rows.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return dir === 'asc' ? String(av || '').localeCompare(String(bv || '')) : String(bv || '').localeCompare(String(av || ''));
+      }
+      return dir === 'asc' ? (Number(av) || 0) - (Number(bv) || 0) : (Number(bv) || 0) - (Number(av) || 0);
+    });
+    return rows;
+  }
+  function paintCurrentDealers() {
+    const body = document.getElementById('bdCurrentDealers');
+    const head = document.getElementById('bdCurrentHead');
+    const count = document.getElementById('bdCurrentCount');
+    if (!body || !head) return;
+    const rows = cmVisibleDealers();
+    const cols = [
+      ['dealer', 'Dealer'], ['state', 'State'], ['fi', 'FI'], ['total', 'Apps'],
+      ['approved', 'Approved'], ['counter', 'Counter'], ['pending', 'Pending'], ['denial', 'Denial'],
+      ['funded', 'Funded'], ['fundedAmt', 'Funded $'], ['avgFee', 'Fee %'], ['avgFeeDol', 'Fee $'],
+      ['lta', 'LTA'], ['ltb', 'LTB']
+    ];
+    head.innerHTML = `<tr>${cols.map(([k, label]) => {
+      const mark = cmSort.key === k ? (cmSort.dir === 'asc' ? '↑' : '↓') : '↕';
+      const right = k !== 'dealer' && k !== 'state' && k !== 'fi';
+      return `<th class="px-2 py-2 ${right ? 'text-right' : ''}"><button type="button" data-cm-sort="${k}" class="inline-flex items-center gap-1 ${right ? 'ml-auto' : ''}">${label} <span class="text-gray-400">${mark}</span></button></th>`;
+    }).join('')}</tr>`;
+    body.innerHTML = rows.length ? rows.map((r) => `
+      <tr class="border-t">
+        <td class="px-2 py-1.5"><button type="button" class="funded-link js-cm-dealer" data-key="${escHtml(r.key)}">${escHtml(r.dealer)}</button></td>
+        <td class="px-2 py-1.5">${escHtml(r.state)}</td>
+        <td class="px-2 py-1.5">${escHtml(r.fi)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.total}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.approved}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.counter}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.pending}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.denial}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${r.funded > 0 ? `<button type="button" class="funded-link js-cm-funded" data-key="${escHtml(r.key)}">${r.funded}</button>` : '0'}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${formatMoney(r.fundedAmt || 0)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${formatFeePct(r.avgFee)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${formatFeeDol(r.avgFeeDol)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.lta || 0)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.ltb || 0)}</td>
+      </tr>`).join('') : '<tr><td class="px-3 py-6 text-gray-500" colspan="14">No dealers for this month.</td></tr>';
+    if (count) {
+      const n = rows.filter((r) => (Number(r.total) || 0) > 0).length;
+      count.textContent = `${n.toLocaleString()} dealer${n === 1 ? '' : 's'} with apps`;
+    }
+  }
+  function cmDealerByKey(key) {
+    return (cmCache.dealers || []).find((r) => r.key === key);
+  }
+  function openCmDealer(row) {
+    if (!row) return;
+    const label = `${monthName(cmCache.month)} ${cmCache.year}`;
+    const reopen = () => openCmDealer(cmDealerByKey(row.key) || row);
+    openAnalyticsModal({
+      title: row.dealer || 'Dealer',
+      subtitle: [row.state, row.fi, label].filter(Boolean).join(' · '),
+      shareUrl: '',
+      filename: `${(row.dealer || 'dealer').replace(/\s+/g, '-')}-${cmCache.year}-${String(cmCache.month).padStart(2, '0')}.csv`,
+      kpis: [
+        { label: 'Apps', value: (row.total || 0).toLocaleString() },
+        { label: 'Approved + Counter', html: countWithPct((row.approved || 0) + (row.counter || 0), row.total) },
+        { label: 'Funded', html: countWithPct(row.funded, row.total) },
+        { label: 'Funded $', value: formatMoney(row.fundedAmt || 0) },
+        { label: 'Avg lender fee', html: formatAvgFeeHtml({ avgPct: row.avgFee, avgDol: row.avgFeeDol }) },
+        { label: 'Avg APR', value: formatAvgApr(row.avgApr) },
+        { label: 'Avg amount to finance', value: row.avgLoan == null ? '–' : formatMoney(row.avgLoan) },
+        { label: 'LTA', value: formatPct(row.lta || 0) },
+        { label: 'LTB', value: formatPct(row.ltb || 0) }
+      ],
+      columns: historyColumns(false),
+      rows: [{
+        label,
+        apps: row.total,
+        approved: row.approved,
+        counter: row.counter,
+        denial: row.denial,
+        funded: row.funded,
+        fundedAmt: row.fundedAmt,
+        feePct: row.avgFee,
+        feeDol: row.avgFeeDol,
+        ltb: row.ltb,
+        returns: '–'
+      }],
+      chart: null,
+      periodToggle: {
+        active: 'month',
+        onMonth: reopen,
+        onYear: () => openDealerHistory({
+          dealer: row.dealer,
+          state: row.state,
+          fi: row.fi,
+          year: cmCache.year,
+          fromMonth: cmCache.month,
+          onMonth: reopen,
+          overlayMonth: {
+            month: cmCache.month,
+            apps: row.total,
+            approved: row.approved,
+            counter: row.counter,
+            pending: row.pending,
+            denial: row.denial,
+            funded: row.funded,
+            fundedAmt: row.fundedAmt,
+            feePct: row.avgFee,
+            feeDol: row.avgFeeDol,
+            deals: row.shaped || []
+          }
+        })
+      },
+      fundedDeals: row.shaped && row.shaped.length ? {
+        rows: row.shaped,
+        filename: `${(row.dealer || 'dealer').replace(/\s+/g, '-')}-${cmCache.year}-${String(cmCache.month).padStart(2, '0')}-deals.csv`
+      } : null
+    });
+  }
+  function openCmFunded(row) {
+    if (!row) return;
+    openFundedDealsModal({
+      title: 'Funded deals',
+      subtitle: [row.dealer, row.state, row.fi, `${monthName(cmCache.month)} ${cmCache.year}`].filter(Boolean).join(' · '),
+      rows: row.shaped || []
+    });
+  }
+  function wireCurrentMonth() {
+    if (cmWired) return;
+    const panel = document.getElementById('bd-panel-current');
+    if (!panel) return;
+    cmWired = true;
+    panel.addEventListener('input', (e) => {
+      if (e.target && e.target.id === 'bdCurrentSearch') {
+        cmQuery = e.target.value || '';
+        paintCurrentDealers();
+      }
+    });
+    panel.addEventListener('click', (e) => {
+      const sortBtn = e.target.closest('[data-cm-sort]');
+      if (sortBtn) {
+        const k = sortBtn.getAttribute('data-cm-sort');
+        if (cmSort.key === k) cmSort.dir = cmSort.dir === 'asc' ? 'desc' : 'asc';
+        else cmSort = { key: k, dir: k === 'dealer' || k === 'state' || k === 'fi' ? 'asc' : 'desc' };
+        paintCurrentDealers();
+        return;
+      }
+      const dealerBtn = e.target.closest('.js-cm-dealer');
+      if (dealerBtn) { openCmDealer(cmDealerByKey(dealerBtn.getAttribute('data-key'))); return; }
+      const fundedBtn = e.target.closest('.js-cm-funded');
+      if (fundedBtn) { openCmFunded(cmDealerByKey(fundedBtn.getAttribute('data-key'))); return; }
+      if (e.target && e.target.id === 'bdCurrentExport') {
+        const view = cmVisibleDealers();
+        downloadCsv(
+          `current-month-dealers-${cmCache.year || ''}-${String(cmCache.month || '').padStart(2, '0')}.csv`,
+          ['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Fee %','Fee $','LTA','LTB'],
+          view.map((r) => [r.dealer, r.state, r.fi, r.total, r.approved, r.counter, r.pending, r.denial, r.funded, r.fundedAmt || 0, r.avgFee == null ? '' : Number(r.avgFee).toFixed(2), r.avgFeeDol == null ? '' : r.avgFeeDol, formatPct(r.lta || 0), formatPct(r.ltb || 0)])
+        );
+      }
+    });
+  }
+  async function renderCurrentMonth() {
+    const kpiEl = document.getElementById('bdCurrentKpis');
+    const stateEl = document.getElementById('bdCurrentStates');
+    if (!kpiEl || !stateEl) return;
+    wireCurrentMonth();
+    await ensureMasterCifMap();
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const model = cmBuild(year, month);
+    cmCache = model;
+    const title = document.getElementById('bdCurrentTitle');
+    const sub = document.getElementById('bdCurrentSub');
+    if (title) title.textContent = `${monthName(month)} ${year}`;
+    const missingMetrics = model.avgLtv == null && model.aprLoan.avgApr == null && model.fee.avgPct == null;
+    if (sub) sub.textContent = missingMetrics && model.hasApps
+      ? 'Upload the same apps and funded files once more. APR, lender fee, and LTV were not kept on the copy already saved.'
+      : 'Built from this month’s Buying Daily upload.';
+    const dash = '—';
+    kpiEl.innerHTML = [
+      cmKpi('Total Funded (This Month)', formatMoney(model.fundedAmt || 0), true),
+      cmKpi('Total Apps', (model.apps || 0).toLocaleString()),
+      cmKpi('Funded', `${(model.funded || 0).toLocaleString()} <span class="text-sm text-gray-500">(${formatPct(model.ltb || 0)})</span>`),
+      cmKpi('Avg Funded Amount', model.funded ? formatMoney(model.fundedAmt / model.funded) : dash),
+      cmKpi('Approved', `${(model.approved || 0).toLocaleString()} <span class="text-sm text-gray-500">(${formatPct(model.apps ? model.approved / model.apps : 0)})</span>`),
+      cmKpi('Counter', `${(model.counter || 0).toLocaleString()} <span class="text-sm text-gray-500">(${formatPct(model.apps ? model.counter / model.apps : 0)})</span>`),
+      cmKpi('Pending', `${(model.pending || 0).toLocaleString()} <span class="text-sm text-gray-500">(${formatPct(model.apps ? model.pending / model.apps : 0)})</span>`),
+      cmKpi('Denial', `${(model.denial || 0).toLocaleString()} <span class="text-sm text-gray-500">(${formatPct(model.apps ? model.denial / model.apps : 0)})</span>`),
+      cmKpi('LTA', formatPct(model.lta || 0)),
+      cmKpi('LTB', formatPct(model.ltb || 0)),
+      cmKpi('Avg LTV (Approved)', model.avgLtv == null ? dash : Number(model.avgLtv).toFixed(2) + '%'),
+      cmKpi('Avg APR (Funded)', formatAvgApr(model.aprLoan.avgApr)),
+      cmKpi('Avg Lender Fee (Funded)', formatAvgFeeHtml(model.fee))
+    ].join('');
+    stateEl.innerHTML = model.stateRows.length ? model.stateRows.map((s) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${escHtml(s.state)}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.total}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.approved}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.counter}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.pending}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.denial}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${s.funded}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatPct(s.lta || 0)}</td>
+        <td class="px-3 py-2 text-right tabular-nums">${formatPct(s.ltb || 0)}</td>
+      </tr>`).join('') : '<tr><td class="px-3 py-6 text-gray-500" colspan="9">No applications for this month yet.</td></tr>';
+    paintCurrentDealers();
+  }
+
   // ── VIEW SWITCHER ──────────────────────────────────────────────────────────
   function showPanel(view) {
-    ['daily','weekly','monthly','reps'].forEach(function(v) {
+    ['daily','weekly','monthly','current','reps'].forEach(function(v) {
       const el = document.getElementById('bd-panel-' + v);
       if (el) el.classList.toggle('active', v === view);
     });
+    if (view === 'current') renderCurrentMonth();
+    const statusKpis = document.getElementById('bdKpiRow');
+    if (statusKpis) statusKpis.hidden = view === 'current';
     if (view === 'reps') {
       // Update apps card status when switching to Reps Daily
       const appsSub = document.getElementById('rdAppsCardSub');
@@ -8727,7 +9267,15 @@ function updateKpiTile(label, value) {
               dateISO = parts[2].padStart(4,'0') + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
             }
           }
-          rdFundedRows.push({ dealer, state, amount, date: dateISO, cif: (row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] || '').trim() });
+          rdFundedRows.push({
+            dealer, state, amount, date: dateISO,
+            cif: (row['CIF Number'] || row['Dealer Cifnumber'] || row['Dealer CifNumber'] || '').trim(),
+            apr: bdHeaderNum(row, BD_APR_KEYS, BD_APR_RE),
+            fee: bdHeaderNum(row, BD_FEE_KEYS, BD_FEE_RE),
+            ltv: bdHeaderNum(row, BD_LTV_KEYS, BD_LTV_RE),
+            fi: bdHeaderPick(row, BD_FI_KEYS),
+            account: bdHeaderPick(row, BD_ACCT_KEYS)
+          });
         });
 
         // Update upload card
@@ -8751,6 +9299,7 @@ function updateKpiTile(label, value) {
         })();
 
         renderRepsDaily();
+        renderCurrentMonth();
       },
       error(err) { alert('Error parsing funded CSV:\n' + err.message); }
     });
