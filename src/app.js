@@ -1167,6 +1167,14 @@ function formatMoney(n) {
   });
 }
 
+function dealerListCountHtml(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const apps = list.filter((r) => (Number(r.total) || 0) > 0).length;
+  const funded = list.filter((r) => (Number(r.funded) || 0) > 0).length;
+  const appsLabel = `${apps.toLocaleString()} dealer${apps === 1 ? '' : 's'} with apps`;
+  const fundedLabel = `${funded.toLocaleString()} funded dealer${funded === 1 ? '' : 's'}`;
+  return `<span class="inline-flex flex-wrap items-center gap-2"><span>${appsLabel}</span><span class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[13px] font-semibold text-emerald-800">${fundedLabel}</span></span>`;
+}
 function formatPct(x) {
   if (x == null || !isFinite(x)) return '-';
   return (x*100).toFixed(2) + '%';
@@ -2171,7 +2179,7 @@ async function openStateReport({ state, year }) {
   );
   openAnalyticsModal({
     title: `${st} performance`,
-    subtitle: `${year} · ${dealers} dealer${dealers === 1 ? '' : 's'} with apps`,
+    subtitle: `${year} · ${dealers} dealer${dealers === 1 ? '' : 's'} with apps · ${dealersFunded.toLocaleString()} funded dealer${dealersFunded === 1 ? '' : 's'}`,
     shareUrl,
     filename: `${st || 'state'}-${year}.csv`,
     kpis: [
@@ -5524,10 +5532,7 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
   }).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="14">No data.</td></tr>';
 
   const mdCount = document.getElementById('mdDealerCount');
-  if (mdCount) {
-    const n = arr.filter((r) => (Number(r.total) || 0) > 0).length;
-    mdCount.textContent = `${n.toLocaleString()} dealer${n === 1 ? '' : 's'} with apps`;
-  }
+  if (mdCount) mdCount.innerHTML = dealerListCountHtml(arr);
 
   body.querySelectorAll('.js-md-dealer').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -6636,10 +6641,7 @@ if (dBody) {
   function paint() {
     const view = sortRows(applyFilters(rows));
     const yrCount = document.getElementById('yrDealerCount');
-    if (yrCount) {
-      const n = view.filter((r) => (Number(r.total) || 0) > 0).length;
-      yrCount.textContent = `${n.toLocaleString()} dealer${n === 1 ? '' : 's'} with apps`;
-    }
+    if (yrCount) yrCount.innerHTML = dealerListCountHtml(view);
     dBody.innerHTML = view.map((r) => `
       <tr class="border-t odd:bg-gray-50/40">
         <td class="px-2 py-1.5 max-w-[150px] truncate" title="${escHtml(r.dealer)}"><button type="button" class="funded-link js-yr-dealer" data-dealer="${escHtml(r.dealer)}" data-state="${escHtml(r.state)}" data-fi="${escHtml(r.fi)}">${escHtml(r.dealer)}</button></td>
@@ -7751,7 +7753,12 @@ function updateKpiTile(label, value) {
     .filter(d => d.funded >= 1) // Only show dealers with at least 1 funded deal
     .sort((a, b) => b.fundedAmt - a.fundedAmt); // Sort by funded amount desc
 
-    document.getElementById('rpDealerBadge').textContent = dealerArray.length + ' dealers';
+    const withApps = Object.values(dealers || {}).filter((d) => (Number(d.apps) || 0) > 0).length;
+    const fundedDealers = Object.values(dealers || {}).filter((d) => (Number(d.funded) || 0) > 0).length;
+    const appsBadge = document.getElementById('rpDealerBadge');
+    const fundedBadge = document.getElementById('rpDealerFundedBadge');
+    if (appsBadge) appsBadge.textContent = `${withApps.toLocaleString()} dealer${withApps === 1 ? '' : 's'} with apps`;
+    if (fundedBadge) fundedBadge.textContent = `${fundedDealers.toLocaleString()} funded dealer${fundedDealers === 1 ? '' : 's'}`;
 
     tbody.innerHTML = dealerArray.map(function(d) {
       const approvalRate = d.apps ? (d.funded / d.apps * 100).toFixed(1) : '0.0';
@@ -8019,6 +8026,44 @@ function updateKpiTile(label, value) {
           render();
         });
       });
+
+      const shareUrl = location.origin + '/current-month.html';
+      const shareModal = document.getElementById('bdShareModal');
+      const shareFrame = document.getElementById('bdShareFrame');
+      const shareUrlEl = document.getElementById('bdShareUrl');
+      if (shareUrlEl) shareUrlEl.textContent = shareUrl;
+      function openBdShare() {
+        if (shareFrame && !shareFrame.getAttribute('src')) shareFrame.src = shareUrl;
+        shareModal?.classList.remove('hidden');
+      }
+      function closeBdShare() { shareModal?.classList.add('hidden'); }
+      document.getElementById('bdShareOpen')?.addEventListener('click', openBdShare);
+      document.getElementById('bdShareClose')?.addEventListener('click', closeBdShare);
+      document.getElementById('bdShareBackdrop')?.addEventListener('click', closeBdShare);
+      async function copyShareLink(btn) {
+        const label = 'Copy link';
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          ok = true;
+        } catch (e) {
+          const ta = document.createElement('textarea');
+          ta.value = shareUrl;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+          ta.remove();
+        }
+        if (btn) {
+          btn.textContent = ok ? 'Copied' : shareUrl;
+          setTimeout(function() { btn.textContent = label; }, 1600);
+        }
+      }
+      document.getElementById('bdShareCopy')?.addEventListener('click', function() { copyShareLink(this); });
+      document.getElementById('bdCurrentCopy')?.addEventListener('click', function() { copyShareLink(this); });
 
       // date range inputs
       let rdDateChangeTimer = null;
@@ -9055,10 +9100,7 @@ function updateKpiTile(label, value) {
         <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.lta || 0)}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.ltb || 0)}</td>
       </tr>`).join('') : '<tr><td class="px-3 py-6 text-gray-500" colspan="14">No dealers for this month.</td></tr>';
-    if (count) {
-      const n = rows.filter((r) => (Number(r.total) || 0) > 0).length;
-      count.textContent = `${n.toLocaleString()} dealer${n === 1 ? '' : 's'} with apps`;
-    }
+    if (count) count.innerHTML = dealerListCountHtml(rows);
   }
   function cmDealerByKey(key) {
     return (cmCache.dealers || []).find((r) => r.key === key);

@@ -162,7 +162,7 @@ document.getElementById('exportBtn').onclick=()=>{
   const ytdP=allPcts.length?allPcts.reduce((a,b)=>a+b,0)/allPcts.length:null;
   const ytdD=allDols.length?allDols.reduce((a,b)=>a+b,0)/allDols.length:null;
   const feeHtml=ytdP==null?'–':pct(ytdP)+(ytdD!=null?' <span class="muted-val">('+money(ytdD)+')</span>':'');
-  document.getElementById('sub').textContent=year+' · '+dealerN+' dealers with apps';
+  document.getElementById('sub').textContent=year+' · '+dealerN+' dealer'+(dealerN===1?'':'s')+' with apps · '+fundedNDealers.toLocaleString()+' funded dealer'+(fundedNDealers===1?'':'s');
   const tiles=[
     ['Dealers',dealerN.toLocaleString()],
     ['Dealers Funded',fundedNDealers.toLocaleString()],
