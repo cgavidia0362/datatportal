@@ -132,6 +132,8 @@ let yearPack = null;
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function money(n){ return (Number(n)||0).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}); }
+function dollars(v){ const n=Number(String(v??'').replace(/[^\d.-]/g,'')); return Number.isFinite(n)&&n>0?n:0; }
+function moneyOrDash(n){ return (Number(n)||0)>0?money(n):'–'; }
 function pctRatio(x){ return (Number(x)||0)*100; }
 function pctText(x){ return pctRatio(x).toFixed(2) + '%'; }
 function numOrNull(v){ if(v==null||v==='') return null; const n=Number(String(v).replace(/[^\d.-]/g,'')); return Number.isFinite(n)?n:null; }
@@ -240,7 +242,9 @@ function build(appsAll, fundedAll){
     const feeDol=feeVals.length?shaped.reduce((a,d)=>{ const p=asPct(d.fee); return p&&d.amount?a+d.amount*(p/100):a; },0)/feeVals.length:null;
     const funded=fundedSheet?g.deals.length:g.fundedStatus;
     const fundedAmt=shaped.reduce((a,d)=>a+(d.amount||0),0);
-    return {...g,fi:g.fi||'',funded,fundedAmt,shaped,
+    const warrantyAmt=g.deals.reduce((a,d)=>a+dollars(d.warranty),0);
+    const gapAmt=g.deals.reduce((a,d)=>a+dollars(d.gap),0);
+    return {...g,fi:g.fi||'',funded,fundedAmt,warrantyAmt,gapAmt,shaped,
       lta:g.total? (g.approved+g.counter)/g.total:0,
       ltb:g.total? funded/g.total:0,
       avgFee:feeAvg!=null?feeAvg:(g.feeN?g.feeSum/g.feeN:null),
@@ -280,7 +284,7 @@ function paint(){
     <td class="r">${s.pending}</td><td class="r">${s.denial}</td><td class="r">${s.funded}</td>
     <td class="r">${pctText(s.lta)}</td><td class="r">${pctText(s.ltb)}</td></tr>`).join('')
     :'<tr><td class="muted" colspan="9">No applications for this month yet.</td></tr>';
-  const cols=[['dealer','Dealer'],['state','State'],['fi','FI'],['total','Apps'],['approved','Approved'],['counter','Counter'],['pending','Pending'],['denial','Denial'],['funded','Funded'],['fundedAmt','Funded $'],['avgFee','Fee %'],['avgFeeDol','Fee $'],['lta','LTA'],['ltb','LTB']];
+  const cols=[['dealer','Dealer'],['state','State'],['fi','FI'],['total','Apps'],['approved','Approved'],['counter','Counter'],['pending','Pending'],['denial','Denial'],['funded','Funded'],['fundedAmt','Funded $'],['warrantyAmt','Warranty'],['gapAmt','Gap'],['avgFee','Fee %'],['avgFeeDol','Fee $'],['lta','LTA'],['ltb','LTB']];
   document.getElementById('head').innerHTML='<tr>'+cols.map(([k,label])=>{
     const mark=sort.key===k?(sort.dir==='asc'?'↑':'↓'):'↕';
     const right=k!=='dealer'&&k!=='state'&&k!=='fi';
@@ -293,10 +297,12 @@ function paint(){
     <td class="r">${r.total}</td><td class="r">${r.approved}</td><td class="r">${r.counter}</td><td class="r">${r.pending}</td><td class="r">${r.denial}</td>
     <td class="r">${r.funded>0?`<button class="link" data-dealer="${esc(r.key)}">${r.funded}</button>`:'0'}</td>
     <td class="r">${money(r.fundedAmt||0)}</td>
+    <td class="r">${moneyOrDash(r.warrantyAmt)}</td>
+    <td class="r">${moneyOrDash(r.gapAmt)}</td>
     <td class="r">${r.avgFee==null?'–':Number(r.avgFee).toFixed(2)+'%'}</td>
     <td class="r">${r.avgFeeDol==null?'–':money(r.avgFeeDol)}</td>
     <td class="r">${pctText(r.lta)}</td><td class="r">${pctText(r.ltb)}</td>
-  </tr>`).join(''):'<tr><td class="muted" colspan="14">No dealers for this month.</td></tr>';
+  </tr>`).join(''):'<tr><td class="muted" colspan="16">No dealers for this month.</td></tr>';
   const n=rows.filter(r=>(Number(r.total)||0)>0).length;
   const fundedN=rows.filter(r=>(Number(r.funded)||0)>0).length;
   document.getElementById('count').innerHTML=`${n.toLocaleString()} dealer${n===1?'':'s'} with apps <span class="pill">${fundedN.toLocaleString()} funded dealer${fundedN===1?'':'s'}</span>`;
@@ -446,8 +452,8 @@ document.getElementById('dealers').addEventListener('click', e=>{
 document.getElementById('q').addEventListener('input', e=>{ query=e.target.value||''; paint(); });
 document.getElementById('export').addEventListener('click', ()=>{
   const rows=visible();
-  const head=['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Fee %','Fee $','LTA','LTB'];
-  const lines=[head.join(',')].concat(rows.map(r=>[r.dealer,r.state,r.fi,r.total,r.approved,r.counter,r.pending,r.denial,r.funded,r.fundedAmt||0,r.avgFee==null?'':Number(r.avgFee).toFixed(2),r.avgFeeDol==null?'':r.avgFeeDol,pctText(r.lta||0),pctText(r.ltb||0)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')));
+  const head=['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Warranty','Gap','Fee %','Fee $','LTA','LTB'];
+  const lines=[head.join(',')].concat(rows.map(r=>[r.dealer,r.state,r.fi,r.total,r.approved,r.counter,r.pending,r.denial,r.funded,r.fundedAmt||0,r.warrantyAmt||0,r.gapAmt||0,r.avgFee==null?'':Number(r.avgFee).toFixed(2),r.avgFeeDol==null?'':r.avgFeeDol,pctText(r.lta||0),pctText(r.ltb||0)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
   a.download=`current-month-dealers-${YEAR}-${String(MONTH).padStart(2,'0')}.csv`;

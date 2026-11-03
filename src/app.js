@@ -402,10 +402,18 @@ var fundedRawRows = [];
 try {
   var fundedResult = await window.sb  // ← changed const to var
     .from('funded_deals')
-    .select('dealer, state, fi, loan_amount, apr, lender_fee_pct, ltv, account_number')
+    .select('dealer, state, fi, loan_amount, apr, lender_fee_pct, ltv, account_number, gap_amount, warranty_amount')
     .eq('year', year)
     .eq('month', month)
     .limit(10000);
+  if (fundedResult.error && /gap_amount|warranty_amount/i.test(fundedResult.error.message || '')) {
+    fundedResult = await window.sb
+      .from('funded_deals')
+      .select('dealer, state, fi, loan_amount, apr, lender_fee_pct, ltv, account_number')
+      .eq('year', year)
+      .eq('month', month)
+      .limit(10000);
+  }
   if (fundedResult.error && /account_number/i.test(fundedResult.error.message || '')) {
     fundedResult = await window.sb
       .from('funded_deals')
@@ -429,6 +437,8 @@ try {
         'Lender Fee': Number(r.lender_fee_pct) || null,
         LTV: Number(r.ltv) || null,
         'Account Number': r.account_number || '',
+        Gap: productDollars(r.gap_amount),
+        Warranty: productDollars(r.warranty_amount),
         Status: 'funded'
       };
     });
@@ -497,6 +507,8 @@ try {
 } catch (e) {
   console.error('[SB monthly] monthly_kpis fetch error:', e);
 }
+
+  if (showsProductColumns(year, month)) attachProductAmounts(dealers, fundedRawRows);
 
   return {
     id: String(year) + '-' + String(month).padStart(2, '0'),
@@ -875,22 +887,38 @@ if (snap.fundedRawRows && snap.fundedRawRows.length) {
       return Number.isFinite(n) ? n : null;
     })(),
     ltv: Number(r.LTV) || null,
-    account_number: String(r['Account Number'] || '').trim() || null
+    account_number: String(r['Account Number'] || '').trim() || null,
+    gap_amount: productDollars(r.Gap),
+    warranty_amount: productDollars(r.Warranty)
   })).filter(d => d.loan_amount > 0); // only save deals with valid amounts
 
   // Insert in batches (Supabase has a limit)
   if (fundedDeals.length) {
-    let insFundedErr = (await window.sb.from('funded_deals').insert(fundedDeals)).error;
+    const dropKeys = (rows, keys) => rows.map((row) => {
+      const copy = { ...row };
+      keys.forEach((k) => { delete copy[k]; });
+      return copy;
+    });
+    let payload = fundedDeals;
+    let droppedProducts = false;
+    let insFundedErr = (await window.sb.from('funded_deals').insert(payload)).error;
+    if (insFundedErr && /gap_amount|warranty_amount/i.test(insFundedErr.message || '')) {
+      droppedProducts = true;
+      payload = dropKeys(payload, ['gap_amount', 'warranty_amount']);
+      insFundedErr = (await window.sb.from('funded_deals').insert(payload)).error;
+    }
     if (insFundedErr && /account_number/i.test(insFundedErr.message || '')) {
-      const withoutAcct = fundedDeals.map(({ account_number, ...rest }) => rest);
-      insFundedErr = (await window.sb.from('funded_deals').insert(withoutAcct)).error;
+      payload = dropKeys(payload, ['account_number']);
+      insFundedErr = (await window.sb.from('funded_deals').insert(payload)).error;
     }
     
     if (insFundedErr) {
       console.error('[sb] insert funded_deals failed:', insFundedErr);
       setSaveStatus(`Step 4: funded_deals insert failed – ${insFundedErr.message}`);
     } else {
-      setSaveStatus(`Step 4: saved ${fundedDeals.length} individual funded deals`);
+      setSaveStatus(droppedProducts
+        ? `Step 4: saved ${fundedDeals.length} deals. Gap and Warranty need the one-time SQL in supabase/funded-products.sql before they stay after a refresh.`
+        : `Step 4: saved ${fundedDeals.length} individual funded deals`);
     }
   }
 }     
@@ -1167,6 +1195,65 @@ function formatMoney(n) {
   });
 }
 
+function showsProductColumns(year, month) {
+  const y = Number(year) || 0;
+  const m = Number(month) || 0;
+  return y > 2026 || (y === 2026 && m >= 10);
+}
+function productDollars(v) {
+  const n = num(v);
+  return n > 0 ? n : 0;
+}
+function summarizeProducts(rows) {
+  let warrantyAmt = 0, gapAmt = 0, warrantyN = 0, gapN = 0;
+  (rows || []).forEach((r) => {
+    const w = productDollars(r.Warranty ?? r.warranty ?? r.warranty_amount);
+    const g = productDollars(r.Gap ?? r.gap ?? r.gap_amount);
+    warrantyAmt += w;
+    gapAmt += g;
+    if (w > 0) warrantyN += 1;
+    if (g > 0) gapN += 1;
+  });
+  const fundedN = (rows || []).length;
+  return {
+    warrantyAmt, gapAmt, warrantyN, gapN, fundedN,
+    warrantyPct: fundedN ? warrantyN / fundedN : 0,
+    gapPct: fundedN ? gapN / fundedN : 0
+  };
+}
+function productCell(amount) {
+  const n = Number(amount) || 0;
+  return n > 0 ? formatMoney(n) : '–';
+}
+function productKpiValue(amount, pct) {
+  return `${formatMoney(amount || 0)} <span class="text-sm text-gray-500">(${formatPct(pct || 0)})</span>`;
+}
+function attachProductAmounts(dealers, fundedRows) {
+  const byFull = new Map();
+  const byLoose = new Map();
+  (fundedRows || []).forEach((r) => {
+    const dealer = r.Dealer || r.dealer || '';
+    const state = r.State || r.state || '';
+    const fi = r.FI || r.fi || '';
+    const gap = productDollars(r.Gap ?? r.gap ?? r.gap_amount);
+    const warranty = productDollars(r.Warranty ?? r.warranty ?? r.warranty_amount);
+    const add = (map, key) => {
+      const cur = map.get(key) || { gap: 0, warranty: 0 };
+      cur.gap += gap;
+      cur.warranty += warranty;
+      map.set(key, cur);
+    };
+    add(byFull, dealerKey(dealer, state, fi));
+    add(byLoose, dealerKey(dealer, state));
+  });
+  (dealers || []).forEach((d) => {
+    const full = byFull.get(dealerKey(d.dealer, d.state, d.fi));
+    const loose = byLoose.get(dealerKey(d.dealer, d.state));
+    const hit = full && ((full.gap + full.warranty) > 0) ? full : (loose || full || { gap: 0, warranty: 0 });
+    d.gapAmt = hit.gap;
+    d.warrantyAmt = hit.warranty;
+  });
+}
 function dealerListCountHtml(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const apps = list.filter((r) => (Number(r.total) || 0) > 0).length;
@@ -1282,7 +1369,7 @@ function mergeDealerGroups(rows, groups) {
       map.set(key, { ...r, _gkey: key, _spellApps: Number(r.total) || 0 });
       return;
     }
-    ['total', 'approved', 'counter', 'pending', 'denial', 'funded', 'fundedAmt', 'funded_amount'].forEach((k) => {
+    ['total', 'approved', 'counter', 'pending', 'denial', 'funded', 'fundedAmt', 'funded_amount', 'gapAmt', 'warrantyAmt'].forEach((k) => {
       cur[k] = (Number(cur[k]) || 0) + (Number(r[k]) || 0);
     });
     if ((Number(r.total) || 0) > (Number(cur._spellApps) || 0)) {
@@ -2720,7 +2807,7 @@ function switchTab(id) {
 let parsed = { fields: [], rows: [] };
 // Funded file (optional)
 let fundedParsed = { fields: [], rows: [] };
-let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'', ltv:'', cif:'', account:'' };
+let fundedMapping = { dealer:'', state:'', loan:'', apr:'', fee:'', ltv:'', cif:'', account:'', gap:'', warranty:'' };
 // pending merge context from the review modal
 let _pendingMerge = null;
 const dropArea = $('#dropArea');
@@ -3311,6 +3398,8 @@ function autoMapFunded(fields=[]) {
     ltv:    pick(/\bltv\b|loan to value|loan-to-value/),
     cif:    pick(/cif number|cifnumber|cif\s*number|dealer\s*cif|\bcif\b/),
     account: pick(/account\s*(number|#|no\b)|acct\s*(number|#|no\b)?|\bloan\s*(number|#|no\b)|\bcontract\s*(number|#|no\b)/),
+    gap: pick(/^gap$/),
+    warranty: pick(/^warranty$/),
   };
 }
 function guessFundedMapping(fields = []) {
@@ -3469,6 +3558,8 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     const mapKey = dealer + '|' + state;
     const cif    = pickCifFromRow(r, fundedMapping.cif);
     const account = String(pickFunded(r, 'account') || '').trim();
+    const gap = productDollars(pickFunded(r, 'gap') || r.Gap || r.GAP || '');
+    const warranty = productDollars(pickFunded(r, 'warranty') || r.Warranty || r.WARRANTY || '');
 
     // 1) CIF-first: most reliable match — check masterCifMap before name+state
     const masterData = (cif && window.masterCifMap?.has(cif))
@@ -3477,7 +3568,7 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     if (masterData?.dealer_id) {
       const snapRow = byDealerId.get(masterData.dealer_id);
       if (snapRow) {
-        accepted.push({ r, dealer: snapRow.dealer, state, amt, apr, feePct, account, match:'id', row: snapRow });
+        accepted.push({ r, dealer: snapRow.dealer, state, amt, apr, feePct, account, gap, warranty, match:'id', row: snapRow });
         return;
       }
     }
@@ -3485,7 +3576,7 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     // 2) Exact text fallback: for new dealers not yet in master list
     const textRow = byNameState.get(mapKey);
     if (textRow) {
-      accepted.push({ r, dealer: textRow.dealer, state, amt, apr, feePct, account, match:'exact', row: textRow });
+      accepted.push({ r, dealer: textRow.dealer, state, amt, apr, feePct, account, gap, warranty, match:'exact', row: textRow });
       return;
     }
 
@@ -3525,7 +3616,7 @@ function matchAndMergeFundedIntoSnapshot(snap) {
       if (orphan.dealer_id) byDealerId.set(orphan.dealer_id, orphan);
       console.log('[Merge] Including funded deal with no applications:', rawDealer, state, amt);
     }
-    accepted.push({ r, dealer: orphan.dealer, state, amt, apr, feePct, account, match:'funded-only', row: orphan });
+    accepted.push({ r, dealer: orphan.dealer, state, amt, apr, feePct, account, gap, warranty, match:'funded-only', row: orphan });
   });
 
   // Log merge statistics
@@ -3548,6 +3639,8 @@ function matchAndMergeFundedIntoSnapshot(snap) {
       'Lender Fee': isFinite(x.feePct) ? (x.feePct*100).toFixed(3)+'%' : '',
       LTV: '', // if your funded sheet has it, map it too later
       'Account Number': x.account || '',
+      Gap: x.gap || 0,
+      Warranty: x.warranty || 0,
       FI: x.row.fi || '' // reuse FI from the matched app dealer row if available
     }))
   );
@@ -3557,17 +3650,23 @@ function matchAndMergeFundedIntoSnapshot(snap) {
 
   const incByDealer = new Map();
   const amountByDealer = new Map();
+  const gapByDealer = new Map();
+  const warrantyByDealer = new Map();
   accepted.forEach(x => {
     const fi = x.row.fi || '';
     const key = dealerKey(x.dealer, x.state, fi);
     incKey(incByDealer, key, 1);
     incKey(amountByDealer, key, x.amt);  // ADD THIS LINE to sum amounts
+    incKey(gapByDealer, key, x.gap || 0);
+    incKey(warrantyByDealer, key, x.warranty || 0);
   });
 
   (snap.dealerRows || []).forEach(r => {
     const k = dealerKey(r.dealer, r.state, r.fi);
     r.funded = (r.funded||0) + (incByDealer.get(k)||0);
     r.funded_amount = (r.funded_amount||0) + (amountByDealer.get(k)||0);  // ADD THIS LINE
+    r.gapAmt = (r.gapAmt || 0) + (gapByDealer.get(k) || 0);
+    r.warrantyAmt = (r.warrantyAmt || 0) + (warrantyByDealer.get(k) || 0);
     r.ltb = r.total ? r.funded / r.total : 0;
   });
   // Update state and FI tallies
@@ -3666,6 +3765,10 @@ function mergeFundedIntoSnapshot(snap, fundedParsed, fundedMapping, opts) {
       if (Number.isFinite(aprV)) aprArr.push(aprV);
       const ltvV = parseFloat(String(get(r,'ltv')).replace(/[^\d.-]/g,''));
       const accountV = String(get(r,'account') || '').trim();
+      const gapV = productDollars(get(r, 'gap') || r.Gap || r.GAP || '');
+      const warrantyV = productDollars(get(r, 'warranty') || r.Warranty || r.WARRANTY || '');
+      target.gapAmt = (target.gapAmt || 0) + gapV;
+      target.warrantyAmt = (target.warrantyAmt || 0) + warrantyV;
 
       // fee % can be like "x%" or just a number
       const s = String(get(r,'fee')||'');
@@ -3687,6 +3790,8 @@ snap.fundedRawRows.push({
   'Lender Fee': (feePct != null && Number.isFinite(feePct)) ? (feePct * 100).toFixed(3) + '%' : '',
   LTV: Number.isFinite(ltvV) ? ltvV : '',
   'Account Number': accountV,
+  Gap: gapV,
+  Warranty: warrantyV,
   FI: target.fi || ''      // reuse FI from the matched dealer
 });
     });
@@ -5049,6 +5154,9 @@ if (window.sb && snap.year && snap.month) {
 
   const LTA = total ? (approved + counter) / total : 0; // your definition
   const LTB = total ? funded / total : 0;
+  const showProducts = showsProductColumns(snap.year, snap.month);
+  const products = showProducts ? summarizeProducts(snap.fundedRawRows || []) : null;
+  if (showProducts) attachProductAmounts(rows, snap.fundedRawRows || []);
 
   // Avg LTV (Approved)
   const ltvApprovedArr = (snap.approvedRawRows || [])
@@ -5227,6 +5335,16 @@ if (snap && snap.kpis) {
          })()}
        </div>
      </div>
+
+     ${showProducts ? `
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Warranty</div>
+       <div class="text-2xl font-semibold tabular-nums">${productKpiValue(products.warrantyAmt, products.warrantyPct)}</div>
+     </div>
+     <div class="rounded-xl border p-3 bg-white">
+       <div class="text-xs text-gray-500">Gap</div>
+       <div class="text-2xl font-semibold tabular-nums">${productKpiValue(products.gapAmt, products.gapPct)}</div>
+     </div>` : ''}
    </div>
   
 
@@ -5337,6 +5455,8 @@ if (snap && snap.kpis) {
            <th class="px-3 py-2 text-right sortable" data-key="denial">Denial <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="funded">Funded <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="fundedAmt">Funded $ <span class="dir">↕</span></th>
+           ${showProducts ? `<th class="px-3 py-2 text-right sortable" data-key="warrantyAmt">Warranty <span class="dir">↕</span></th>
+           <th class="px-3 py-2 text-right sortable" data-key="gapAmt">Gap <span class="dir">↕</span></th>` : ''}
            <th class="px-3 py-2 text-right sortable" data-key="avgFee">Avg Fee % <span class="dir">↕</span></th>
            <th class="px-3 py-2 text-right sortable" data-key="avgFeeDol">Avg Fee $ <span class="dir">↕</span></th>
            <th class="px-2 py-2 text-center sortable" data-key="lta">LTA <span class="dir"></span></th>
@@ -5558,6 +5678,8 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
             : (r.funded ?? 0)
         }</td>
         <td class="px-3 py-2 tabular-nums text-right">${formatMoney(fundedAmount)}</td>
+        ${showProducts ? `<td class="px-3 py-2 tabular-nums text-right">${productCell(r.warrantyAmt)}</td>
+        <td class="px-3 py-2 tabular-nums text-right">${productCell(r.gapAmt)}</td>` : ''}
         <td class="px-3 py-2 tabular-nums text-right">${formatFeePct(r.avgFee)}</td>
         <td class="px-3 py-2 tabular-nums text-right">${formatFeeDol(r.avgFeeDol)}</td>
         <td class="px-2 py-2 text-center">
@@ -5664,7 +5786,7 @@ window.renderDealerRows();
 
   // use the same “funded $ by dealer|state|fi” piggy bank we built earlier
   // (amtByDealer is defined above in renderMonthlyDetail, outside renderDealerRows)
-  const header = ['Dealer','State','FI','Total','Approved','Counter','Pending','Denial','Funded','Funded $','Avg Lender Fee %','Avg Lender Fee $','LTA','LTB'];
+  const header = ['Dealer','State','FI','Total','Approved','Counter','Pending','Denial','Funded','Funded $'].concat(showProducts ? ['Warranty','Gap'] : []).concat(['Avg Lender Fee %','Avg Lender Fee $','LTA','LTB']);
   const rows = [header];
 
   arr.forEach(r => {
@@ -5685,11 +5807,15 @@ window.renderDealerRows();
       r.denial || 0,
       r.funded || 0,
       fundedAmt.toFixed(2),
+    ].concat(showProducts ? [
+      (Number(r.warrantyAmt) || 0).toFixed(2),
+      (Number(r.gapAmt) || 0).toFixed(2)
+    ] : []).concat([
       fee.avgPct == null ? '' : fee.avgPct.toFixed(2) + '%',
       fee.avgDol == null ? '' : fee.avgDol.toFixed(2),
       (lta*100).toFixed(2) + '%',
       (ltb*100).toFixed(2) + '%',
-    ]);
+    ]));
   });
 
   // download as CSV
@@ -7985,6 +8111,8 @@ function updateKpiTile(label, value) {
   const BD_FEE_RE = /lender\s*fee|\bdiscount\b|disc\s*%|origination/i;
   const BD_FI_KEYS = ['FI','Franchise/Independent','Franchise / Independent','FI Type','Franchise or Independent'];
   const BD_ACCT_KEYS = ['Account Number','Account','Acct','Acct Number'];
+  const BD_GAP_KEYS = ['Gap'];
+  const BD_WARRANTY_KEYS = ['Warranty'];
   function bdHeaderPick(row, keys, pattern) {
     if (!row) return '';
     const wanted = new Set(keys.map((k) => k.toLowerCase()));
@@ -8952,7 +9080,9 @@ function updateKpiTile(label, value) {
       APR: d.apr,
       'Lender Fee': d.fee,
       LTV: d.ltv,
-      'Account Number': d.account || ''
+      'Account Number': d.account || '',
+      Gap: productDollars(d.gap),
+      Warranty: productDollars(d.warranty)
     };
   }
   function cmBlankGroup(key, dealer, state, cif) {
@@ -9022,6 +9152,8 @@ function updateKpiTile(label, value) {
       const aprLoan = summarizeAprLoan(shaped);
       const funded = fundedSheet ? g.deals.length : g.fundedStatus;
       const fundedAmt = shaped.reduce((a, r) => a + (Number(r['Loan Amount']) || 0), 0);
+      const gapAmt = shaped.reduce((a, r) => a + productDollars(r.Gap), 0);
+      const warrantyAmt = shaped.reduce((a, r) => a + productDollars(r.Warranty), 0);
       const lta = g.total ? (g.approved + g.counter) / g.total : 0;
       const ltb = g.total ? funded / g.total : 0;
       return {
@@ -9029,6 +9161,8 @@ function updateKpiTile(label, value) {
         fi: g.fi || '',
         funded,
         fundedAmt,
+        gapAmt,
+        warrantyAmt,
         lta,
         ltb,
         avgFee: fee.avgPct != null ? fee.avgPct : (g.feeN ? g.feeSum / g.feeN : null),
@@ -9069,6 +9203,7 @@ function updateKpiTile(label, value) {
     const denial = sum('denial');
     const funded = fundedSheet ? deals.length : apps.filter((r) => cmStatus(r.status) === 'fundedStatus').length;
     const fundedAmt = deals.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const products = summarizeProducts(deals.map((d) => ({ Gap: d.gap, Warranty: d.warranty })));
     const shapedAll = deals.map((d) => cmShapeDeal(d, cmFi(d.fi, d.cif)));
     const feeFromDeals = summarizeLenderFee(shapedAll);
     const aprFromDeals = summarizeAprLoan(shapedAll);
@@ -9083,6 +9218,8 @@ function updateKpiTile(label, value) {
     const ltvVals = apps.filter((r) => cmStatus(r.status) === 'approved' && r.ltv != null && Number.isFinite(Number(r.ltv)) && Number(r.ltv) > 0).map((r) => Number(r.ltv));
     return {
       year, month, apps: total, approved, counter, pending, denial, funded, fundedAmt,
+      warrantyAmt: products.warrantyAmt, gapAmt: products.gapAmt,
+      warrantyPct: products.warrantyPct, gapPct: products.gapPct,
       lta: total ? (approved + counter) / total : 0,
       ltb: total ? funded / total : 0,
       avgLtv: ltvVals.length ? ltvVals.reduce((a, b) => a + b, 0) / ltvVals.length : null,
@@ -9119,9 +9256,10 @@ function updateKpiTile(label, value) {
     const cols = [
       ['dealer', 'Dealer'], ['state', 'State'], ['fi', 'FI'], ['total', 'Apps'],
       ['approved', 'Approved'], ['counter', 'Counter'], ['pending', 'Pending'], ['denial', 'Denial'],
-      ['funded', 'Funded'], ['fundedAmt', 'Funded $'], ['avgFee', 'Fee %'], ['avgFeeDol', 'Fee $'],
+      ['funded', 'Funded'], ['fundedAmt', 'Funded $'], ['warrantyAmt', 'Warranty'], ['gapAmt', 'Gap'],
+      ['avgFee', 'Fee %'], ['avgFeeDol', 'Fee $'],
       ['lta', 'LTA'], ['ltb', 'LTB']
-    ];
+    ].filter(([k]) => showsProductColumns(cmCache.year, cmCache.month) || (k !== 'warrantyAmt' && k !== 'gapAmt'));
     head.innerHTML = `<tr>${cols.map(([k, label]) => {
       const mark = cmSort.key === k ? (cmSort.dir === 'asc' ? '↑' : '↓') : '↕';
       const right = k !== 'dealer' && k !== 'state' && k !== 'fi';
@@ -9139,11 +9277,13 @@ function updateKpiTile(label, value) {
         <td class="px-2 py-1.5 text-right tabular-nums">${r.denial}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${r.funded > 0 ? `<button type="button" class="funded-link js-cm-funded" data-key="${escHtml(r.key)}">${r.funded}</button>` : '0'}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${formatMoney(r.fundedAmt || 0)}</td>
+        ${showsProductColumns(cmCache.year, cmCache.month) ? `<td class="px-2 py-1.5 text-right tabular-nums">${productCell(r.warrantyAmt)}</td>
+        <td class="px-2 py-1.5 text-right tabular-nums">${productCell(r.gapAmt)}</td>` : ''}
         <td class="px-2 py-1.5 text-right tabular-nums">${formatFeePct(r.avgFee)}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${formatFeeDol(r.avgFeeDol)}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.lta || 0)}</td>
         <td class="px-2 py-1.5 text-right tabular-nums">${formatPct(r.ltb || 0)}</td>
-      </tr>`).join('') : '<tr><td class="px-3 py-6 text-gray-500" colspan="14">No dealers for this month.</td></tr>';
+      </tr>`).join('') : `<tr><td class="px-3 py-6 text-gray-500" colspan="${showsProductColumns(cmCache.year, cmCache.month) ? 16 : 14}">No dealers for this month.</td></tr>`;
     if (count) count.innerHTML = dealerListCountHtml(rows);
   }
   function cmDealerByKey(key) {
@@ -9251,8 +9391,8 @@ function updateKpiTile(label, value) {
         const view = cmVisibleDealers();
         downloadCsv(
           `current-month-dealers-${cmCache.year || ''}-${String(cmCache.month || '').padStart(2, '0')}.csv`,
-          ['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Fee %','Fee $','LTA','LTB'],
-          view.map((r) => [r.dealer, r.state, r.fi, r.total, r.approved, r.counter, r.pending, r.denial, r.funded, r.fundedAmt || 0, r.avgFee == null ? '' : Number(r.avgFee).toFixed(2), r.avgFeeDol == null ? '' : r.avgFeeDol, formatPct(r.lta || 0), formatPct(r.ltb || 0)])
+          ['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $'].concat(showsProductColumns(cmCache.year, cmCache.month) ? ['Warranty','Gap'] : []).concat(['Fee %','Fee $','LTA','LTB']),
+          view.map((r) => [r.dealer, r.state, r.fi, r.total, r.approved, r.counter, r.pending, r.denial, r.funded, r.fundedAmt || 0].concat(showsProductColumns(cmCache.year, cmCache.month) ? [r.warrantyAmt || 0, r.gapAmt || 0] : []).concat([r.avgFee == null ? '' : Number(r.avgFee).toFixed(2), r.avgFeeDol == null ? '' : r.avgFeeDol, formatPct(r.lta || 0), formatPct(r.ltb || 0)]))
         );
       }
     });
@@ -9290,7 +9430,10 @@ function updateKpiTile(label, value) {
       cmKpi('Avg LTV (Approved)', model.avgLtv == null ? dash : Number(model.avgLtv).toFixed(2) + '%'),
       cmKpi('Avg APR (Funded)', formatAvgApr(model.aprLoan.avgApr)),
       cmKpi('Avg Lender Fee (Funded)', formatAvgFeeHtml(model.fee))
-    ].join('');
+    ].concat(showsProductColumns(model.year, model.month) ? [
+      cmKpi('Warranty', productKpiValue(model.warrantyAmt, model.warrantyPct)),
+      cmKpi('Gap', productKpiValue(model.gapAmt, model.gapPct))
+    ] : []).join('');
     stateEl.innerHTML = model.stateRows.length ? model.stateRows.map((s) => `
       <tr class="border-t">
         <td class="px-3 py-2">${escHtml(s.state)}</td>
@@ -9360,7 +9503,9 @@ function updateKpiTile(label, value) {
             fee: bdHeaderNum(row, BD_FEE_KEYS, BD_FEE_RE),
             ltv: bdHeaderNum(row, BD_LTV_KEYS, BD_LTV_RE),
             fi: bdHeaderPick(row, BD_FI_KEYS),
-            account: bdHeaderPick(row, BD_ACCT_KEYS)
+            account: bdHeaderPick(row, BD_ACCT_KEYS),
+            gap: bdHeaderNum(row, BD_GAP_KEYS),
+            warranty: bdHeaderNum(row, BD_WARRANTY_KEYS)
           });
         });
 
