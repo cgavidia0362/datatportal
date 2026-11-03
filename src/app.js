@@ -3439,9 +3439,16 @@ function matchAndMergeFundedIntoSnapshot(snap) {
   const unmatched = [];
 
   fundedParsed.rows.forEach((r) => {
-    const dealer = normalizeDealerName(pickFunded(r,'dealer'));
-    const state  = normalizeState(pickFunded(r,'state'));
-    const amt    = parseNumber(pickFunded(r,'loan'));
+    const rawDealer = String(
+      pickFunded(r, 'dealer') || r['Dealer'] || r['Dealer Name'] || r['dealer'] || r['dealer name'] || ''
+    ).trim();
+    const dealer = normalizeDealerName(rawDealer);
+    const state  = normalizeState(
+      pickFunded(r, 'state') || r['Dealer State'] || r['State'] || r['state'] || ''
+    );
+    const amt = parseNumber(
+      pickFunded(r, 'loan') || r['Loan Amount'] || r['Amount'] || r['Amt Finance'] || r['Funded Amount'] || ''
+    );
     const apr    = parseNumber(pickFunded(r,'apr'));
     let fee      = pickFunded(r,'fee');
 
@@ -3482,7 +3489,43 @@ function matchAndMergeFundedIntoSnapshot(snap) {
       return;
     }
 
-    unmatched.push({ r, reason:'no match' });
+    // 3) Funded with no application this month. Keep the deal on its own row.
+    if (!(amt > 0)) {
+      unmatched.push({ r, reason:'missing fields' });
+      return;
+    }
+    const fi = normFI(masterData?.fi || '');
+    let orphan = byNameState.get(mapKey);
+    if (!orphan && masterData?.dealer_id) orphan = byDealerId.get(masterData.dealer_id);
+    if (!orphan) {
+      orphan = {
+        dealer: rawDealer,
+        state,
+        fi,
+        _cif: cif || '',
+        total: 0,
+        approved: 0,
+        counter: 0,
+        pending: 0,
+        denial: 0,
+        funded: 0,
+        funded_amount: 0,
+        lta: 0,
+        ltb: 0
+      };
+      if (masterData?.dealer_id) orphan.dealer_id = masterData.dealer_id;
+      if (masterData?.rep) orphan.rep = masterData.rep;
+      snap.dealerRows = snap.dealerRows || [];
+      snap.dealerRows.push(orphan);
+      snap.stateRows = snap.stateRows || [];
+      if (!snap.stateRows.some((s) => s.state === state)) {
+        snap.stateRows.push({ state, total: 0, approved: 0, counter: 0, pending: 0, denial: 0, funded: 0, lta: 0, ltb: 0 });
+      }
+      byNameState.set(mapKey, orphan);
+      if (orphan.dealer_id) byDealerId.set(orphan.dealer_id, orphan);
+      console.log('[Merge] Including funded deal with no applications:', rawDealer, state, amt);
+    }
+    accepted.push({ r, dealer: orphan.dealer, state, amt, apr, feePct, account, match:'funded-only', row: orphan });
   });
 
   // Log merge statistics
@@ -3490,6 +3533,7 @@ function matchAndMergeFundedIntoSnapshot(snap) {
     total: fundedParsed.rows.length,
     idMatch: accepted.filter(x=>x.match==='id').length,
     textFallback: accepted.filter(x=>x.match==='exact').length,
+    fundedOnly: accepted.filter(x=>x.match==='funded-only').length,
     unmatched: unmatched.length
   });
 
@@ -4139,7 +4183,7 @@ try {
     if (orphansForModal.length > 0) {
       html += '<div class="border-l-4 border-red-500 pl-3 mb-3">';
       html += '<div class="font-semibold text-red-700 mb-1">Funded Without Applications</div>';
-      html += '<div class="text-xs text-gray-600 mb-2">These dealers funded deals but had 0 funded applications this month</div>';
+      html += '<div class="text-xs text-gray-600 mb-2">These dealers had no applications this month. Their funded deals are still included in the month.</div>';
       html += '<table class="w-full text-xs"><thead><tr class="bg-gray-100"><th class="p-1">Dealer Name</th><th class="p-1">State</th><th class="p-1">Funded Deals</th><th class="p-1">In App CSV?</th></tr></thead><tbody>';
       orphansForModal.forEach(d => {
         const inAppStatus = d.inAppCSV ? `Yes (${d.appCount} apps)` : 'No';
