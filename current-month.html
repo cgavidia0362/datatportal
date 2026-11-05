@@ -8,19 +8,42 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   *{box-sizing:border-box}
-  body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#0f172a}
-  .wrap{max-width:1440px;margin:0 auto;padding:20px 16px 48px}
+  html,body{height:100%}
+  body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#0f172a;overflow:hidden}
+  .wrap{max-width:1440px;height:100vh;margin:0 auto;padding:16px 16px 12px;display:flex;flex-direction:column;overflow:hidden}
   .hdr{margin-bottom:14px}
   h1{font-size:16px;margin:0}
   .sub{color:#64748b;font-size:12px;margin-top:2px}
+  .tabs{display:inline-flex;align-items:stretch;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff;margin-top:10px}
+  .tabs button,.tabs select{border:0;background:#fff;padding:8px 14px;font:inherit;font-size:13px;font-weight:600;color:#334155;cursor:pointer}
+  .tabs select{border-left:1px solid #e5e7eb;max-width:220px}
+  .tabs button.on,.tabs select.on{background:#0f172a;color:#fff}
+  .tabs select option{color:#0f172a;background:#fff}
   .card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;margin-bottom:14px}
   .card h2{font-size:14px;margin:0 0 8px}
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
   input[type=search]{width:100%;max-width:24rem;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;font:inherit}
+  .tools{display:flex;align-items:center;gap:8px}
   button.export{border:0;background:#4f46e5;color:#fff;border-radius:8px;padding:8px 12px;font:inherit;font-size:14px;cursor:pointer}
+  .colpick{position:relative}
+  .colmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:230px;max-height:70vh;overflow:auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.14);padding:8px}
+  .colmenu[hidden]{display:none}
+  .colmenu-h{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#64748b;padding:4px 6px 8px}
+  .colmenu-h button{border:0;background:none;color:#4f46e5;font:inherit;font-weight:600;cursor:pointer;padding:0}
+  .colmenu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px;font-size:13px;cursor:pointer}
+  .colmenu label:hover{background:#f8fafc}
   .count{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;font-weight:500;color:#334155;margin-bottom:8px}
   .count .pill{display:inline-flex;align-items:center;border-radius:999px;background:#ecfdf5;color:#065f46;padding:2px 10px;font-size:13px;font-weight:600}
   .scroll{overflow-x:auto}
+  .state-card{flex:0 1 auto;max-height:30vh;display:flex;flex-direction:column;min-height:0}
+  .state-card .scroll{overflow:auto;min-height:0}
+  .dealer-card{flex:1;min-height:220px;display:flex;flex-direction:column;margin-bottom:0}
+  .hscroll{flex:1;min-height:0;overflow:auto;scrollbar-color:#64748b #e2e8f0;scrollbar-width:auto}
+  .hscroll::-webkit-scrollbar{-webkit-appearance:none;width:14px;height:14px}
+  .hscroll::-webkit-scrollbar-thumb{background:#64748b;border-radius:8px;border:3px solid #e2e8f0}
+  .hscroll::-webkit-scrollbar-track{background:#e2e8f0;border-radius:8px}
+  .hscroll::-webkit-scrollbar-corner{background:#e2e8f0}
+  .hscroll thead th{position:sticky;top:0;z-index:1;background:#f8fafc}
   table{width:100%;border-collapse:collapse;font-size:12px}
   th,td{padding:6px 8px;border-top:1px solid #e5e7eb;white-space:nowrap}
   thead th{border-top:0;background:#f8fafc;text-align:left}
@@ -53,8 +76,14 @@
   <div class="hdr">
     <h1 id="title">Current month</h1>
     <div class="sub" id="sub">Buying Daily</div>
+    <div class="tabs">
+      <button type="button" id="tabCurrent" class="on" aria-pressed="true">Current month</button>
+      <select id="monthPick" aria-label="Choose another month of 2026">
+        <option value="">Choose a month</option>
+      </select>
+    </div>
   </div>
-  <div class="card">
+  <div class="card state-card">
     <h2>States</h2>
     <div class="scroll">
       <table>
@@ -66,13 +95,22 @@
       </table>
     </div>
   </div>
-  <div class="card">
+  <div class="card dealer-card">
     <div class="toolbar">
       <input id="q" type="search" placeholder="Search dealer…"/>
-      <button class="export" id="export" type="button">Export CSV</button>
+      <div class="tools">
+        <div class="colpick">
+          <button class="ghost" id="colBtn" type="button" aria-expanded="false" aria-controls="colMenu">Columns</button>
+          <div class="colmenu" id="colMenu" hidden>
+            <div class="colmenu-h"><span>Show columns</span><button type="button" id="colAll">Show all</button></div>
+            <div id="colList"></div>
+          </div>
+        </div>
+        <button class="export" id="export" type="button">Export CSV</button>
+      </div>
     </div>
     <div class="count" id="count"></div>
-    <div class="scroll">
+    <div class="scroll hscroll" id="dealerScroll">
       <table>
         <thead id="head"></thead>
         <tbody id="dealers"></tbody>
@@ -123,12 +161,18 @@ const MN3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','
 const now = new Date();
 const YEAR = now.getFullYear();
 const MONTH = now.getMonth() + 1;
+const REPORT_YEAR = 2026;
 let sort = { key: 'total', dir: 'desc' };
 let query = '';
+let active = 'current';
 let model = { dealers: [], stateRows: [] };
+let currentModel = { dealers: [], stateRows: [] };
+const savedCache = {};
+let viewNote = '';
+let loadToken = 0;
 let masters = [];
 let openRow = null;
-let yearPack = null;
+const yearPacks = {};
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function money(n){ return (Number(n)||0).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -177,6 +221,18 @@ async function allRows(table, select, year){
     let q=sb.from(table).select(select).range(from, from+999);
     if(year!=null) q=q.eq('year', year);
     const {data,error}=await q;
+    if(error) throw error;
+    if(!data||!data.length) break;
+    out=out.concat(data);
+    if(data.length<1000) break;
+    from+=1000;
+  }
+    return out;
+}
+async function monthRows(table, select, year, month){
+  let out=[], from=0;
+  while(from<80000){
+    const {data,error}=await sb.from(table).select(select).eq('year', year).eq('month', month).range(from, from+999);
     if(error) throw error;
     if(!data||!data.length) break;
     out=out.concat(data);
@@ -245,6 +301,7 @@ function build(appsAll, fundedAll){
     const warrantyAmt=g.deals.reduce((a,d)=>a+dollars(d.warranty),0);
     const gapAmt=g.deals.reduce((a,d)=>a+dollars(d.gap),0);
     return {...g,fi:g.fi||'',funded,fundedAmt,warrantyAmt,gapAmt,shaped,
+      year:YEAR, month:MONTH,
       lta:g.total? (g.approved+g.counter)/g.total:0,
       ltb:g.total? funded/g.total:0,
       avgFee:feeAvg!=null?feeAvg:(g.feeN?g.feeSum/g.feeN:null),
@@ -264,6 +321,76 @@ function build(appsAll, fundedAll){
   const stateRows=[...states.values()].map(s=>({...s,lta:s.total?(s.approved+s.counter)/s.total:0,ltb:s.total?s.funded/s.total:0})).sort((a,b)=>b.total-a.total);
   return {dealers, stateRows};
 }
+function buildSaved(snapRows, dealRows, year, month){
+  const full = new Map();
+  const loose = new Map();
+  (dealRows||[]).forEach(d=>{
+    const shaped={
+      dealer:d.dealer||'', state:d.state||'', fi:normFI(d.fi),
+      amount:Number(d.loan_amount)||0, apr:d.apr, fee:d.lender_fee_pct,
+      account:d.account_number||'', warranty:dollars(d.warranty_amount), gap:dollars(d.gap_amount)
+    };
+    const st=String(d.state||'').trim().toUpperCase();
+    const fk=norm(d.dealer)+'|'+st+'|'+normFI(d.fi);
+    const lk=norm(d.dealer)+'|'+st;
+    if(!full.has(fk)) full.set(fk, []);
+    full.get(fk).push(shaped);
+    if(!loose.has(lk)) loose.set(lk, []);
+    loose.get(lk).push(shaped);
+  });
+  const owners=new Map();
+  (snapRows||[]).forEach(r=>{
+    const k=norm(r.dealer)+'|'+String(r.state||'').trim().toUpperCase();
+    owners.set(k, (owners.get(k)||0)+1);
+  });
+  const dealers=(snapRows||[]).map((r,i)=>{
+    const state=String(r.state||'').trim().toUpperCase();
+    const fi=normFI(r.fi);
+    const master=masters.find(m=>r.dealer_id && m.dealer_id===r.dealer_id);
+    const fk=norm(r.dealer)+'|'+state+'|'+fi;
+    const lk=norm(r.dealer)+'|'+state;
+    const shaped=(full.get(fk)&&full.get(fk).length)?full.get(fk).slice():((owners.get(lk)===1)?(loose.get(lk)||[]).slice():[]);
+    const feeVals=shaped.map(d=>asPct(d.fee)).filter(n=>n!=null);
+    const aprVals=shaped.map(d=>asPct(d.apr)).filter(n=>n!=null);
+    const loans=shaped.map(d=>d.amount>0?d.amount:null).filter(n=>n!=null);
+    const feeAvg=feeVals.length?feeVals.reduce((a,b)=>a+b,0)/feeVals.length:null;
+    const feeDol=feeVals.length?shaped.reduce((a,d)=>{ const p=asPct(d.fee); return p&&d.amount?a+d.amount*(p/100):a; },0)/feeVals.length:null;
+    const total=Number(r.total_apps)||0;
+    const funded=Number(r.funded)||0;
+    return {
+      key:'saved:'+i, dealer:r.dealer||'', state, fi:fi||(master&&master.fi?normFI(master.fi):''),
+      cif:master?master.cifnumber:'', dealer_id:r.dealer_id||'', names:[r.dealer||''],
+      total, approved:Number(r.approved)||0, counter:Number(r.counter)||0, pending:Number(r.pending)||0, denial:Number(r.denial)||0,
+      funded, fundedAmt:Number(r.funded_amount)||0,
+      warrantyAmt:shaped.reduce((a,d)=>a+dollars(d.warranty),0),
+      gapAmt:shaped.reduce((a,d)=>a+dollars(d.gap),0),
+      shaped, year, month,
+      lta:total?( (Number(r.approved)||0)+(Number(r.counter)||0) )/total:0,
+      ltb:total?funded/total:0,
+      avgFee:feeAvg, avgFeeDol:feeDol,
+      avgApr:aprVals.length?aprVals.reduce((a,b)=>a+b,0)/aprVals.length:null,
+      avgLoan:loans.length?loans.reduce((a,b)=>a+b,0)/loans.length:null
+    };
+  });
+  const states=new Map();
+  dealers.forEach(r=>{
+    const s=states.get(r.state)||{state:r.state||'—',total:0,approved:0,counter:0,pending:0,denial:0,funded:0};
+    s.total+=r.total; s.approved+=r.approved; s.counter+=r.counter; s.pending+=r.pending; s.denial+=r.denial; s.funded+=r.funded;
+    states.set(r.state, s);
+  });
+  const stateRows=[...states.values()].map(s=>({...s,lta:s.total?(s.approved+s.counter)/s.total:0,ltb:s.total?s.funded/s.total:0})).sort((a,b)=>b.total-a.total);
+  return {dealers, stateRows};
+}
+function sameDealer(a, b){
+  const ast=String(a.state||'').trim().toUpperCase();
+  const bst=String(b.state||'').trim().toUpperCase();
+  if(ast && bst && ast!==bst) return false;
+  if(a.dealer_id && b.dealer_id && a.dealer_id===b.dealer_id) return true;
+  const ca=normCif(a.cif).toUpperCase(), cb=normCif(b.cif).toUpperCase();
+  if(ca && cb && ca===cb) return true;
+  const names=new Set((a.names||[a.dealer]).concat([a.dealer]).map(norm));
+  return (b.names||[b.dealer]).concat([b.dealer]).some(n=>names.has(norm(n)));
+}
 function visible(){
   const q=query.trim().toLowerCase();
   const rows=model.dealers.filter(r=>!q||String(r.dealer||'').toLowerCase().includes(q));
@@ -278,31 +405,53 @@ function visible(){
   });
   return rows;
 }
+const COLS=[
+  {key:'dealer', label:'Dealer', html:r=>`<td><button class="link" data-dealer="${esc(r.key)}">${esc(r.dealer)}</button></td>`, csv:r=>r.dealer},
+  {key:'state', label:'State', html:r=>`<td>${esc(r.state)}</td>`, csv:r=>r.state},
+  {key:'fi', label:'FI', html:r=>`<td>${esc(r.fi)}</td>`, csv:r=>r.fi},
+  {key:'total', label:'Apps', right:true, html:r=>`<td class="r">${r.total}</td>`, csv:r=>r.total},
+  {key:'approved', label:'Approved', right:true, html:r=>`<td class="r">${r.approved}</td>`, csv:r=>r.approved},
+  {key:'counter', label:'Counter', right:true, html:r=>`<td class="r">${r.counter}</td>`, csv:r=>r.counter},
+  {key:'pending', label:'Pending', right:true, html:r=>`<td class="r">${r.pending}</td>`, csv:r=>r.pending},
+  {key:'denial', label:'Denial', right:true, html:r=>`<td class="r">${r.denial}</td>`, csv:r=>r.denial},
+  {key:'funded', label:'Funded', right:true, html:r=>`<td class="r">${r.funded>0?`<button class="link" data-dealer="${esc(r.key)}">${r.funded}</button>`:'0'}</td>`, csv:r=>r.funded},
+  {key:'fundedAmt', label:'Funded $', right:true, html:r=>`<td class="r">${money(r.fundedAmt||0)}</td>`, csv:r=>r.fundedAmt||0},
+  {key:'warrantyAmt', label:'Warranty', right:true, html:r=>`<td class="r">${moneyOrDash(r.warrantyAmt)}</td>`, csv:r=>r.warrantyAmt||0},
+  {key:'gapAmt', label:'Gap', right:true, html:r=>`<td class="r">${moneyOrDash(r.gapAmt)}</td>`, csv:r=>r.gapAmt||0},
+  {key:'avgFee', label:'Fee %', right:true, html:r=>`<td class="r">${r.avgFee==null?'–':Number(r.avgFee).toFixed(2)+'%'}</td>`, csv:r=>r.avgFee==null?'':Number(r.avgFee).toFixed(2)},
+  {key:'avgFeeDol', label:'Fee $', right:true, html:r=>`<td class="r">${r.avgFeeDol==null?'–':money(r.avgFeeDol)}</td>`, csv:r=>r.avgFeeDol==null?'':r.avgFeeDol},
+  {key:'lta', label:'LTA', right:true, html:r=>`<td class="r">${pctText(r.lta)}</td>`, csv:r=>pctText(r.lta||0)},
+  {key:'ltb', label:'LTB', right:true, html:r=>`<td class="r">${pctText(r.ltb)}</td>`, csv:r=>pctText(r.ltb||0)}
+];
+let hiddenCols=new Set();
+try{ hiddenCols=new Set(JSON.parse(localStorage.getItem('cm-hidden-cols')||'[]')); }catch(e){ hiddenCols=new Set(); }
+if(hiddenCols.size>=COLS.length) hiddenCols=new Set();
+function shownCols(){ const list=COLS.filter(c=>!hiddenCols.has(c.key)); return list.length?list:COLS.slice(0,1); }
+function saveHidden(){ localStorage.setItem('cm-hidden-cols', JSON.stringify([...hiddenCols])); }
+function paintColMenu(){
+  document.getElementById('colList').innerHTML=COLS.map(c=>`<label><input type="checkbox" data-col="${c.key}" ${hiddenCols.has(c.key)?'':'checked'}> ${esc(c.label)}</label>`).join('');
+}
 function paint(){
+  if(active!=='current' && viewNote){
+    document.getElementById('states').innerHTML=`<tr><td class="muted" colspan="9">${esc(viewNote)}</td></tr>`;
+    document.getElementById('head').innerHTML='';
+    document.getElementById('dealers').innerHTML='';
+    document.getElementById('count').textContent='';
+    return;
+  }
   document.getElementById('states').innerHTML=model.stateRows.length?model.stateRows.map(s=>`<tr>
     <td>${esc(s.state)}</td><td class="r">${s.total}</td><td class="r">${s.approved}</td><td class="r">${s.counter}</td>
     <td class="r">${s.pending}</td><td class="r">${s.denial}</td><td class="r">${s.funded}</td>
     <td class="r">${pctText(s.lta)}</td><td class="r">${pctText(s.ltb)}</td></tr>`).join('')
     :'<tr><td class="muted" colspan="9">No applications for this month yet.</td></tr>';
-  const cols=[['dealer','Dealer'],['state','State'],['fi','FI'],['total','Apps'],['approved','Approved'],['counter','Counter'],['pending','Pending'],['denial','Denial'],['funded','Funded'],['fundedAmt','Funded $'],['warrantyAmt','Warranty'],['gapAmt','Gap'],['avgFee','Fee %'],['avgFeeDol','Fee $'],['lta','LTA'],['ltb','LTB']];
-  document.getElementById('head').innerHTML='<tr>'+cols.map(([k,label])=>{
-    const mark=sort.key===k?(sort.dir==='asc'?'↑':'↓'):'↕';
-    const right=k!=='dealer'&&k!=='state'&&k!=='fi';
-    return `<th class="${right?'r':''}"><button type="button" data-sort="${k}">${label} ${mark}</button></th>`;
+  const cols=shownCols();
+  if(!cols.some(c=>c.key===sort.key)) sort={key:cols[0].key, dir:cols[0].right?'desc':'asc'};
+  document.getElementById('head').innerHTML='<tr>'+cols.map(c=>{
+    const mark=sort.key===c.key?(sort.dir==='asc'?'↑':'↓'):'↕';
+    return `<th class="${c.right?'r':''}"><button type="button" data-sort="${c.key}">${c.label} ${mark}</button></th>`;
   }).join('')+'</tr>';
   const rows=visible();
-  document.getElementById('dealers').innerHTML=rows.length?rows.map(r=>`<tr>
-    <td><button class="link" data-dealer="${esc(r.key)}">${esc(r.dealer)}</button></td>
-    <td>${esc(r.state)}</td><td>${esc(r.fi)}</td>
-    <td class="r">${r.total}</td><td class="r">${r.approved}</td><td class="r">${r.counter}</td><td class="r">${r.pending}</td><td class="r">${r.denial}</td>
-    <td class="r">${r.funded>0?`<button class="link" data-dealer="${esc(r.key)}">${r.funded}</button>`:'0'}</td>
-    <td class="r">${money(r.fundedAmt||0)}</td>
-    <td class="r">${moneyOrDash(r.warrantyAmt)}</td>
-    <td class="r">${moneyOrDash(r.gapAmt)}</td>
-    <td class="r">${r.avgFee==null?'–':Number(r.avgFee).toFixed(2)+'%'}</td>
-    <td class="r">${r.avgFeeDol==null?'–':money(r.avgFeeDol)}</td>
-    <td class="r">${pctText(r.lta)}</td><td class="r">${pctText(r.ltb)}</td>
-  </tr>`).join(''):'<tr><td class="muted" colspan="16">No dealers for this month.</td></tr>';
+  document.getElementById('dealers').innerHTML=rows.length?rows.map(r=>`<tr>${cols.map(c=>c.html(r)).join('')}</tr>`).join(''):`<tr><td class="muted" colspan="${cols.length}">No dealers for this month.</td></tr>`;
   const n=rows.filter(r=>(Number(r.total)||0)>0).length;
   const fundedN=rows.filter(r=>(Number(r.funded)||0)>0).length;
   document.getElementById('count').innerHTML=`${n.toLocaleString()} dealer${n===1?'':'s'} with apps <span class="pill">${fundedN.toLocaleString()} funded dealer${fundedN===1?'':'s'}</span>`;
@@ -317,7 +466,10 @@ function showModal(on){
   document.getElementById('modal').classList.toggle('on', on);
 }
 function paintMonth(row){
-  const label=`${MN3[MONTH-1]} ${YEAR}`;
+  const y=Number(row.year)||YEAR;
+  const m=Number(row.month)||MONTH;
+  const label=`${MN3[m-1]} ${y}`;
+  document.getElementById('btnMonth').textContent=MN3[m-1];
   document.getElementById('mTitle').textContent=row.dealer||'Dealer';
   document.getElementById('mSub').textContent=[row.state,row.fi,label].filter(Boolean).join(' · ');
   document.getElementById('btnMonth').classList.add('on');
@@ -346,14 +498,16 @@ async function paintYear(row){
   document.getElementById('btnMonth').classList.remove('on');
   document.getElementById('mBody').innerHTML='<tr><td class="muted" colspan="11">Loading year…</td></tr>';
   document.getElementById('dealsCard').style.display='none';
-  if(!yearPack){
+  const packYear=Number(row.year)||YEAR;
+  if(!yearPacks[packYear]){
     const [snaps, returns, dealRows]=await Promise.all([
-      allRows('monthly_snapshots','month,dealer,state,fi,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount', YEAR),
-      allRows('funding_returns','dealer,dealer_id,month', YEAR).catch(()=>[]),
-      allRows('funded_deals','dealer,state,fi,loan_amount,apr,lender_fee_pct,month', YEAR).catch(()=>[])
+      allRows('monthly_snapshots','month,dealer,state,fi,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount', packYear),
+      allRows('funding_returns','dealer,dealer_id,month', packYear).catch(()=>[]),
+      allRows('funded_deals','dealer,state,fi,loan_amount,apr,lender_fee_pct,month', packYear).catch(()=>[])
     ]);
-    yearPack={snaps, returns, deals:dealRows};
+    yearPacks[packYear]={snaps, returns, deals:dealRows};
   }
+  const yearPack=yearPacks[packYear];
   const cif=normCif(row.cif).toUpperCase();
   const ids=new Set();
   masters.forEach(m=>{
@@ -376,7 +530,16 @@ async function paintYear(row){
     c.denial+=Number(r.denial)||0; c.funded+=Number(r.funded)||0; c.amt+=Number(r.funded_amount)||0;
     by.set(m,c);
   });
-  by.set(MONTH, {apps:row.total||0, approved:row.approved||0, counter:row.counter||0, denial:row.denial||0, funded:row.funded||0, amt:row.fundedAmt||0, feePct:row.avgFee, feeDol:row.avgFeeDol, live:true});
+  const rowYear=Number(row.year)||YEAR;
+  const rowMonth=Number(row.month)||MONTH;
+  const liveBucket=src=>({apps:src.total||0, approved:src.approved||0, counter:src.counter||0, denial:src.denial||0, funded:src.funded||0, amt:src.fundedAmt||0, feePct:src.avgFee, feeDol:src.avgFeeDol, live:true});
+  let liveNow=null;
+  if(rowYear===YEAR && rowMonth===MONTH) by.set(MONTH, liveBucket(row));
+  else if(rowYear===YEAR){
+    by.set(rowMonth, liveBucket(row));
+    liveNow=(currentModel.dealers||[]).find(d=>sameDealer(row, d))||null;
+    if(liveNow) by.set(MONTH, liveBucket(liveNow));
+  } else by.set(rowMonth, liveBucket(row));
   const ret={};
   yearPack.returns.forEach(r=>{
     if((r.dealer_id&&ids.has(r.dealer_id))||names.has(norm(r.dealer))) ret[r.month]=(ret[r.month]||0)+1;
@@ -395,7 +558,7 @@ async function paintYear(row){
       feePct=ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:null;
       feeDol=ds.length?ds.reduce((a,b)=>a+b,0)/ds.length:null;
     }
-    rows.push({...base,m,label:MN3[m-1]+' '+YEAR,returns:ret[m]||0,ltb:base.apps?base.funded/base.apps:0,feePct,feeDol});
+    rows.push({...base,m,label:MN3[m-1]+' '+packYear,returns:ret[m]||0,ltb:base.apps?base.funded/base.apps:0,feePct,feeDol});
   }
   const apps=rows.reduce((a,r)=>a+r.apps,0);
   const apc=rows.reduce((a,r)=>a+(r.approved||0)+(r.counter||0),0);
@@ -406,8 +569,9 @@ async function paintYear(row){
   const loans=deals.map(d=>{ const n=Number(d.loan_amount)||0; return n>0?n:null; }).filter(n=>n!=null);
   const fees=deals.map(d=>asPct(d.lender_fee_pct)).filter(n=>n!=null);
   const fdols=deals.map(d=>{ const p=asPct(d.lender_fee_pct); const loan=Number(d.loan_amount)||0; return p&&loan?loan*(p/100):null; }).filter(n=>n!=null);
-  if(row.shaped&&row.shaped.length && !deals.some(d=>Number(d.month)===MONTH)){
-    row.shaped.forEach(d=>{
+  const extra=(rowYear===YEAR && rowMonth===MONTH)?row:liveNow;
+  if(extra&&extra.shaped&&extra.shaped.length && !deals.some(d=>Number(d.month)===MONTH)){
+    extra.shaped.forEach(d=>{
       const p=asPct(d.fee); if(p!=null){ fees.push(p); if(d.amount) fdols.push(d.amount*(p/100)); }
       const a=asPct(d.apr); if(a!=null) aprs.push(a);
       if(d.amount>0) loans.push(d.amount);
@@ -415,7 +579,7 @@ async function paintYear(row){
   }
   const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
   const avgFee=avg(fees), avgDol=avg(fdols), avgApr=avg(aprs), avgLoan=avg(loans);
-  document.getElementById('mSub').textContent=[row.state,row.fi,YEAR].filter(Boolean).join(' · ');
+  document.getElementById('mSub').textContent=[row.state,row.fi,packYear].filter(Boolean).join(' · ');
   document.getElementById('mKpis').innerHTML=[
     kpi('Apps', apps.toLocaleString()),
     kpi('Approved + Counter', countWithPct(apc, apps)),
@@ -450,13 +614,44 @@ document.getElementById('dealers').addEventListener('click', e=>{
   openDealer(btn.getAttribute('data-dealer'));
 });
 document.getElementById('q').addEventListener('input', e=>{ query=e.target.value||''; paint(); });
+document.getElementById('colBtn').addEventListener('click', ()=>{
+  const menu=document.getElementById('colMenu');
+  const open=menu.hasAttribute('hidden');
+  menu.toggleAttribute('hidden', !open);
+  document.getElementById('colBtn').setAttribute('aria-expanded', open?'true':'false');
+});
+document.getElementById('colAll').addEventListener('click', ()=>{
+  hiddenCols=new Set();
+  saveHidden();
+  paintColMenu();
+  paint();
+});
+document.getElementById('colList').addEventListener('change', e=>{
+  const box=e.target.closest('input[data-col]');
+  if(!box) return;
+  const key=box.getAttribute('data-col');
+  if(box.checked) hiddenCols.delete(key);
+  else {
+    if(shownCols().length<=1){ box.checked=true; return; }
+    hiddenCols.add(key);
+  }
+  saveHidden();
+  paint();
+});
+document.addEventListener('click', e=>{
+  if(e.target.closest('.colpick')) return;
+  document.getElementById('colMenu').setAttribute('hidden','');
+  document.getElementById('colBtn').setAttribute('aria-expanded','false');
+});
+paintColMenu();
 document.getElementById('export').addEventListener('click', ()=>{
   const rows=visible();
-  const head=['Dealer','State','FI','Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Warranty','Gap','Fee %','Fee $','LTA','LTB'];
-  const lines=[head.join(',')].concat(rows.map(r=>[r.dealer,r.state,r.fi,r.total,r.approved,r.counter,r.pending,r.denial,r.funded,r.fundedAmt||0,r.warrantyAmt||0,r.gapAmt||0,r.avgFee==null?'':Number(r.avgFee).toFixed(2),r.avgFeeDol==null?'':r.avgFeeDol,pctText(r.lta||0),pctText(r.ltb||0)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')));
+  const cols=shownCols();
+  const lines=[cols.map(c=>c.label).join(',')].concat(rows.map(r=>cols.map(c=>`"${String(c.csv(r)).replace(/"/g,'""')}"`).join(',')));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
-  a.download=`current-month-dealers-${YEAR}-${String(MONTH).padStart(2,'0')}.csv`;
+  const period=active==='current'?{year:YEAR,month:MONTH}:{year:REPORT_YEAR,month:Number(active)};
+  a.download=`current-month-dealers-${period.year}-${String(period.month).padStart(2,'0')}.csv`;
   a.click();
 });
 document.getElementById('mClose').onclick=()=>showModal(false);
@@ -465,8 +660,86 @@ document.getElementById('btnMonth').onclick=()=>{ if(openRow) paintMonth(openRow
 document.getElementById('btnYear').onclick=()=>{ if(openRow) paintYear(openRow); };
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') showModal(false); });
 
+function setHeading(year, month, saved){
+  document.getElementById('title').textContent=`${MN[month-1]} ${year}`;
+  document.title=`${MN[month-1]} ${year}`;
+  document.getElementById('sub').textContent=saved?'Saved monthly results':'Buying Daily';
+  const currentOn=active==='current';
+  document.getElementById('tabCurrent').classList.toggle('on', currentOn);
+  document.getElementById('tabCurrent').setAttribute('aria-pressed', currentOn?'true':'false');
+  document.getElementById('monthPick').classList.toggle('on', !currentOn);
+}
+function showCurrent(){
+  loadToken++;
+  active='current';
+  viewNote='';
+  document.getElementById('monthPick').value='';
+  setHeading(YEAR, MONTH, false);
+  showModal(false);
+  model=currentModel;
+  paint();
+}
+async function showSaved(month){
+  const token=++loadToken;
+  const m=Number(month);
+  active=String(m);
+  document.getElementById('monthPick').value=String(m);
+  setHeading(REPORT_YEAR, m, true);
+  showModal(false);
+  if(savedCache[m]){
+    viewNote=savedCache[m].note||'';
+    model=savedCache[m].model;
+    paint();
+    return;
+  }
+  viewNote=`Loading ${MN[m-1]} ${REPORT_YEAR}…`;
+  model={dealers:[], stateRows:[]};
+  paint();
+  try{
+    let snaps;
+    try{
+      snaps=await monthRows('monthly_snapshots','dealer,state,fi,dealer_id,total_apps,approved,counter,pending,denial,funded,funded_amount', REPORT_YEAR, m);
+    }catch(err){
+      snaps=await monthRows('monthly_snapshots','dealer,state,fi,total_apps,approved,counter,pending,denial,funded,funded_amount', REPORT_YEAR, m);
+    }
+    let deals=[];
+    try{
+      deals=await monthRows('funded_deals','dealer,state,fi,loan_amount,apr,lender_fee_pct,account_number,gap_amount,warranty_amount', REPORT_YEAR, m);
+    }catch(err){
+      deals=await monthRows('funded_deals','dealer,state,fi,loan_amount,apr,lender_fee_pct,account_number', REPORT_YEAR, m).catch(()=>[]);
+    }
+    if(token!==loadToken) return;
+    const note=snaps.length?'':`${MN[m-1]} ${REPORT_YEAR} has not been saved in Monthly yet.`;
+    savedCache[m]={note, model:snaps.length?buildSaved(snaps, deals, REPORT_YEAR, m):{dealers:[], stateRows:[]}};
+    viewNote=note;
+    model=savedCache[m].model;
+    paint();
+  }catch(e){
+    if(token!==loadToken) return;
+    viewNote=`Could not load ${MN[m-1]} ${REPORT_YEAR}. ${e.message||e}`;
+    model={dealers:[], stateRows:[]};
+    paint();
+  }
+}
+document.getElementById('tabCurrent').onclick=()=>showCurrent();
+document.getElementById('monthPick').onchange=e=>{
+  const v=e.target.value;
+  if(!v) showCurrent();
+  else showSaved(v);
+};
+
 (async function(){
+  document.getElementById('tabCurrent').textContent=`${MN[MONTH-1]} ${YEAR}`;
+  const pick=document.getElementById('monthPick');
+  for(let m=1;m<=12;m++){
+    if(YEAR===REPORT_YEAR && m===MONTH) continue;
+    const opt=document.createElement('option');
+    opt.value=String(m);
+    opt.textContent=`${MN[m-1]} ${REPORT_YEAR}`;
+    pick.appendChild(opt);
+  }
   document.getElementById('title').textContent=`${MN[MONTH-1]} ${YEAR}`;
+  document.title=`${MN[MONTH-1]} ${YEAR}`;
   try{
     const [{data,error}, masterRows]=await Promise.all([
       sb.from('buying_daily_data').select('app_rows,funded_data').eq('id',1).maybeSingle(),
@@ -474,8 +747,8 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape') showModal(false);
     ]);
     if(error) throw error;
     masters=masterRows||[];
-    model=build(data?.app_rows||[], data?.funded_data||[]);
-    paint();
+    currentModel=build(data?.app_rows||[], data?.funded_data||[]);
+    if(active==='current'){ model=currentModel; paint(); }
   }catch(e){
     document.getElementById('states').innerHTML=`<tr><td class="muted" colspan="9">Could not load this month. ${esc(e.message||e)}</td></tr>`;
   }

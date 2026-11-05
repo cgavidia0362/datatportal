@@ -1254,6 +1254,89 @@ function attachProductAmounts(dealers, fundedRows) {
     d.warrantyAmt = hit.warranty;
   });
 }
+function loadHiddenCols(storageKey) {
+  try {
+    const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    return new Set(Array.isArray(list) ? list : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+function saveHiddenCols(storageKey, hidden) {
+  localStorage.setItem(storageKey, JSON.stringify([...hidden]));
+}
+function applyHiddenCols(table, hidden) {
+  if (!table || !hidden) return;
+  const heads = [...table.querySelectorAll('thead th')];
+  const keys = heads.map((th) => th.getAttribute('data-key') || '');
+  heads.forEach((th, i) => {
+    th.style.display = keys[i] && hidden.has(keys[i]) ? 'none' : '';
+  });
+  table.querySelectorAll('tbody tr').forEach((tr) => {
+    const cells = [...tr.children];
+    if (cells.length === 1 && cells[0].hasAttribute('colspan')) return;
+    cells.forEach((td, i) => {
+      td.style.display = keys[i] && hidden.has(keys[i]) ? 'none' : '';
+    });
+  });
+}
+function bindColumnPicker(storageKey, ids) {
+  const button = document.getElementById(ids.button);
+  const menu = document.getElementById(ids.menu);
+  const list = document.getElementById(ids.list);
+  const all = document.getElementById(ids.all);
+  const table = document.getElementById(ids.table) || document.querySelector(ids.table);
+  if (!button || !menu || !list || !table) return null;
+  window._colHidden = window._colHidden || {};
+  const hidden = loadHiddenCols(storageKey);
+  const heads = [...table.querySelectorAll('thead th')].filter((th) => th.getAttribute('data-key'));
+  if (hidden.size >= heads.length) hidden.clear();
+  window._colHidden[storageKey] = hidden;
+  const labelOf = (th) => th.textContent.replace(/[↕↑↓]/g, '').replace(/\s+/g, ' ').trim();
+  function paintMenu() {
+    list.innerHTML = heads.map((th) => {
+      const key = th.getAttribute('data-key');
+      return `<label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm cursor-pointer hover:bg-slate-50"><input type="checkbox" data-col="${key}" ${hidden.has(key) ? '' : 'checked'}> ${escHtml(labelOf(th))}</label>`;
+    }).join('');
+  }
+  function apply() { applyHiddenCols(table, hidden); }
+  paintMenu();
+  apply();
+  button.onclick = (e) => {
+    e.stopPropagation();
+    const willOpen = menu.classList.contains('hidden');
+    document.querySelectorAll('[data-col-menu]').forEach((el) => el.classList.add('hidden'));
+    if (willOpen) menu.classList.remove('hidden');
+    button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  };
+  if (all) all.onclick = (e) => {
+    e.stopPropagation();
+    hidden.clear();
+    saveHiddenCols(storageKey, hidden);
+    paintMenu();
+    apply();
+  };
+  list.onchange = (e) => {
+    const box = e.target.closest('input[data-col]');
+    if (!box) return;
+    const key = box.getAttribute('data-col');
+    const shown = heads.filter((th) => !hidden.has(th.getAttribute('data-key'))).length;
+    if (!box.checked) {
+      if (shown <= 1) { box.checked = true; return; }
+      hidden.add(key);
+    } else hidden.delete(key);
+    saveHiddenCols(storageKey, hidden);
+    apply();
+  };
+  if (!window._colMenuCloser) {
+    window._colMenuCloser = true;
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('[data-col-picker]')) return;
+      document.querySelectorAll('[data-col-menu]').forEach((el) => el.classList.add('hidden'));
+    });
+  }
+  return hidden;
+}
 function dealerListCountHtml(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const apps = list.filter((r) => (Number(r.total) || 0) > 0).length;
@@ -5428,8 +5511,12 @@ if (snap && snap.kpis) {
      </div>
    
      <div class="flex items-center gap-3">
-       <div class="hidden md:block text-xs text-slate-500">
-         Tip: click a column header to sort ↑/↓
+       <div class="relative" data-col-picker>
+         <button type="button" id="mdColBtn" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50" aria-expanded="false">Columns</button>
+         <div id="mdColMenu" data-col-menu class="hidden absolute right-0 z-30 mt-1 w-56 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+           <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500"><span>Show columns</span><button type="button" id="mdColAll" class="font-semibold text-indigo-600">Show all</button></div>
+           <div id="mdColList"></div>
+         </div>
        </div>
        <button id="btnExportDealers"
                class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm shadow-sm
@@ -5441,8 +5528,8 @@ if (snap && snap.kpis) {
 
    <div id="mdDealerCount" class="text-sm font-medium text-slate-700 mb-2"></div>
    <!-- Dealer list -->
-   <div class="overflow-x-auto scroll-shadow-x rounded-xl border border-slate-200">
-     <table class="min-w-full text-sm">
+   <div class="pane-scroll rounded-xl border border-slate-200">
+     <table class="min-w-full text-sm" id="mdDealerTable">
        <thead class="bg-slate-50 text-left" id="mdDealerHead">   
          <tr>
            <th class="px-3 py-2 sortable cursor-pointer" data-key="dealer">Dealer <span class="dir">↕</span></th>
@@ -5727,6 +5814,7 @@ head?.querySelectorAll('th[data-key="lta"], th[data-key="ltb"]').forEach(th => {
       });
     });
   });
+  applyHiddenCols(body.closest('table'), window._colHidden && window._colHidden['portal-cols-monthly']);
 }
 
 // Make renderDealerRows globally accessible for event handlers
@@ -5762,6 +5850,7 @@ try {
 } catch (err) {
   console.warn('[dealer groups]', err);
 }
+bindColumnPicker('portal-cols-monthly', { button: 'mdColBtn', menu: 'mdColMenu', list: 'mdColList', all: 'mdColAll', table: 'mdDealerTable' });
 window.renderDealerRows();
 
  function exportDealersCSV() {
@@ -5786,7 +5875,11 @@ window.renderDealerRows();
 
   // use the same “funded $ by dealer|state|fi” piggy bank we built earlier
   // (amtByDealer is defined above in renderMonthlyDetail, outside renderDealerRows)
-  const header = ['Dealer','State','FI','Total','Approved','Counter','Pending','Denial','Funded','Funded $'].concat(showProducts ? ['Warranty','Gap'] : []).concat(['Avg Lender Fee %','Avg Lender Fee $','LTA','LTB']);
+  const headerAll = ['Dealer','State','FI','Total','Approved','Counter','Pending','Denial','Funded','Funded $'].concat(showProducts ? ['Warranty','Gap'] : []).concat(['Avg Lender Fee %','Avg Lender Fee $','LTA','LTB']);
+  const keyAll = ['dealer','state','fi','total','approved','counter','pending','denial','funded','fundedAmt'].concat(showProducts ? ['warrantyAmt','gapAmt'] : []).concat(['avgFee','avgFeeDol','lta','ltb']);
+  const hiddenCols = (window._colHidden && window._colHidden['portal-cols-monthly']) || new Set();
+  const keep = keyAll.map((k, i) => hiddenCols.has(k) ? -1 : i).filter((i) => i >= 0);
+  const header = keep.map((i) => headerAll[i]);
   const rows = [header];
 
   arr.forEach(r => {
@@ -5815,7 +5908,7 @@ window.renderDealerRows();
       fee.avgDol == null ? '' : fee.avgDol.toFixed(2),
       (lta*100).toFixed(2) + '%',
       (ltb*100).toFixed(2) + '%',
-    ]));
+    ]).filter((_, i) => keep.includes(i)));
   });
 
   // download as CSV
@@ -6844,6 +6937,7 @@ if (dBody) {
         </td>
       </tr>
     `).join('') || '<tr><td class="px-3 py-6 text-gray-500" colspan="14">No data.</td></tr>';
+    applyHiddenCols(dBody.closest('table'), window._colHidden && window._colHidden['portal-cols-yearly']);
     dBody.querySelectorAll('.js-yr-dealer').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -6874,11 +6968,14 @@ if (dBody) {
     // use the current view (sorted + filtered)
     const view = sortRows(applyFilters(rows));
   
-    const header = [
+    const headerAll = [
       'Dealer','State','FI',
       'Total Apps','Approved','Counter','Pending','Denial','Funded','Funded $','Avg Lender Fee %','Avg Lender Fee $','LTA','LTB'
     ];
-    const lines = [header.join(',')];
+    const keyAll = ['dealer','state','fi','total','approved','counter','pending','denial','funded','fundedAmt','avgFee','avgFeeDol','lta','ltb'];
+    const hiddenCols = (window._colHidden && window._colHidden['portal-cols-yearly']) || new Set();
+    const keep = keyAll.map((k, i) => hiddenCols.has(k) ? -1 : i).filter((i) => i >= 0);
+    const lines = [keep.map((i) => headerAll[i]).join(',')];
   
     view.forEach((r) => {
       const row = [
@@ -6896,7 +6993,7 @@ if (dBody) {
         r.avgFeeDol == null ? '' : Number(r.avgFeeDol).toFixed(2),
         ((r.lta||0)*100).toFixed(2)+'%',
         ((r.ltb||0)*100).toFixed(2)+'%',
-      ];
+      ].filter((_, i) => keep.includes(i));
       lines.push(row.join(','));
     });
   
@@ -6915,7 +7012,8 @@ if (dBody) {
   if (btnExport) btnExport.addEventListener('click', exportYrDealersCSV);
   
   // initial paint
-  updateSortIcons(); 
+  updateSortIcons();
+  bindColumnPicker('portal-cols-yearly', { button: 'yrColBtn', menu: 'yrColMenu', list: 'yrColList', all: 'yrColAll', table: 'yrDealerTable' });
   paint();
 }
 
