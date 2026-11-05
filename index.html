@@ -82,11 +82,16 @@ th, td {
   position: sticky; top: 0; z-index: 30;
 }
 .sidebar { width: 260px; }
-.pane-scroll{max-height:min(68vh,720px);overflow:auto;scrollbar-color:#64748b #e2e8f0;scrollbar-width:auto}
+.pane-scroll{max-height:min(68vh,720px);overflow:scroll;scrollbar-color:#64748b #e2e8f0;scrollbar-width:auto}
 .pane-scroll::-webkit-scrollbar{-webkit-appearance:none;width:14px;height:14px}
 .pane-scroll::-webkit-scrollbar-thumb{background:#64748b;border-radius:8px;border:3px solid #e2e8f0}
 .pane-scroll::-webkit-scrollbar-track,.pane-scroll::-webkit-scrollbar-corner{background:#e2e8f0}
 .pane-scroll thead th{position:sticky;top:0;z-index:2;background:#f8fafc}
+.xbar{overflow-x:scroll;overflow-y:hidden;height:16px;margin-bottom:6px;scrollbar-color:#64748b #e2e8f0;scrollbar-width:auto}
+.xbar::-webkit-scrollbar{-webkit-appearance:none;height:14px}
+.xbar::-webkit-scrollbar-thumb{background:#64748b;border-radius:8px;border:3px solid #e2e8f0}
+.xbar::-webkit-scrollbar-track{background:#e2e8f0}
+.xbar > div{height:1px}
 .scroll-shadow-x { position: relative; }
 .scroll-shadow-x::after {
   content: '';
@@ -1363,8 +1368,20 @@ table tbody tr:hover { background: #f8fafc; }
 
             <!-- Per-Dealer YTD Totals -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="font-semibold">Per-Dealer YTD Totals</h3>
+              <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
+                <div class="flex items-center gap-3 flex-wrap">
+                  <h3 class="font-semibold">Per-Dealer YTD Totals</h3>
+                  <div class="relative" data-col-picker>
+                    <button type="button" id="yrColBtn" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50" aria-expanded="false" aria-controls="yrColMenu">Columns</button>
+                    <div id="yrColMenu" data-col-menu class="hidden absolute left-0 z-30 mt-1 w-56 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                      <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500">
+                        <span>Show columns</span>
+                        <button type="button" id="yrColAll" class="font-semibold text-indigo-600">Show all</button>
+                      </div>
+                      <div id="yrColList"></div>
+                    </div>
+                  </div>
+                </div>
                 <button id="btnDealerReportLink" onclick="copyDealerReportLink()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-sm text-slate-600 transition-colors">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                   Copy dealer report link
@@ -1382,18 +1399,7 @@ table tbody tr:hover { background: #f8fafc; }
                   />
                 </div>
               
-                <!-- right: columns + export -->
                 <div class="shrink-0 flex items-center gap-2">
-                <div class="relative" data-col-picker>
-                  <button type="button" id="yrColBtn" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50" aria-expanded="false" aria-controls="yrColMenu">Columns</button>
-                  <div id="yrColMenu" data-col-menu class="hidden absolute right-0 z-30 mt-1 w-56 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-                    <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500">
-                      <span>Show columns</span>
-                      <button type="button" id="yrColAll" class="font-semibold text-indigo-600">Show all</button>
-                    </div>
-                    <div id="yrColList"></div>
-                  </div>
-                </div>
                 <button id="btnExportYrDealers"
                 class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200">
           Export Dealers (CSV)
@@ -1401,6 +1407,7 @@ table tbody tr:hover { background: #f8fafc; }
                 </div>
               </div>
               <div id="yrDealerCount" class="text-sm font-medium text-slate-700 mb-2"></div>
+              <div class="xbar" aria-hidden="true"><div></div></div>
               <div class="pane-scroll rounded-xl border border-slate-200">
                 <table class="w-full text-xs leading-snug" id="yrDealerTable">
                 <thead class="bg-slate-50" id="yrDealerHead">

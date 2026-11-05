@@ -1266,7 +1266,8 @@ function saveHiddenCols(storageKey, hidden) {
   localStorage.setItem(storageKey, JSON.stringify([...hidden]));
 }
 function applyHiddenCols(table, hidden) {
-  if (!table || !hidden) return;
+  if (!table) return;
+  if (!hidden) { syncTopScrollbar(table.parentElement); return; }
   const heads = [...table.querySelectorAll('thead th')];
   const keys = heads.map((th) => th.getAttribute('data-key') || '');
   heads.forEach((th, i) => {
@@ -1278,6 +1279,30 @@ function applyHiddenCols(table, hidden) {
     cells.forEach((td, i) => {
       td.style.display = keys[i] && hidden.has(keys[i]) ? 'none' : '';
     });
+  });
+  syncTopScrollbar(table.parentElement);
+}
+function syncTopScrollbar(pane) {
+  if (!pane) return;
+  const bar = pane.previousElementSibling;
+  if (!bar || !bar.classList.contains('xbar')) return;
+  const inner = bar.firstElementChild;
+  if (!inner) return;
+  inner.style.width = pane.scrollWidth + 'px';
+  if (bar.dataset.bound) return;
+  bar.dataset.bound = '1';
+  let lock = false;
+  bar.addEventListener('scroll', () => {
+    if (lock) return;
+    lock = true;
+    pane.scrollLeft = bar.scrollLeft;
+    lock = false;
+  });
+  pane.addEventListener('scroll', () => {
+    if (lock) return;
+    lock = true;
+    bar.scrollLeft = pane.scrollLeft;
+    lock = false;
   });
 }
 function bindColumnPicker(storageKey, ids) {
@@ -5501,33 +5526,29 @@ if (snap && snap.kpis) {
    </div>
    
    <!-- Dealer list toolbar -->
-   <div class="flex items-center justify-between mb-3">
-     <div class="flex-1">
-       <input id="mdDealerSearch" type="search"
-              placeholder="Search dealer…"
-              class="w-full max-w-sm rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm
-                     placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value="${mdSearch}">
-     </div>
-   
-     <div class="flex items-center gap-3">
-       <div class="relative" data-col-picker>
-         <button type="button" id="mdColBtn" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50" aria-expanded="false">Columns</button>
-         <div id="mdColMenu" data-col-menu class="hidden absolute right-0 z-30 mt-1 w-56 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-           <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500"><span>Show columns</span><button type="button" id="mdColAll" class="font-semibold text-indigo-600">Show all</button></div>
-           <div id="mdColList"></div>
-         </div>
+   <div class="flex flex-wrap items-center gap-3 mb-3">
+     <div class="relative" data-col-picker>
+       <button type="button" id="mdColBtn" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50" aria-expanded="false">Columns</button>
+       <div id="mdColMenu" data-col-menu class="hidden absolute left-0 z-30 mt-1 w-56 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+         <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500"><span>Show columns</span><button type="button" id="mdColAll" class="font-semibold text-indigo-600">Show all</button></div>
+         <div id="mdColList"></div>
        </div>
-       <button id="btnExportDealers"
+     </div>
+     <input id="mdDealerSearch" type="search"
+            placeholder="Search dealer…"
+            class="w-full max-w-sm rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm
+                   placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value="${mdSearch}">
+     <button id="btnExportDealers"
                class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm shadow-sm
                       focus:outline-none focus:ring-2 focus:ring-indigo-200">
          Export CSV
        </button>
-     </div>
-   </div>   
+   </div> 
 
    <div id="mdDealerCount" class="text-sm font-medium text-slate-700 mb-2"></div>
    <!-- Dealer list -->
+   <div class="xbar" aria-hidden="true"><div></div></div>
    <div class="pane-scroll rounded-xl border border-slate-200">
      <table class="min-w-full text-sm" id="mdDealerTable">
        <thead class="bg-slate-50 text-left" id="mdDealerHead">   
