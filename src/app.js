@@ -6071,6 +6071,7 @@ function paintMonthlyHighValues(snap) {
 }
 
 /* ---------- Yearly tab ---------- */
+let yearlyRenderVersion = 0;
 let yrChart = null;              // Chart.js instance
 let spMonths = [];               // [['2025-01','Jan'], ...]
 let spStates = [];               // ['IL','WI',...]
@@ -6471,8 +6472,11 @@ function copyDealerReportLink() {
 
 async function renderYearly() {
   const yearSel = findYearSelect();
-if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
+  if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
   const year = Number(yearSel.value) || new Date().getFullYear();
+  const renderVersion = ++yearlyRenderVersion;
+  const exportButton = document.getElementById('btnExportYrDealers');
+  if (exportButton) exportButton.disabled = true;
 
   // Build the month list: use Supabase if configured; else use your local snaps
   let list;
@@ -6493,6 +6497,7 @@ if (!yearSel) { console.warn('[yearly] no year <select>'); return; }
   const funded      = sum(list, s => s.totals.funded);
   const totalFunded = sum(list, s => s.kpis.totalFunded);
   let yrFundedRows = await fetchYearlyFundedDealsSB(year);
+  if (renderVersion !== yearlyRenderVersion) return;
   if (!yrFundedRows.length) {
     yrFundedRows = list.flatMap((s) => s.fundedRawRows || []);
   }
@@ -6832,6 +6837,7 @@ if (dBody) {
   }
 
   const dealerGroups = await ensureDealerGroups(year);
+  if (renderVersion !== yearlyRenderVersion) return;
   const snapRows = rowsFromDealerGroups(dealerGroups);
   if (snapRows.length) {
     const covered = new Set(snapRows.map((r) => groupKeyForRow(r, dealerGroups)));
@@ -6917,9 +6923,9 @@ if (dBody) {
     }
   }  
 
-  if (dSearch) dSearch.addEventListener('input', () => paint());
-  if (selState) selState.addEventListener('change', () => paint());
-  if (selFI)    selFI.addEventListener('change', () => paint());
+  if (dSearch) dSearch.oninput = paint;
+  if (selState) selState.onchange = paint;
+  if (selFI) selFI.onchange = paint;
 
   // 6) Paint table body (includes Funded $ after Funded)
   function paint() {
@@ -7029,13 +7035,14 @@ if (dBody) {
     URL.revokeObjectURL(url);
   }
   
-  const btnExport = document.getElementById('btnExportYrDealers');
-  if (btnExport) btnExport.addEventListener('click', exportYrDealersCSV);
-  
   // initial paint
   updateSortIcons();
   bindColumnPicker('portal-cols-yearly', { button: 'yrColBtn', menu: 'yrColMenu', list: 'yrColList', all: 'yrColAll', table: 'yrDealerTable' });
   paint();
+  if (exportButton) {
+    exportButton.onclick = exportYrDealersCSV;
+    exportButton.disabled = false;
+  }
 }
 
 // --- Franchise vs Independent (YTD) — build + paint rows
@@ -7047,6 +7054,7 @@ let fiRows = [];
 if (window.sb) {
   // ✔ SB path: read YTD from fi_yearly
   const fi = await fetchFIYTD_SB(year); // returns { Franchise: {...}, Independent: {...} } or null
+  if (renderVersion !== yearlyRenderVersion) return;
   if (fi) {
     const parts = [];
     if (fi.Independent) {
@@ -7220,6 +7228,7 @@ if (window.sb) {
   (async () => {
     // -> [{ state, months:[{ total, approved, counter, pending, denial, funded, fundedAmount }×12], ytd:{...} }]
     const stateYTD = (await fetchStateMonthlyYTD_SB(year)) || [];
+    if (renderVersion !== yearlyRenderVersion) return;
 
   // Month labels from actual data (only months that exist)
   window.spMonths = list.map(s => [`${s.year}-${String(s.month).padStart(2,'0')}`, monthName(s.month)]);
